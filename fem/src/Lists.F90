@@ -873,8 +873,12 @@ CONTAINS
       TYPE(Solver_t), POINTER :: VSolver
 !------------------------------------------------------------------------------
 
-      CALL Info('VariableAdd','Adding variable > '//TRIM(Name)//&
-          ' < of size '//I2S(SIZE(Values)),Level=15)
+      IF(ASSOCIATED(Values)) THEN
+        CALL Info('VariableAdd','Adding variable > '//TRIM(Name)//&
+            ' < of size '//I2S(SIZE(Values)),Level=15)
+      ELSE
+        CALL Info('VariableAdd','Adding variable > '//TRIM(Name), Level=15)
+      END IF
 
       NULLIFY(VSolver)
       IF (PRESENT(Solver)) VSolver => Solver
