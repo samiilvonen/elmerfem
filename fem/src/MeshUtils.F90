@@ -2969,7 +2969,7 @@ CONTAINS
    ! So we can do just partial initializations and leave early. 
    IF(PRESENT(InitOnly)) THEN
      IF(InitOnly) THEN
-       CALL NonNodalElements()
+       !CALL NonNodalElements()
        !CALL EnlargeCoordinates( Mesh ) 
        CALL Info(Caller,'Skipping rest of mesh preparation!',Found )  
        RETURN
@@ -3484,10 +3484,6 @@ CONTAINS
      IF(PRESENT(mySolver)) THEN
        Stat = ListGetLogical(Model % Solvers(mySolver) % Values, 'Need Edges', Found)
        IF(Found) NeedEdges = Stat
-
-       IF( ListGetLogical(Model % Solvers(mySolver) % Values, 'NeedEdges', Found) ) THEN
-         IF(.NOT. NeedEdges) CALL Fatal('NonNodalElements','Use "Need Edges" instead of "NeedEdges"') 
-       END IF
      END IF
 
      IF( Mesh % MeshDim == 2 ) THEN
@@ -3520,6 +3516,15 @@ CONTAINS
        CALL Info('NonNodalElements','Element dofs max: '//I2S(Mesh % MaxElementDofs),Level=12)
      END IF
 
+     
+     IF( Mesh % MaxFaceDofs + Mesh % MaxEdgeDofs == 0 ) THEN
+       CALL Info('NonNodalElements','Why the heck did we allocate the edges and faces?!')
+       CALL ReleaseMeshEdgeTables( Mesh )
+       CALL ReleaseMeshFaceTables( Mesh )       
+     END IF
+           
+     
+     
    END SUBROUTINE NonNodalElements
 
 
