@@ -2985,7 +2985,7 @@ CONTAINS
       IF( MeshLevels > 1 ) THEN
         ! This has been commented out, but is needed. There may be some issues in parallel still...
         IF(ListGetLogical(Model % Simulation,'Prepare Mesh Before Split',GotIt) ) THEN
-          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
+          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1, InitOnly = (i<MeshLevels)  )
         END IF
       END IF
     
