@@ -2499,10 +2499,7 @@ CONTAINS
      END IF
    END IF
    
-   ! Prepare the mesh for next steps.
-   ! For example, create non-nodal mesh structures, periodic projectors etc. 
-   i = ListGetInteger( VList, 'Mesh Levels', GotIt )
-   CALL PrepareMesh(Model,Mesh,Parallel,Def_Dofs,mySolver,InitOnly=(i>1))
+   CALL PrepareMesh(Model,Mesh,Parallel,Def_Dofs,mySolver)
 
    CALL Info(Caller,'Preparing mesh done',Level=8)
 
@@ -2936,16 +2933,22 @@ CONTAINS
  !> Enlarge the coordinate vectors for p-elements.
  !> Generate static projector for periodic BCS.
  !-------------------------------------------------------------------
- SUBROUTINE PrepareMesh( Model, Mesh, Parallel, Def_Dofs, mySolver, InitOnly)
+ SUBROUTINE PrepareMesh( Model, Mesh, Parallel, Def_Dofs, mySolver, ElementsDone )
    TYPE(Model_t) :: Model
    TYPE(Mesh_t), POINTER :: Mesh
    LOGICAL :: Parallel
    INTEGER, OPTIONAL :: Def_Dofs(:,:), mySolver
    TYPE(ValueList_t), POINTER :: Vlist
-   LOGICAL, OPTIONAL :: InitOnly
+   LOGICAL, OPTIONAL :: ElementsDone
 
-   LOGICAL :: Found
+   LOGICAL :: Found, DoElements
    CHARACTER(*),PARAMETER :: Caller='PrepareMesh'
+   
+
+   DoElements = .TRUE.
+   IF(PRESENT(ElementsDone)) THEN
+     DoElements = .NOT. ElementsDone
+   END IF
    
    
    IF( PRESENT( mySolver ) ) THEN     
@@ -2965,18 +2968,6 @@ CONTAINS
      CALL SetEqualElementIndeces( Mesh )
    END IF
 
-   ! We know that not all structures are needed on this level.
-   ! So we can do just partial initializations and leave early. 
-   IF(PRESENT(InitOnly)) THEN
-     IF(InitOnly) THEN
-       !CALL NonNodalElements()
-       !CALL EnlargeCoordinates( Mesh ) 
-       CALL Info(Caller,'Skipping rest of mesh preparation!',Found )  
-       RETURN
-     END IF
-   END IF
-     
-
    IF( ListGetLogical( Vlist,'Increase Element Order',Found ) ) THEN
      ! We need to follow the boundary also for the new nodes of the quadratic mesh.
      CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
@@ -2984,20 +2975,23 @@ CONTAINS
      CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
      CALL IncreaseElementOrder( Model, Mesh )
    END IF
-   
-   CALL NonNodalElements()
 
-   IF( Parallel ) THEN
-     CALL Info(Caller,'Generating parallel communications for the non-nodal mesh',Level=20)
-     CALL ResetTimer('ParallelNonNodal')
-     CALL ParallelNonNodalElements()
-     CALL CheckTimer('ParallelNonNodal',Level=7,Delete=.TRUE.)
-   END IF
+   IF( DoElements ) THEN
+     CALL NonNodalElements()
+
+     IF( Parallel ) THEN
+       CALL Info(Caller,'Generating parallel communications for the non-nodal mesh',Level=20)
+       CALL ResetTimer('ParallelNonNodal')
+       CALL ParallelNonNodalElements()
+       CALL CheckTimer('ParallelNonNodal',Level=7,Delete=.TRUE.)
+     END IF
      
-   CALL EnlargeCoordinates( Mesh ) 
+     CALL EnlargeCoordinates( Mesh ) 
+     
+     CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
+   END IF
 
-   CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
-      
+   
    CALL GeneratePeriodicProjectors( Model, Mesh )    
    
    IF( ListGetLogical( Vlist,'Inspect Quadratic Mesh', Found ) ) THEN
@@ -23885,6 +23879,7 @@ CONTAINS
        Reorder = [ (i, i=1,NewMesh % NumberOfNodes) ]
 
        k = NewMesh % Nodes % NumberOfNodes - Mesh % Nodes % NumberOfNodes
+
 
        CALL ResetTimer('ParallelGlobalNumbering')
        CALL ParallelGlobalNumbering( NewMesh, Mesh, k, Reorder )

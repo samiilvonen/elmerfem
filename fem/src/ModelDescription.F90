@@ -2925,6 +2925,8 @@ CONTAINS
       MeshGrading = ListGetLogical( Model % Simulation, 'Mesh Keep Grading', GotIt)
 
       DO iLevel=2,MeshLevels
+        CALL Info('LoadModel','Performing splitting at level: '//I2S(iLevel))
+
         OldMesh => Model % Meshes
 
         IF (MeshGrading) THEN
@@ -2978,15 +2980,9 @@ CONTAINS
         END IF
       END IF
 
+      ! If 
       IF( MeshLevels > 1 .OR. Split ) THEN
-        ! This has been commented out, but is needed. There may be some issues in parallel still...
-        !IF(ListGetLogical(Model % Simulation,'Prepare Mesh Before Split',GotIt) ) THEN
-        CALL SetMeshMaxDofs(NewMesh)
-        CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
-        !END IF
-        IF( ListCheckPresentAnyBC( Model,'Conforming BC' ) ) THEN
-          CALL GeneratePeriodicProjectors( Model, NewMesh ) 
-        END IF
+        CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1, ElementsDone = .TRUE.)
       END IF
     
       
