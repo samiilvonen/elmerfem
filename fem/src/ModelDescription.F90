@@ -2939,6 +2939,7 @@ CONTAINS
           NewMesh => SplitMeshEqual(OldMesh)
         END IF
 
+#if 0
         IF(ASSOCIATED(OldMesh % Faces)) THEN
           CALL FindMeshEdges(NewMesh)
 
@@ -2955,8 +2956,12 @@ CONTAINS
         ELSE
           CALL SetMeshMaxDofs(NewMesh)
         END IF
-
-        IF ( iLevel > MeshLevels-MeshKeep+1 ) THEN
+#endif
+        
+        IF ( iLevel >= MeshLevels-MeshKeep ) THEN
+          ! Prepare mesh only for those meshes that are kept.
+          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
+        
           NewMesh % Next => OldMesh
           NewMesh % Parent => OldMesh
           OldMesh % Child  => NewMesh
@@ -2965,9 +2970,9 @@ CONTAINS
         ELSE
           CALL ReleaseMesh(OldMesh)
         END IF
+       
         Model % Meshes => NewMesh                    
       END DO
-
 
       Split = ListGetLogical( Model % Simulation,'Mesh Split Levelset', GotIt)
       IF( Split ) THEN
@@ -2977,14 +2982,9 @@ CONTAINS
           CALL SetMeshMaxDofs(NewMesh)
           CALL ReleaseMesh(OldMesh)
           Model % Meshes => NewMesh
+          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
         END IF
-      END IF
-
-      ! If 
-      IF( MeshLevels > 1 .OR. Split ) THEN
-        CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1, ElementsDone = .TRUE.)
-      END IF
-    
+      END IF    
       
       IF ( OneMeshName ) THEN
          i = 0
@@ -3188,7 +3188,7 @@ CONTAINS
         MeshPower   = ListGetConstReal( Model % Simulation, 'Mesh Grading Power',GotIt)
         MeshGrading = ListGetLogical( Model % Simulation, 'Mesh Keep Grading', GotIt)
 
-        DO i=2,MeshLevels
+        DO iLevel=2,MeshLevels
           OldMesh => Solver % Mesh
 
           IF (MeshGrading) THEN
@@ -3201,6 +3201,7 @@ CONTAINS
             NewMesh => SplitMeshEqual(OldMesh)
           END IF
 
+#if 0 
           IF(ASSOCIATED(OldMesh % Faces)) THEN
             CALL FindMeshEdges(NewMesh)
 
@@ -3219,8 +3220,12 @@ CONTAINS
           ELSE
             CALL SetMeshMaxDofs(NewMesh)
           END IF
-
-          IF ( i>MeshLevels-MeshKeep+1 ) THEN
+#endif
+          
+          IF ( iLevel >= MeshLevels-MeshKeep ) THEN
+            ! Prepare mesh only for those meshes that are kept.
+            CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
+            
             NewMesh % Next => OldMesh
             NewMesh % Parent => OldMesh
             OldMesh % Child  => NewMesh

@@ -2933,23 +2933,15 @@ CONTAINS
  !> Enlarge the coordinate vectors for p-elements.
  !> Generate static projector for periodic BCS.
  !-------------------------------------------------------------------
- SUBROUTINE PrepareMesh( Model, Mesh, Parallel, Def_Dofs, mySolver, ElementsDone )
+ SUBROUTINE PrepareMesh( Model, Mesh, Parallel, Def_Dofs, mySolver )
    TYPE(Model_t) :: Model
    TYPE(Mesh_t), POINTER :: Mesh
    LOGICAL :: Parallel
    INTEGER, OPTIONAL :: Def_Dofs(:,:), mySolver
    TYPE(ValueList_t), POINTER :: Vlist
-   LOGICAL, OPTIONAL :: ElementsDone
 
-   LOGICAL :: Found, DoElements
-   CHARACTER(*),PARAMETER :: Caller='PrepareMesh'
-   
-
-   DoElements = .TRUE.
-   IF(PRESENT(ElementsDone)) THEN
-     DoElements = .NOT. ElementsDone
-   END IF
-   
+   LOGICAL :: Found
+   CHARACTER(*),PARAMETER :: Caller='PrepareMesh'      
    
    IF( PRESENT( mySolver ) ) THEN     
      VList => Model % Solvers(mySolver) % Values
@@ -2976,20 +2968,18 @@ CONTAINS
      CALL IncreaseElementOrder( Model, Mesh )
    END IF
 
-   IF( DoElements ) THEN
-     CALL NonNodalElements()
+   CALL NonNodalElements()
 
-     IF( Parallel ) THEN
-       CALL Info(Caller,'Generating parallel communications for the non-nodal mesh',Level=20)
-       CALL ResetTimer('ParallelNonNodal')
-       CALL ParallelNonNodalElements()
-       CALL CheckTimer('ParallelNonNodal',Level=7,Delete=.TRUE.)
-     END IF
-     
-     CALL EnlargeCoordinates( Mesh ) 
-     
-     CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
+   IF( Parallel ) THEN
+     CALL Info(Caller,'Generating parallel communications for the non-nodal mesh',Level=20)
+     CALL ResetTimer('ParallelNonNodal')
+     CALL ParallelNonNodalElements()
+     CALL CheckTimer('ParallelNonNodal',Level=7,Delete=.TRUE.)
    END IF
+
+   CALL EnlargeCoordinates( Mesh ) 
+
+   CALL FollowCurvedBoundary( Model, Mesh, .FALSE. ) 
 
    
    CALL GeneratePeriodicProjectors( Model, Mesh )    
@@ -3510,13 +3500,22 @@ CONTAINS
        CALL Info('NonNodalElements','Element dofs max: '//I2S(Mesh % MaxElementDofs),Level=12)
      END IF
 
-     
-     IF( Mesh % MaxFaceDofs + Mesh % MaxEdgeDofs == 0 ) THEN
-       CALL Info('NonNodalElements','Why the heck did we allocate the edges and faces?!')
-       CALL ReleaseMeshEdgeTables( Mesh )
-       CALL ReleaseMeshFaceTables( Mesh )       
-     END IF
-           
+     BLOCK
+       LOGICAL :: DelIt
+       DelIt = (Mesh % MaxFaceDofs + Mesh % MaxEdgeDofs == 0 .AND. &
+           Mesh % MaxElementDOFs == Mesh % MaxElementNodes )        
+       IF(DelIt) THEN
+         IF(ListGetLogicalAnySolver( Model,'Discontinuous Galerkin') ) THEN
+           DelIt = .FALSE.
+           CALL Info('NonNodalElements','We keep the edges and faces for DG')
+         END IF
+       END IF
+       IF(DelIt) THEN
+         CALL Info('NonNodalElements','Why the heck did we allocate the edges and faces?!')
+         CALL ReleaseMeshEdgeTables( Mesh )
+         CALL ReleaseMeshFaceTables( Mesh )
+       END IF
+     END BLOCK
      
      
    END SUBROUTINE NonNodalElements
