@@ -4013,9 +4013,9 @@ CONTAINS
                ELSE IF(ASSOCIATED(Edge % BoundaryInfo % Right)) THEN
                  CALL AssignLocalNumber(Edge, Edge % BoundaryInfo % Right, Mesh)
                END IF
-             
+             END IF
             ! Other element types, which need edge dofs
-            ELSE IF(PRESENT(EdgeDOFs)) THEN
+            IF(PRESENT(EdgeDOFs)) THEN
               Edge % BDOFs = MAX(EdgeDOFs(i), Edge % BDOFs)
             ELSE
               Edge % BDOFs = Max(1, Edge % BDOFs)
@@ -4049,8 +4049,8 @@ CONTAINS
              ELSE
                CALL AssignLocalNumber(Face, Face % BoundaryInfo % Right, Mesh)
              END IF
-
-          ELSE IF (PRESENT(FaceDOFs)) THEN
+           END IF
+           IF (PRESENT(FaceDOFs)) THEN
              !
              ! NOTE: This depends on what dofs have been introduced
              ! by using the construct "-quad_face b: ..." and
