@@ -2535,9 +2535,9 @@ CONTAINS
     TYPE(Model_t), POINTER :: Model
 !------------------------------------------------------------------------------
     TYPE(Mesh_t), POINTER :: Mesh,Mesh1,NewMesh,OldMesh,SerialMesh
-    INTEGER :: i,j,k,s,nlen,eqn,MeshKeep,MeshLevels,nprocs,ModuloMesh,iostat
+    INTEGER :: i,j,k,s,nlen,eqn,MeshKeep,MeshLevels,nprocs,ModuloMesh,iostat,iLevel
     LOGICAL :: GotIt,GotMesh,found,OneMeshName, OpenFile, Transient
-    LOGICAL :: stat, single, MeshGrading
+    LOGICAL :: stat, single, MeshGrading, Split
     TYPE(Solver_t), POINTER :: Solver
     INTEGER(KIND=AddrInt) :: InitProc
     INTEGER, TARGET :: Def_Dofs(10,6)
@@ -2924,7 +2924,9 @@ CONTAINS
       MeshPower   = ListGetConstReal( Model % Simulation, 'Mesh Grading Power',GotIt)
       MeshGrading = ListGetLogical( Model % Simulation, 'Mesh Keep Grading', GotIt)
 
-      DO i=2,MeshLevels
+      DO iLevel=2,MeshLevels
+        CALL Info('LoadModel','Performing splitting at level: '//I2S(iLevel))
+
         OldMesh => Model % Meshes
 
         IF (MeshGrading) THEN
@@ -2937,6 +2939,7 @@ CONTAINS
           NewMesh => SplitMeshEqual(OldMesh)
         END IF
 
+#if 0
         IF(ASSOCIATED(OldMesh % Faces)) THEN
           CALL FindMeshEdges(NewMesh)
 
@@ -2953,8 +2956,12 @@ CONTAINS
         ELSE
           CALL SetMeshMaxDofs(NewMesh)
         END IF
-
-        IF ( i>MeshLevels-MeshKeep+1 ) THEN
+#endif
+        
+        IF ( iLevel >= MeshLevels-MeshKeep ) THEN
+          ! Prepare mesh only for those meshes that are kept.
+          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
+        
           NewMesh % Next => OldMesh
           NewMesh % Parent => OldMesh
           OldMesh % Child  => NewMesh
@@ -2963,30 +2970,21 @@ CONTAINS
         ELSE
           CALL ReleaseMesh(OldMesh)
         END IF
-        Model % Meshes => NewMesh
-
-        IF( ListCheckPresentAnyBC( Model,'Conforming BC' ) ) THEN
-          CALL GeneratePeriodicProjectors( Model, NewMesh ) 
-        END IF
-                    
+       
+        Model % Meshes => NewMesh                    
       END DO
 
-
-      IF( ListGetLogical( Model % Simulation,'Mesh Split Levelset', GotIt) ) THEN
+      Split = ListGetLogical( Model % Simulation,'Mesh Split Levelset', GotIt)
+      IF( Split ) THEN
         OldMesh => Model % Meshes      
         NewMesh => SplitMeshLevelset(OldMesh,Model % Simulation)
         IF(ASSOCIATED(NewMesh) ) THEN
           CALL SetMeshMaxDofs(NewMesh)
           CALL ReleaseMesh(OldMesh)
           Model % Meshes => NewMesh
+          CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
         END IF
-      END IF
-
-      IF( MeshLevels > 1 ) THEN
-        ! This has been commented out, but is needed. There may be some issues in parallel still...
-        CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )        
-      END IF
-    
+      END IF    
       
       IF ( OneMeshName ) THEN
          i = 0
@@ -3190,7 +3188,7 @@ CONTAINS
         MeshPower   = ListGetConstReal( Model % Simulation, 'Mesh Grading Power',GotIt)
         MeshGrading = ListGetLogical( Model % Simulation, 'Mesh Keep Grading', GotIt)
 
-        DO i=2,MeshLevels
+        DO iLevel=2,MeshLevels
           OldMesh => Solver % Mesh
 
           IF (MeshGrading) THEN
@@ -3203,6 +3201,7 @@ CONTAINS
             NewMesh => SplitMeshEqual(OldMesh)
           END IF
 
+#if 0 
           IF(ASSOCIATED(OldMesh % Faces)) THEN
             CALL FindMeshEdges(NewMesh)
 
@@ -3221,8 +3220,12 @@ CONTAINS
           ELSE
             CALL SetMeshMaxDofs(NewMesh)
           END IF
-
-          IF ( i>MeshLevels-MeshKeep+1 ) THEN
+#endif
+          
+          IF ( iLevel >= MeshLevels-MeshKeep ) THEN
+            ! Prepare mesh only for those meshes that are kept.
+            CALL PrepareMesh( Model, NewMesh, ParEnv % PEs > 1 )
+            
             NewMesh % Next => OldMesh
             NewMesh % Parent => OldMesh
             OldMesh % Child  => NewMesh

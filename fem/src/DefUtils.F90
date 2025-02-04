@@ -2335,19 +2335,19 @@ CONTAINS
        ElementNodes % x(n+1:sz) = 0.0_dp
        ElementNodes % y(n+1:sz) = 0.0_dp
        ElementNodes % z(n+1:sz) = 0.0_dp
-     END IF
 
-     sz1 = SIZE(Mesh % Nodes % x)
-     IF (sz1 > Mesh % NumberOfNodes) THEN
-        Indexes => GetIndexStore()
-        nd = GetElementDOFs(Indexes,Element,NotDG=.TRUE.)
-        DO i=n+1,nd
+       sz1 = SIZE(Mesh % Nodes % x)
+       IF (sz1 > Mesh % NumberOfNodes) THEN
+         Indexes => GetIndexStore()
+         nd = GetElementDOFs(Indexes,Element,NotDG=.TRUE.)
+         DO i=n+1,nd
            IF ( Indexes(i)>0 .AND. Indexes(i)<=sz1 ) THEN
              ElementNodes % x(i) = Mesh % Nodes % x(Indexes(i))
              ElementNodes % y(i) = Mesh % Nodes % y(Indexes(i))
              ElementNodes % z(i) = Mesh % Nodes % z(Indexes(i))
            END IF
-        END DO
+         END DO
+       END IF
      END IF
   END SUBROUTINE GetElementNodes
 
@@ -4164,10 +4164,10 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE DefaultUpdateEquationsCutFemR( G, F, CutEliminate, CutFinish, Element, USolver )
+  SUBROUTINE DefaultUpdateEquationsCutFemR( G, F, CutElem, Element, USolver )
 !------------------------------------------------------------------------------
      REAL(KIND=dp) :: G(:,:), f(:)
-     LOGICAL :: CutEliminate, CutFinish
+     LOGICAL :: CutElem
      TYPE(Element_t) :: Element
      TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
      
@@ -4198,98 +4198,20 @@ CONTAINS
      n = Element % Type % NumberOfNodes     
      PermIndexes => GetPermIndexStore()
      
-     ! If we do not want to eliminate the boundary it is easy to just sum up the entries. 
-     IF(.NOT. CutEliminate ) THEN       
-       PermIndexes(1:n) = x % Perm(Element % NodeIndexes(1:n))
-       IF(ANY(PermIndexes(1:n) == 0)) &
-           CALL Fatal('DefaultUpdateEquationsCutFemR','Zero PermIndexes in piece element?')
-       CALL UpdateGlobalEquations( A,G,b,f,n,x % DOFs, &
-           PermIndexes(1:n), UElement=Element )            
-       RETURN
+     PermIndexes(1:n) = x % Perm(Element % NodeIndexes(1:n))
+     IF(ANY(PermIndexes(1:n) == 0)) THEN
+       CALL Fatal('DefaultUpdateEquationsCutFemR','Zero PermIndexes in piece element?')
      END IF
-     
-     ! Otherwise we collect the local entries and eliminate the boundary entries. 
-     IF(.NOT. ALLOCATED(fsum)) THEN
-       nn = CurrentModel % Mesh % NumberOfNodes
-       m = 3*n 
-       ALLOCATE(Gsum(m,m),fsum(m),iorder(m),sumIndexes(m))
-       Gsum = 0.0_dp
-       fsum = 0.0_dp       
-       iorder = 0
-       nsum = 0
-     END IF
-
-     ! Get the indexes of the composite element.
-     ! Here we must assume that the CurrentElement points correctly!
-     CurrElement => CurrentModel % CurrentElement 
-     n0 = CurrElement % Type % NumberOfNodes
-
-     ! Create permutation for the local super element. 
-     ! These are the nodal ones. We assumes and check that all exists, since
-     ! otherwise we cannot do elimination. 
-     IF(nsum == 0 ) THEN
-       IF(ANY(x % Perm(CurrElement % NodeIndexes(1:n0)) == 0)) THEN
-         CALL Fatal('DefaultUpdateEquationsCutFemR','Zero PermIndexes in master element?')
-       END IF
-       nsum = n0
-       SumIndexes(1:n0) = CurrElement % NodeIndexes(1:n0) 
-     END IF
-
-     ! Take the piece and see to what indexes of the composite element it should
-     ! be copied to. 
-     iOrder(1:n) = 0
-     DO i=1,n
-       k = Element % NodeIndexes(i)
-       Found = .FALSE.
-       DO j=1,nsum
-         IF(SumIndexes(j)==k) THEN
-           Found = .TRUE.
-           iOrder(i) = j
-           EXIT
-         END IF
-       END DO
-       IF(.NOT. Found ) THEN
-         nsum = nsum+1
-         SumIndexes(nsum) = k
-         iOrder(i) = nsum
-       END IF
-     END DO
-
-     !PRINT *,'CurrElem:',CurrElement % nodeIndexes
-     !PRINT *,'Element:',Element % NodeIndexes(1:n)
-     !PRINT *,'SumInds:',SumIndexes(1:nsum)
-     !PRINT *,'Iorder:',Iorder(1:n)
-     
-     ! Sum of local matrix equation for the element cut.
-     DO i=1,n
-       DO j=1,n
-         Gsum(iOrder(i),iOrder(j)) = Gsum(iOrder(i),iOrder(j)) + G(i,j)         
-       END DO
-       Fsum(iOrder(i)) = Fsum(iOrder(i)) + f(i)
-     END DO
-
-     ! Eliminate the cut dofs at the zero level set. 
-     IF( CutFinish ) THEN
-       !PRINT *,'Condensate:',n0,nsum,SumIndexes(1:nsum)
-       !DO i=1,nsum
-       !  PRINT *,'Gsum:',Gsum(1,1:nsum)
-       !END DO
-       !PRINT *,'Fsum:',fsum(1:nsum)
-       
-       CALL CondensateP( n0, nsum-n0, Gsum, Fsum ) 
-       CALL UpdateGlobalEquations( A,Gsum,b,fsum,n0,x % DOFs, &
-           x % Perm(SumIndexes(1:n0)), UElement=CurrElement )       
-       GSum = 0.0_dp
-       fSum = 0.0_dp       
-       nsum = 0
-     END IF
-     
+     CALL UpdateGlobalEquations( A,G,b,f,n,x % DOFs, &
+         PermIndexes(1:n), UElement=Element )            
+     RETURN
+          
 !------------------------------------------------------------------------------
    END SUBROUTINE DefaultUpdateEquationsCutFemR
 !------------------------------------------------------------------------------
+  
 
-  
-  
+
   SUBROUTINE DefaultUpdateEquationsIm( G, F, UElement, USolver, VecAssembly )     
     TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
     TYPE(Element_t), OPTIONAL, TARGET :: UElement
@@ -5732,7 +5654,7 @@ CONTAINS
          SaveElement => GetCurrentElement() 
          DO i=1,Solver % Mesh % NumberOfBoundaryElements
            Element => GetBoundaryElement(i)
-           IF ( .NOT. ActiveBoundaryElement() ) CYCLE
+           IF ( .NOT. ActiveBoundaryElement(Element) ) CYCLE
 
            ! Get parent element:
            ! -------------------
@@ -5742,7 +5664,7 @@ CONTAINS
 
            IF ( .NOT. ASSOCIATED(Parent) )   CYCLE
 
-           BC => GetBC()
+           BC => GetBC(Element)
            IF ( .NOT.ASSOCIATED(BC) ) CYCLE
 
            ptr => ListFind(BC, Name,Found )
@@ -5809,7 +5731,7 @@ CONTAINS
            DO i=1,Solver % Mesh % NumberOfBoundaryElements
              Element => GetBoundaryElement(i)
 
-             BC => GetBC()
+             BC => GetBC(Element)
              IF ( .NOT.ASSOCIATED(BC) ) CYCLE
              IF ( .NOT. ListCheckPresent(BC, TRIM(Name)) ) CYCLE
 
@@ -5864,7 +5786,7 @@ CONTAINS
          SaveElement => GetCurrentElement()
          DO i=1,Solver % Mesh % NumberOfBoundaryElements
            Element => GetBoundaryElement(i)
-           IF ( .NOT. ActiveBoundaryElement() ) CYCLE
+           IF ( .NOT. ActiveBoundaryElement(Element) ) CYCLE
 
            BC => GetBC()
            IF ( .NOT.ASSOCIATED(BC) ) CYCLE
@@ -6051,7 +5973,7 @@ CONTAINS
          np = Parent % TYPE % NumberOfNodes
          
          IF(.NOT. ASSOCIATED( Solver % Mesh % Edges ) ) CYCLE
-         SELECT CASE(GetElementFamily())
+         SELECT CASE(GetElementFamily(Element))
              
          CASE(3,4)
            CALL PickActiveFace(Solver % Mesh, Parent, Element, Face, j)
@@ -6110,7 +6032,7 @@ CONTAINS
         DO i=1,Solver % Mesh % NumberOfBoundaryElements
            Element => GetBoundaryElement(i)
 
-           BC => GetBC()
+           BC => GetBC(Element)
            IF ( .NOT.ASSOCIATED(BC) ) CYCLE
            IF ( .NOT. ListCheckPrefix(BC, Name//' {e}') .AND. &
                 .NOT. ListCheckPrefix(BC, Name//' {f}') ) CYCLE
@@ -6135,7 +6057,7 @@ CONTAINS
              Parent => Element % BoundaryInfo % Right
              IF ( ASSOCIATED( Parent ) ) THEN
                IF (Parent % BodyId < 1) THEN
-                 Call Warn('SetDefaultDirichlet', 'Cannot set a BC owing to a missing parent body index')
+                 CALL Warn('SetDefaultDirichlet', 'Cannot set a BC owing to a missing parent body index')
                  CYCLE
                END IF
              END IF
@@ -6149,7 +6071,7 @@ CONTAINS
               ! which, in addition to edge DOFs, may also have DOFs associated with faces. 
               !--------------------------------------------------------------------------------
               IF ( ASSOCIATED( Solver % Mesh % Edges ) ) THEN
-                 SELECT CASE(GetElementFamily())
+                 SELECT CASE(GetElementFamily(Element))
                  CASE(2)
 
                    CALL PickActiveFace(Solver % Mesh, Parent, Element, Edge, j)
@@ -6607,7 +6529,7 @@ CONTAINS
 
     ! Is this element type stuff needed and for what?
     SavedType => Element % TYPE
-    IF ( GetElementFamily()==1 ) Element % TYPE=>GetElementType(202)
+    IF ( GetElementFamily(Element)==1 ) Element % TYPE=>GetElementType(202)
       
     Integral = 0._dp
     IP = GaussPoints(Element)
