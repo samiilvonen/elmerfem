@@ -3510,7 +3510,7 @@ CONTAINS
            CALL Info('NonNodalElements','We keep the edges and faces for DG')
          END IF
        END IF
-       IF(DelIt) THEN
+       IF(DelIt .AND. (ASSOCIATED(Mesh % Edges) .OR. ASSOCIATED(Mesh % Faces))) THEN
          CALL Info('NonNodalElements','Why the heck did we allocate the edges and faces?!')
          CALL ReleaseMeshEdgeTables( Mesh )
          CALL ReleaseMeshFaceTables( Mesh )
