@@ -3028,6 +3028,7 @@ CONTAINS
 
      InDofs = 0
      InDofs(:,1) = 1
+     InDofs(:,4) = -1
      IF ( PRESENT(Def_Dofs) ) THEN
        inDofs = Def_Dofs
      ELSE
