@@ -72,7 +72,7 @@ CONTAINS
 
     INTEGER(KIND=AddrInt) :: Proc
     INTEGER   :: i,j,slen,q,a
-    CHARACTER :: Libname(MAX_NAME_LEN),Procname(MAX_NAME_LEN)
+    CHARACTER :: Libname(MAX_PATH_LEN),Procname(MAX_NAME_LEN)
 !------------------------------------------------------------------------------
 
     DO slen=LEN(str),1,-1
@@ -279,7 +279,7 @@ CONTAINS
 
     INTEGER :: pos, posn
     INTEGER :: iostat
-    CHARACTER(LEN=MAX_NAME_LEN) :: MeshDir, MeshName
+    CHARACTER(LEN=MAX_PATH_LEN) :: MeshDir, MeshName
     
     IF( PRESENT( RewindFile ) ) THEN
       IF( RewindFile ) THEN
@@ -2543,7 +2543,7 @@ CONTAINS
     INTEGER, TARGET :: Def_Dofs(10,6)
     REAL(KIND=dp) :: MeshPower
     REAL(KIND=dp), POINTER :: h(:)
-    CHARACTER(LEN=MAX_NAME_LEN) :: MeshDir,MeshName
+    CHARACTER(LEN=MAX_PATH_LEN) :: MeshDir,MeshName
     CHARACTER(:), ALLOCATABLE :: Name, ElementDef, str
     LOGICAL :: Parallel
     TYPE(valuelist_t), POINTER :: lst
@@ -3264,7 +3264,7 @@ CONTAINS
     CALL SetCoordinateSystem( Model )
   
     IF ( OutputPath == ' ' ) THEN
-      DO i=1,MAX_NAME_LEN
+      DO i=1,MAX_PATH_LEN
         IF ( MeshDir(i:i) == CHAR(0) ) EXIT
         OutputPath(i:i) = MeshDir(i:i)
       END DO

@@ -54,7 +54,7 @@ MODULE Types
    USE Lua
    IMPLICIT NONE
 
-   INTEGER, PARAMETER :: MAX_NAME_LEN = 128, MAX_STRING_LEN=2048
+   INTEGER, PARAMETER :: MAX_NAME_LEN = 128, MAX_STRING_LEN=2048, MAX_PATH_LEN=4096
    ! Parameter for internal blocking
    INTEGER, PARAMETER :: VECTOR_BLOCK_LENGTH = 128
    ! Parameter for internally avoiding calls to BLAS
