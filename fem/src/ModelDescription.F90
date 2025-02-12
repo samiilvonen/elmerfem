@@ -3003,6 +3003,8 @@ CONTAINS
         i = i + 1
         j = j + 1
       END DO
+
+      IF(ALLOCATED(Model % Meshes % Name)) DEALLOCATE(Model % Meshes % Name)
       ALLOCATE(CHARACTER(j)::Model % Meshes % Name)
       i = k
       k = 1
