@@ -3257,6 +3257,7 @@ CONTAINS
           i = i + 1
         END DO
 
+        IF(ALLOCATED(Solver % Mesh % Name)) DEALLOCATE(Solver % Mesh % Name)
         ALLOCATE(CHARACTER(j)::Solver % Mesh % Name)
         i = k
         k = 1
