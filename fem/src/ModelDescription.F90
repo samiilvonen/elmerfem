@@ -2997,12 +2997,19 @@ CONTAINS
       END IF
 
       i = i + 1
+      k = i
+      j = 0
+      DO WHILE( MeshName(i:i) /= CHAR(0) )
+        i = i + 1
+        j = j + 1
+      END DO
+      ALLOCATE(CHARACTER(j)::Model % Meshes % Name)
+      i = k
       k = 1
-      Model % Meshes % Name = ' '
       DO WHILE( MeshName(i:i) /= CHAR(0) )
         Model % Meshes % Name(k:k) = MeshName(i:i)
-        k = k + 1
         i = i + 1
+        k = k + 1
       END DO
 
       ! Ok, give name also to the parent meshes as they might be saved too
@@ -3240,9 +3247,17 @@ CONTAINS
 
         IF ( OneMeshName ) i = 0
 
-        k = 1
         i = i + 1
-        Solver % Mesh % Name = ' '
+        k = i
+        j = 0
+        DO WHILE( MeshName(i:i) /= CHAR(0) )
+          j = j + 1
+          i = i + 1
+        END DO
+
+        ALLOCATE(CHARACTER(j)::Solver % Mesh % Name)
+        i = k
+        k = 1
         DO WHILE( MeshName(i:i) /= CHAR(0) )
           Solver % Mesh % Name(k:k) = MeshName(i:i)
           k = k + 1

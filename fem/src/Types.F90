@@ -799,7 +799,7 @@ MODULE Types
    END TYPE FactorsStore_t 
 
    TYPE Mesh_t
-     CHARACTER(MAX_NAME_LEN) :: Name
+     CHARACTER(:), ALLOCATABLE :: Name
      TYPE(Mesh_t), POINTER   :: Next => NULL(), Parent => NULL(), Child => NULL()
 
      TYPE(Projector_t), POINTER :: Projector => NULL()
