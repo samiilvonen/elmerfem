@@ -21914,15 +21914,16 @@ END SUBROUTINE FindNeighbourNodes
     INTEGER :: ierr, ParTmp(6), ParSizes(6)
     INTEGER, ALLOCATABLE :: FacePerm(:), BulkPerm(:)
     LOGICAL :: Parallel
+    CHARACTER(*), PARAMETER :: Caller = 'SplitMeshEqual'
 !------------------------------------------------------------------------------
     IF ( .NOT. ASSOCIATED( Mesh ) ) RETURN
 
-    CALL Info( 'SplitMeshEqual', 'Mesh splitting works for first order elements 303, 404, 504, (706) and 808.', Level = 6 )
+    CALL Info( Caller, 'Mesh splitting works for first order elements 303, 404, 504, (706) and 808.', Level = 6 )
 
     DO i=1,Mesh % NumberOfBulkElements
       SELECT CASE(Mesh % Elements(i) % TYPE % ElementCode/100)
       CASE(6)
-        CALL Fatal('SplitMeshEqual','Pyramids not supported, sorry.')
+        CALL Fatal(Caller,'Pyramids not supported, sorry.')
       END SELECT
     END DO
 
@@ -21935,19 +21936,19 @@ END SUBROUTINE FindNeighbourNodes
     EdgesPresent = ASSOCIATED(Mesh % Edges)
     IF(.NOT.EdgesPresent) CALL FindMeshEdges( Mesh )
 
-    CALL ResetTimer('SplitMeshEqual')
+    CALL ResetTimer(Caller)
 
-    CALL Info( 'SplitMeshEqual', '******** Old mesh ********', Level = 6 )
+    CALL Info( Caller, '******** Old mesh ********', Level = 6 )
     WRITE( Message, * ) 'Nodes             : ',Mesh % NumberOfNodes
-    CALL info( 'SplitMeshEqual', Message, Level=6 )
+    CALL info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Bulk elements     : ',Mesh % NumberOfBulkElements
-    CALL info( 'SplitMeshEqual', Message, Level=6 )
+    CALL info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Boundary elements : ',Mesh % NumberOfBoundaryElements
-    CALL info( 'SplitMeshEqual', Message, Level=6 )
+    CALL info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Edges             : ',Mesh % NumberOfEdges
-    CALL info( 'SplitMeshEqual', Message, Level=6 )
+    CALL info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Faces             : ',Mesh % NumberOfFaces
-    CALL info( 'SplitMeshEqual', Message, Level=6 )
+    CALL info( Caller, Message, Level=6 )
 !
 !   Update nodal coordinates:
 !   -------------------------
@@ -21965,7 +21966,7 @@ END SUBROUTINE FindNeighbourNodes
          FacePerm(i) = NodeCnt
        END IF
     END DO    
-    IF(FaceCnt>0) CALL Info( 'SplitMeshEqual','Added '//I2S(FaceCnt)//' nodes in the center of faces',Level=10)
+    IF(FaceCnt>0) CALL Info( Caller,'Added '//I2S(FaceCnt)//' nodes in the center of faces',Level=10)
 
 !
 !   For quads and bricks, count centerpoints:
@@ -21979,7 +21980,7 @@ END SUBROUTINE FindNeighbourNodes
           NodeIt = NodeIt + 1
        END SELECT
     END DO    
-    IF(NodeIt>0) CALL Info( 'SplitMeshEqual','Added '//I2S(NodeIt)//' nodes in the center of bulks',Level=10)
+    IF(NodeIt>0) CALL Info( Caller,'Added '//I2S(NodeIt)//' nodes in the center of bulks',Level=10)
 
 !
 !   new mesh nodecoordinate arrays:
@@ -22032,7 +22033,7 @@ END SUBROUTINE FindNeighbourNodes
          z(j) = SUM(w(Edge % NodeIndexes))/k
        END IF
     END DO    
-    CALL Info('SplitMeshEqual','Added edge centers to the nodes list.', Level=15 )  
+    CALL Info(Caller,'Added edge centers to the nodes list.', Level=15 )  
 
 !   add quad face centers for bricks and prisms(wedges):
 !   ----------------------------
@@ -22061,7 +22062,7 @@ END SUBROUTINE FindNeighbourNodes
           END IF
        END IF
     END DO    
-    CALL Info('SplitMeshEqual','Added face centers to the nodes list.', Level=15 )
+    CALL Info(Caller,'Added face centers to the nodes list.', Level=15 )
 
 !   add centerpoint for quads & bricks:
 !   -----------------------------------
@@ -22113,7 +22114,7 @@ END SUBROUTINE FindNeighbourNodes
           END IF
        END SELECT
     END DO
-    CALL Info('SplitMeshEqual','Added quad and brick centers to the nodes list.', Level=15 )
+    CALL Info(Caller,'Added quad and brick centers to the nodes list.', Level=15 )
 
     
 !   Update new mesh node count:
@@ -22161,13 +22162,13 @@ END SUBROUTINE FindNeighbourNodes
     END DO
 
     WRITE( Message, * ) 'Count of new elements : ', NewElCnt
-    CALL Info( 'SplitMeshEqual', Message, Level=10 )
+    CALL Info( Caller, Message, Level=10 )
 
     CALL AllocateVector( NewMesh % Elements, NewElCnt )
-    CALL Info('SplitMeshEqual','New mesh allocated.', Level=10 )
+    CALL Info(Caller,'New mesh allocated.', Level=10 )
 
     CALL AllocateArray( Child, Mesh % NumberOfBulkElements, 8 )
-    CALL Info('SplitMeshEqual','Array for bulk elements allocated.', Level=10 )
+    CALL Info(Caller,'Array for bulk elements allocated.', Level=10 )
     
     NewElCnt = 0
     NodeCnt = Mesh % NumberOfNodes
@@ -22888,7 +22889,7 @@ END SUBROUTINE FindNeighbourNodes
        CASE DEFAULT
           WRITE( Message,* ) 'Element type ', Eold % TYPE % ElementCode, &
               ' not supported by the multigrid solver.'
-          CALL Fatal( 'SplitMeshEqual', Message )
+          CALL Fatal( Caller, Message )
        END SELECT
     END DO
 
@@ -22959,7 +22960,7 @@ END SUBROUTINE FindNeighbourNodes
             IF(Found) EXIT
           END DO
           IF(.NOT. Found) THEN
-            CALL Fatal('SplitMeshEqual','Could not find parent edge with nodes: '//&
+            CALL Fatal(Caller,'Could not find parent edge with nodes: '//&
                 I2S(Eold % NodeIndexes(1))//' '//I2S(Eold % NodeIndexes(2)))
           END IF
 
@@ -23126,7 +23127,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         2nd new element
@@ -23156,7 +23157,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         3rd new element
@@ -23186,7 +23187,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         4th new element
@@ -23216,7 +23217,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 
        CASE(4)
@@ -23329,7 +23330,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 )  CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 )  CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         2nd new element
@@ -23360,7 +23361,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         3rd new element
@@ -23391,7 +23392,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
 !
 !         4th new element
@@ -23422,7 +23423,7 @@ END SUBROUTINE FindNeighbourNodes
              END DO
              IF ( n3 > 2 ) EXIT
           END DO
-          IF( n3 < 3 ) CALL Error( 'SplitMeshEqual', 'Parent element not found' )
+          IF( n3 < 3 ) CALL Error( Caller, 'Parent element not found' )
           Enew % BoundaryInfo % Left => Eptr
        END SELECT
     END DO
@@ -23473,13 +23474,13 @@ END SUBROUTINE FindNeighbourNodes
       Enew % BubbleIndexes => NULL()
     END DO
 
-    CALL Info( 'SplitMeshEqual', '******** New mesh ********', Level=6 )
+    CALL Info( Caller, '******** New mesh ********', Level=6 )
     WRITE( Message, * ) 'Nodes             : ',NewMesh % NumberOfNodes
-    CALL Info( 'SplitMeshEqual', Message, Level=6 )
+    CALL Info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Bulk elements     : ',NewMesh % NumberOfBulkElements
-    CALL Info( 'SplitMeshEqual', Message, Level=6 )
+    CALL Info( Caller, Message, Level=6 )
     WRITE( Message, * ) 'Boundary elements : ',NewMesh % NumberOfBoundaryElements
-    CALL Info( 'SplitMeshEqual', Message, Level=6 )
+    CALL Info( Caller, Message, Level=6 )
 
 
     ! Information of the new system size, also in parallel
@@ -23494,23 +23495,23 @@ END SUBROUTINE FindNeighbourNodes
     IF( .FALSE. .AND. Parallel ) THEN
       CALL MPI_ALLREDUCE(ParTmp,ParSizes,6,MPI_INTEGER,MPI_SUM,ELMER_COMM_WORLD,ierr)
 
-      CALL Info('SplitMeshEqual','Information on parallel mesh sizes')
+      CALL Info(Caller,'Information on parallel mesh sizes')
       WRITE ( Message,'(A,I0,A)') 'Initial mesh has ',ParSizes(1),' nodes'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
       WRITE ( Message,'(A,I0,A)') 'Initial mesh has ',ParSizes(2),' bulk elements'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
       WRITE ( Message,'(A,I0,A)') 'Initial mesh has ',ParSizes(3),' boundary elements'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
       WRITE ( Message,'(A,I0,A)') 'New mesh has ',ParSizes(4),' nodes'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
       WRITE ( Message,'(A,I0,A)') 'New mesh has ',ParSizes(5),' bulk elements'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
       WRITE ( Message,'(A,I0,A)') 'New mesh has ',ParSizes(6),' boundary elements'
-      CALL Info('SplitMeshEqual',Message)
+      CALL Info(Caller,Message)
     END IF
 
 
-    CALL CheckTimer('SplitMeshEqual',Delete=.TRUE.)
+    CALL CheckTimer(Caller,Delete=.TRUE.)
 
 !
 !   Update structures needed for parallel execution:
@@ -23524,11 +23525,11 @@ END SUBROUTINE FindNeighbourNodes
 !   ---------
     DEALLOCATE( Child )
     IF(.NOT.EdgesPresent) THEN
-      CALL Info('SplitMeshEqual','Releasing edges from the old mesh as they are not needed!',Level=20)
+      CALL Info(Caller,'Releasing edges from the old mesh as they are not needed!',Level=20)
       CALL ReleaseMeshEdgeTables( Mesh )
       CALL ReleaseMeshFaceTables( Mesh )
     ELSE
-      CALL Info('SplitMeshEqual','Generating edges in the new mesh as thet were present in the old!',Level=20)
+      CALL Info(Caller,'Generating edges in the new mesh as thet were present in the old!',Level=20)
       CALL FindMeshEdges( NewMesh )
     END IF
 
@@ -25052,7 +25053,7 @@ CONTAINS
 
     ! If edges have not been created, stop search. This should not happen, actually.
     IF (.NOT. ASSOCIATED(Element % EdgeIndexes)) THEN
-      CALL Warn('MeshUtils::AssignLocalNumber','Edde indexes not associated!')
+      CALL Warn('AssignLocalNumber','Edge indexes for element not associated!')
       RETURN
     END IF
         
