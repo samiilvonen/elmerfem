@@ -14803,7 +14803,7 @@ END FUNCTION SearchNodeL
     
     Method = ListGetString(Params,'Linear System Solver',GotIt)
     IF(.NOT. GotIt) THEN
-      CALL Fatal(Caller,'Give "Linear System Solver", e.g. "linear" or "direct"')
+      CALL Fatal(Caller,'Give "Linear System Solver", e.g. "iterative" or "direct"')
     END IF
     
     IF (Method=='multigrid' .OR. Method=='iterative' ) THEN
