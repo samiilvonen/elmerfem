@@ -637,6 +637,11 @@ CONTAINS
     m = SIZE( Solver % Variable % Values ) 
    
     DO i=1,NoVar
+      IF(BlockMatrix % SubVector(i) % AddVector ) THEN
+        CALL Info('BlockBackCopyVar','Skipping AddVector '//I2S(i)//' that is not associcated to the original vector!',Level=20)
+        CYCLE
+      END IF
+      
       Amat => BlockMatrix % Submatrix(i,i) % Mat 
       n = Amat % NumberOfRows
       Var => BlockMatrix % SubVector(i) % Var 
@@ -1212,7 +1217,7 @@ CONTAINS
       n = C % NumberOfRows - A % NumberOfRows 
       offset(i+1) = offset(i) + n
 
-      CALL Info('BlockPickMatrixPerm','Number of new rows from AddMatix: '//I2S(n),Level=20)
+      CALL Info('BlockPickMatrixPerm','Number of new rows from AddMatrix: '//I2S(n),Level=20)
 
       TotMatrix % Subvector(i) % AddVector = .TRUE.
       
@@ -1263,7 +1268,7 @@ CONTAINS
           END IF
           
           B => TotMatrix % SubMatrix(brow,bcol) % Mat       
-          CALL AddToMatrixElement(B,bi,bk,A % Values(j))
+          CALL AddToMatrixElement(B,bi,bk,C % Values(j))
         END DO
       END DO    
     END IF

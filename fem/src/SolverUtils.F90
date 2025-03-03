@@ -14819,6 +14819,16 @@ END FUNCTION SearchNodeL
           CALL VankaCreate(A,Solver)
         ELSE IF ( Prec=='circuit' ) THEN
           CALL CircuitPrecCreate(A,Solver)
+#if 0 
+          IF( ListGetLogical(Params,'Linear System Save', GotIt) ) THEN
+            IF( ASSOCIATED( A % CircuitMatrix ) ) THEN
+              CALL SaveLinearSystem(Solver, Ain = A % CircuitMatrix, LinSysName = "circuit")
+            END IF
+            IF( ASSOCIATED( Solver % Matrix % AddMatrix ) ) THEN
+              CALL SaveLinearSystem(Solver, Ain = Solver % Matrix % AddMatrix, LinSysName = "addmatrix")
+            END IF
+          END IF
+#endif
         END IF
         CALL CheckTimer("Prec0-"//TRIM(Prec),Level=8,Delete=.TRUE.)                  
       END IF
@@ -20389,13 +20399,15 @@ CONTAINS
     CALL PrintMatrix(A,Parallel,Cnumbering,SaveMass=SaveMass,SaveDamp=SaveDamp,SkipZeros=SkipZeros)
     CLOSE(1)
 
-    dumpfile = TRIM(dumpprefix)//'_b.dat'
-    IF(Parallel) dumpfile = TRIM(dumpfile)//'.'//I2S(ParEnv % myPE)
-    CALL Info(Caller,'Saving matrix rhs to: '//TRIM(dumpfile),Level=5)
-    OPEN(1,FILE=dumpfile, STATUS='Unknown')
-    CALL PrintRHS(A, Parallel, CNumbering)
-    CLOSE(1)
-    
+    IF( ASSOCIATED(A % rhs) ) THEN
+      dumpfile = TRIM(dumpprefix)//'_b.dat'
+      IF(Parallel) dumpfile = TRIM(dumpfile)//'.'//I2S(ParEnv % myPE)
+      CALL Info(Caller,'Saving matrix rhs to: '//TRIM(dumpfile),Level=5)
+      OPEN(1,FILE=dumpfile, STATUS='Unknown')
+      CALL PrintRHS(A, Parallel, CNumbering)
+      CLOSE(1)
+    END IF
+      
     SavePerm = ListGetLogical( Params,'Linear System Save Perm',Found)
     IF( SavePerm ) THEN
       Perm => Solver % Variable % Perm
