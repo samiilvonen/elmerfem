@@ -1103,7 +1103,7 @@ CONTAINS
     INTEGER :: bcol,brow,bi,bk,i,k,j,n,m,istat,NoBlock,dofs
     TYPE(Matrix_t), POINTER :: A, B, C
     INTEGER, ALLOCATABLE :: BlockNumbering(:), rowcount(:), offset(:)
-    LOGICAL :: SplitComplex, CreatePermPar, Found
+    LOGICAL :: SplitComplex, CreatePermPar, GotDiag, Found
     REAL(KIND=dp) :: Coeff, Coeff0
     
     CALL Info('BlockPickMatrixPerm','Picking indexed block matrix from monolithic one',Level=10)
@@ -1111,9 +1111,14 @@ CONTAINS
     A => Solver % Matrix 
     
     n = A % NumberOfRows
-    NoBlock = NoVar
-    IF(DoAddMatrix) NoBlock = NoVar + 1
-    
+    IF(DoAddMatrix) THEN
+      NoBlock = NoVar + 1
+      n = Solver % Matrix % AddMatrix % NumberOfRows
+    ELSE
+      NoBlock = NoVar
+      n = Solver % Matrix % NumberOfRows      
+    END IF
+            
     ALLOCATE( BlockNumbering( n ), rowcount(NoVar), offset(NoBlock+1), STAT=istat )
     IF(istat /= 0) THEN
       CALL Fatal('BlockPickMatrixPerm','Allocation error for BlockNumbering etc.')
@@ -1123,10 +1128,11 @@ CONTAINS
     offset = 0
 
     IF(.NOT. ASSOCIATED(TotMatrix % BlockPerm) ) THEN
-      ALLOCATE(TotMatrix % BlockPerm(n))
+      ALLOCATE(TotMatrix % BlockPerm(n))   
     END IF
     TotMatrix % BlockPerm = 0 
     
+    n = Solver % Matrix % NumberOfRows      
     DO i=1,n
       brow = BlockIndex(i)
       rowcount(brow) = rowcount(brow) + 1
@@ -1239,11 +1245,14 @@ CONTAINS
       
       DO i=1,C % NumberOfRows 
         IF(i <= A % NumberOfRows ) THEN
+          IF( A % ConstrainedDOF(i) ) CYCLE
           brow = BlockIndex(i)
           bi = BlockNumbering(i)
+          GotDiag = .TRUE.
         ELSE
           brow = NoBlock
           bi = i-A % NumberOfRows
+          GotDiag = .FALSE.
         END IF
                    
         B => TotMatrix % SubMatrix(brow,brow) % Mat
@@ -1251,26 +1260,41 @@ CONTAINS
 
         !      IF( CreatePermPar )        
         IF(i> A % NumberOfRows ) THEN
-          B % InvPerm(bi) = i
+          B % InvPerm(bi) = i            
           TotMatrix % BlockPerm(offset(brow)+bi) = i
         END IF
-        
-        DO j=C % Rows(i+1)-1,C % Rows(i),-1
-          
-          k = C % Cols(j)
 
+        
+        DO j=C % Rows(i+1)-1,C % Rows(i),-1          
+          k = C % Cols(j)
           IF(k <= A % NumberOfRows ) THEN
             bcol = BlockIndex(k)
-            bk = BlockNumbering(k)
+            bk = BlockNumbering(k)            
           ELSE
             bcol = NoBlock
-            bk = k-A % NumberOfRows
+            bk = k-A % NumberOfRows            
+            IF(brow == bcol .AND.  bi == bk) GotDiag = .TRUE.
           END IF
           
           B => TotMatrix % SubMatrix(brow,bcol) % Mat       
-          CALL AddToMatrixElement(B,bi,bk,C % Values(j))
+          CALL AddToMatrixElement(B,bi,bk,C % Values(j))          
         END DO
-      END DO    
+
+        ! The matrix should have diagonal entries.
+        ! If they are complex, they should be symmetric.
+        IF(.NOT. GotDiag ) THEN
+          B => TotMatrix % SubMatrix(brow,brow) % Mat       
+          CALL AddToMatrixElement( B,bi,bi,0._dp )
+          IF( A % COMPLEX ) THEN
+            IF(MOD(bi,2)==0) THEN
+              CALL AddToMatrixElement( B,bi,bi-1,0._dp )
+            ELSE
+              CALL AddToMatrixElement( B,bi,bi+1,0._dp )
+            END IF
+          END IF
+        END IF
+                 
+      END DO
     END IF
     
     DO i = 1, NoBlock
@@ -3861,7 +3885,7 @@ CONTAINS
               xtmp(offset(i)+1:offset(i+1)) = x(offset(i)+1:offset(i+1))
 
               BlockPerm => TotMatrix % ParBlockPerm
-
+              
               xtmp(BlockPerm(1:n)) = xtmp(1:n)              
               CALL ParallelMatrixVector(SolverMatrix,xtmp,rtmp)
               rtmp(1:n) = rtmp(BlockPerm(1:n))
@@ -4610,7 +4634,12 @@ CONTAINS
         CollX(m+1:m+n) = Var % Values(1:n) 
       END DO
     END IF
-      
+
+    
+    !IF( ListGetLogical( Solver % Values,'outer: Linear System Save',Found ) ) THEN        
+    !  CALL SaveLinearSystem( Solver, CollMat,'CollMat')
+    !END IF
+        
     ! Solve monolithic matrix equation. 
     CALL SolveLinearSystem( CollMat, CollMat % rhs, CollX, TotNorm, 1, Solver )
 
@@ -4660,7 +4689,7 @@ CONTAINS
     
   END SUBROUTINE BlockMonolithicSolve
 
-
+ 
 !------------------------------------------------------------------------------
 !> An alternative handle for the block solvers to be used by the legacy matrix
 !> type. 
