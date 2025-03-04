@@ -1111,8 +1111,10 @@ CONTAINS
     A => Solver % Matrix 
     
     n = A % NumberOfRows
+    NoBlock = NoVar
+    IF(DoAddMatrix) NoBlock = NoVar + 1
     
-    ALLOCATE( BlockNumbering( n ), rowcount(NoVar), offset(NoVar+1), STAT=istat )
+    ALLOCATE( BlockNumbering( n ), rowcount(NoVar), offset(NoBlock+1), STAT=istat )
     IF(istat /= 0) THEN
       CALL Fatal('BlockPickMatrixPerm','Allocation error for BlockNumbering etc.')
     END IF
@@ -1206,11 +1208,9 @@ CONTAINS
       END DO
     END DO
 
-    NoBlock = NoVar
     IF( DoAddMatrix ) THEN
       CALL Info('BlockPickMatrixPerm','Creating additional submatrices from AddMatrix block system!',Level=10)
       C => Solver % Matrix % AddMatrix 
-      NoBlock = NoVar+1 
       
       i = NoBlock
       B => TotMatrix % SubMatrix(i,i) % Mat
