@@ -6442,14 +6442,13 @@ CONTAINS
         END IF
 
         DO j=1,n
+          ! This can (for example) happen with "Target Node" - keyword used in parallel...
+          IF(NodeIndexes(j)>SIZE(Perm) .OR. NodeIndexes(j)<=0) CYCLE
+
           k = Perm(NodeIndexes(j))
           IF( k == 0 ) CYCLE
 
           IF ( Conditional .AND. Condition(j) < 0.0d0 ) CYCLE
-          IF ( NodeIndexes(j) > SIZE(Perm) .OR. NodeIndexes(j) < 1 ) THEN
-            CALL Warn(Caller,'Invalid Node Number')
-            CYCLE
-          END IF
 
           IF ( DOF>0 ) THEN
             CALL SetSinglePoint(k,DOF,Work(j),.FALSE.)
