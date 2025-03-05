@@ -3141,6 +3141,11 @@ CONTAINS
       IF(.NOT. ASSOCIATED(TotMatrix % Subvector )) THEN
         CALL Fatal(Caller,'Subvector not associated!')
       END IF
+      IF( ASSOCIATED(TotMatrix % Subvector(k) % Var) ) THEN
+        ! We might have a constraint and then the block diagonal matrix may not exist. 
+        n = MAX(n, SIZE(TotMatrix % SubVector(k) % Var % Values) )
+      END IF
+            
       IF( .NOT. ALLOCATED( Totmatrix % SubVector(k) % DiagScaling ) ) THEN
         m = m + 1
         ALLOCATE( TotMatrix % SubVector(k) % DiagScaling(n), STAT=istat )
@@ -3154,13 +3159,14 @@ CONTAINS
     END IF
     
 
+    GotIt = .FALSE.
     blocknrm = 0.0_dp
     DO k=1,NoVar
-      GotIt = .FALSE.
       A => TotMatrix % SubMatrix(k,k) % Mat
       IF( ASSOCIATED( A ) ) THEN
         IF( A % NumberOfRows > 0 ) THEN
           GotIt = .TRUE.
+          ! We assume that if complex flag is not found for k>1 it is inherited from previous ones. 
           ComplexMatrix = A % COMPLEX
         END IF
       END IF
@@ -3174,7 +3180,6 @@ CONTAINS
         CALL Info(Caller,'Assuming real valued matrix block: '//I2S(k),Level=20)
       END IF     
       
-      n = A % NumberOfRows 
       Diag => TotMatrix % SubVector(k) % DiagScaling
       Diag = 0.0_dp
 
@@ -3223,13 +3228,15 @@ CONTAINS
         END DO
       END DO
 
-      A => TotMatrix % SubMatrix(k,k) % Mat      
       IF (ParEnv % PEs > 1) THEN
         A => TotMatrix % SubMatrix(k,k) % Mat      
-        CALL ParallelSumVector(A, Diag)
+        IF( A % NumberOfRows > 0 ) THEN
+          ! We need the parallel info that is only available in the matrix. 
+          CALL ParallelSumVector(A, Diag)
+        END IF
       END IF
       
-      n = A % NumberOfRows 
+      n = SIZE(Diag)
       nrm = MAXVAL(Diag(1:n))
       IF( ParEnv % PEs > 1 ) THEN
         nrm = ParallelReduction(nrm,2)
