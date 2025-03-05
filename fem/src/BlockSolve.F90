@@ -3238,7 +3238,7 @@ CONTAINS
       
       ! Define the actual scaling vector (for real component)
       DO i=1,n,m
-        IF (Diag(i) > TINY( nrm ) ) THEN
+        IF (Diag(i) > EPSILON( nrm ) ) THEN
           Diag(i) = 1.0_dp / Diag(i)
         ELSE
           Diag(i) = 1.0_dp
@@ -4147,6 +4147,7 @@ CONTAINS
     INTEGER, POINTER :: Offset(:),poffset(:),BlockStruct(:),ParPerm(:)
     INTEGER :: i,j,k,l,ia,ib,istat
     LOGICAL :: LS, BlockAV,Found, UseMono
+    CHARACTER(:), ALLOCATABLE :: VarName
     CHARACTER(*), PARAMETER :: Caller = 'BlockKrylovIter'
  
     
@@ -4351,15 +4352,25 @@ CONTAINS
     END DO
       
     ! Copy values back since for nontrivial block-matrix structure the
-    ! components do not build the whole solution.
+    ! components do not build the whole solution. If we have AddVector
+    ! then the last block will not be included. 
     !-----------------------------------------------------------------
     IF( TotMatrix % GotBlockStruct ) THEN
       SVar => CurrentModel % Solver % Variable
-      Svar % Values(TotMatrix % BlockPerm) = x
+      i = SIZE(SVar % Values)
+      Svar % Values(TotMatrix % BlockPerm(1:i)) = x(1:i)      
     ELSE IF (BlockAV ) THEN
-      SolverVar % Values = x
+      i = SIZE(SolverVar % Values)
+      SolverVar % Values = x(1:i)
     END IF
 
+    j = SIZE(x)
+    IF(j>i) THEN
+      VarName = LagrangeMultiplierName( Solver )
+      SVar => VariableGet( Solver % Mesh % Variables, VarName )
+      IF(ASSOCIATED(SVar)) SVar % Values = x(i+1:j)
+    END IF
+    
     CALL Info(Caller,'Finished block krylov iteration',Level=20)
    
   END SUBROUTINE blockKrylovIter
