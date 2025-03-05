@@ -588,6 +588,9 @@ CONTAINS
       END IF
       BlockMatrix % SubVector(i) % Var => Var
 
+      ! We cannot initialize addvector as the dofs are not part of the original monolithic system!
+      IF(AddVector) CYCLE
+      
       IF(PRESENT(BlockIndex)) THEN
         B => BlockMatrix % SubMatrix(i,i) % Mat
 
@@ -3192,7 +3195,8 @@ CONTAINS
         END IF
         
         IF(.NOT. ASSOCIATED( A  ) ) CYCLE
-        IF( A % NumberOfRows ==  0 ) CYCLE
+        n = A % NumberOfRows 
+        IF( n ==  0 ) CYCLE
 
         Rows   => A % Rows
         Cols   => A % Cols
@@ -3219,11 +3223,13 @@ CONTAINS
         END DO
       END DO
 
+      A => TotMatrix % SubMatrix(k,k) % Mat      
       IF (ParEnv % PEs > 1) THEN
         A => TotMatrix % SubMatrix(k,k) % Mat      
         CALL ParallelSumVector(A, Diag)
       END IF
       
+      n = A % NumberOfRows 
       nrm = MAXVAL(Diag(1:n))
       IF( ParEnv % PEs > 1 ) THEN
         nrm = ParallelReduction(nrm,2)
@@ -3418,9 +3424,7 @@ CONTAINS
       Diag => TotMatrix % SubVector(k) % DiagScaling
       IF( .NOT. ASSOCIATED( Diag ) ) THEN
         CALL Fatal(Caller,'Diag for scaling not associated!')
-      END IF
-      n = SIZE(Diag) 
-      
+      END IF      
       IF( BackScale ) Diag = 1.0_dp / Diag 
             
       DO l=1,NoVar        
@@ -3435,7 +3439,8 @@ CONTAINS
         END IF
         
         A => TotMatrix % SubMatrix(k,l) % Mat
-        IF( A % NumberOfRows == 0 ) CYCLE
+        n = A % NumberOfRows
+        IF( n == 0 ) CYCLE
                           
         Rows   => A % Rows
         Cols   => A % Cols
@@ -3466,6 +3471,7 @@ CONTAINS
       END IF
       
       IF( ASSOCIATED( b ) ) THEN
+        n = SIZE(Diag)
         b(1:n) = Diag(1:n) * b(1:n)
       END IF
       
