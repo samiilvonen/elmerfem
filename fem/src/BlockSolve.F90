@@ -3408,11 +3408,16 @@ CONTAINS
     ELSE
       BackScale = .FALSE.
     END IF
-    IF (BackScale) THEN
-      CALL Info(Caller,'Performing block matrix reverse row equilibration',Level=10)
+    IF( BackScale ) THEN
+      Message = 'Performing block matrix reverse row equilibration'
     ELSE
-      CALL Info(Caller,'Performing block matrix row equilibration',Level=10)
+      Message = 'Performing block matrix row equilibration'
     END IF
+    IF(PRESENT(blockrow)) THEN
+      Message = TRIM(Message)//' for block '//I2S(blockrow)
+    END IF          
+    CALL Info(Caller,Message,Level=12)
+
 
     NoVar = TotMatrix % NoVar   
     DO k=1,NoVar
@@ -3479,9 +3484,9 @@ CONTAINS
     END DO
 
     IF( BackScale ) THEN
-      CALL Info(Caller,'Finished block matrix reverse row equilibration',Level=10)           
+      CALL Info(Caller,'Finished block matrix reverse row equilibration',Level=25)           
     ELSE
-      CALL Info(Caller,'Finished block matrix row equilibration',Level=10)           
+      CALL Info(Caller,'Finished block matrix row equilibration',Level=25)           
     END IF
       
   END SUBROUTINE BlockMatrixScaling
