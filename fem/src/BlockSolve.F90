@@ -3152,6 +3152,7 @@ CONTAINS
         IF( istat /= 0 ) THEN
           CALL Fatal(Caller,'Cannot allocate scaling vectors '//I2S(k)//' of size: '//I2S(n))
         END IF
+        CALL Info(Caller,'Allocated scaling vector of size '//I2S(n)//' to block '//I2S(k),Level=20)
       END IF
     END DO
     IF( m > 0 ) THEN
@@ -3161,25 +3162,25 @@ CONTAINS
 
     GotIt = .FALSE.
     blocknrm = 0.0_dp
+    ComplexMatrix = .FALSE.
     DO k=1,NoVar
       A => TotMatrix % SubMatrix(k,k) % Mat
       IF( ASSOCIATED( A ) ) THEN
-        IF( A % NumberOfRows > 0 ) THEN
+        IF( A % NumberOfRows > 0 .AND. .NOT. GotIt) THEN
           GotIt = .TRUE.
           ! We assume that if complex flag is not found for k>1 it is inherited from previous ones. 
           ComplexMatrix = A % COMPLEX
+          IF( ComplexMatrix ) THEN
+            m = 2
+            CALL Info(Caller,'Assuming complex block matrix in scaling!',Level=20)
+          ELSE
+            m = 1
+            CALL Info(Caller,'Assuming real valued block matrix in scaling!',Level=20)
+          END IF     
         END IF
       END IF
       IF(.NOT. GotIt) CALL Warn(Caller,'Improve complex matrix detection!')
         
-      IF( ComplexMatrix ) THEN
-        m = 2
-        CALL Info(Caller,'Assuming complex matrix block: '//I2S(k),Level=20)
-      ELSE
-        m = 1
-        CALL Info(Caller,'Assuming real valued matrix block: '//I2S(k),Level=20)
-      END IF     
-      
       Diag => TotMatrix % SubVector(k) % DiagScaling
       Diag = 0.0_dp
 
@@ -3188,18 +3189,21 @@ CONTAINS
         IF( DiagOnly ) THEN
           IF( k /= l ) CYCLE
         END IF
-        
+
         Found = .FALSE.
         IF(k==l .AND. PrecScale ) THEN
           A => TotMatrix % Submatrix(k,k) % PrecMat
           Found = ( A % NumberOfRows > 0 )
+          IF(Found) THEN
+            CALL Info(Caller,'Using PrecMat to define the scaling of block row '//I2S(k),Level=20)        
+          END IF
         END IF
 
         IF(.NOT.Found) THEN
           A => TotMatrix % Submatrix(k,l) % Mat          
         END IF
-        
         IF(.NOT. ASSOCIATED( A  ) ) CYCLE
+
         n = A % NumberOfRows 
         IF( n ==  0 ) CYCLE
 
@@ -3394,7 +3398,7 @@ CONTAINS
 !> block preconditioning we may revert to the original symmetric matrix but
 !> still use the optimal row equilibration scaling for the block system. 
 !------------------------------------------------------------------------------
-  SUBROUTINE BlockMatrixScaling( reverse, blockrow, blockcol, bext, SkipMatrixScale  )
+  SUBROUTINE DoBlockMatrixScaling( reverse, blockrow, blockcol, bext, SkipMatrixScale  )
 !------------------------------------------------------------------------------
     IMPLICIT NONE
     LOGICAL, OPTIONAL :: reverse
@@ -3408,8 +3412,8 @@ CONTAINS
     REAL(KIND=dp), POINTER :: b(:), Diag(:), Values(:)
     INTEGER, POINTER :: Rows(:), Cols(:)
     LOGICAL :: backscale
-    CHARACTER(*), PARAMETER :: Caller = 'BlockMatrixScaling'
-                  
+    CHARACTER(*), PARAMETER :: Caller = 'DoBlockMatrixScaling'
+
     IF( PRESENT( Reverse ) ) THEN
       BackScale = Reverse
     ELSE
@@ -3422,10 +3426,9 @@ CONTAINS
     END IF
     IF(PRESENT(blockrow)) THEN
       Message = TRIM(Message)//' for block '//I2S(blockrow)
-    END IF          
+    END IF
     CALL Info(Caller,Message,Level=12)
-
-
+    
     NoVar = TotMatrix % NoVar   
     DO k=1,NoVar
       
@@ -3436,20 +3439,24 @@ CONTAINS
       Diag => TotMatrix % SubVector(k) % DiagScaling
       IF( .NOT. ASSOCIATED( Diag ) ) THEN
         CALL Fatal(Caller,'Diag for scaling not associated!')
-      END IF      
+      END IF
+
       IF( BackScale ) Diag = 1.0_dp / Diag 
             
       DO l=1,NoVar        
 
-        ! If we use unscaled special preconditioning matrix we don't need to scale it
-        IF( PRESENT( SkipMatrixScale ) ) THEN
-          IF( SkipMatrixScale ) CYCLE
-        END IF
-        
         IF( PRESENT( blockcol ) ) THEN
           IF( blockcol /= l ) CYCLE
         END IF
         
+        ! If we use unscaled special preconditioning matrix we don't need to scale it
+        IF( PRESENT( SkipMatrixScale ) ) THEN
+          IF( SkipMatrixScale ) THEN
+            CALL Info(Caller,'Skipping preconditioning matrix for block '//I2S(l),Level=20)
+            CYCLE
+          END IF
+        END IF
+          
         A => TotMatrix % SubMatrix(k,l) % Mat
         n = A % NumberOfRows
         IF( n == 0 ) CYCLE
@@ -3462,8 +3469,8 @@ CONTAINS
           DO j=Rows(i),Rows(i+1)-1
             Values(j) = Values(j) * Diag(i)
           END DO
-        END DO
-
+        END DO               
+        
 #if 0
         ! This does not seem to be necessary but actually harmfull.
         A => TotMatrix % SubMatrix(k,l) % PrecMat
@@ -3475,18 +3482,18 @@ CONTAINS
         END DO
 #endif
       END DO
-        
+      
       IF( PRESENT( bext ) ) THEN
         b => bext
       ELSE        
         b => TotMatrix % Submatrix(k,k) % Mat % Rhs
       END IF
-      
+
       IF( ASSOCIATED( b ) ) THEN
         n = SIZE(Diag)
         b(1:n) = Diag(1:n) * b(1:n)
       END IF
-      
+              
       IF( BackScale ) Diag = 1.0_dp / Diag       
     END DO
 
@@ -3496,7 +3503,7 @@ CONTAINS
       CALL Info(Caller,'Finished block matrix row equilibration',Level=25)           
     END IF
       
-  END SUBROUTINE BlockMatrixScaling
+  END SUBROUTINE DoBlockMatrixScaling
 !------------------------------------------------------------------------------
 
 
@@ -3708,7 +3715,7 @@ CONTAINS
         END DO
       END IF
              
-      IF( BlockScaling ) CALL BlockMatrixScaling(.TRUE.,i,i,b,UsePrecMat)
+      IF( BlockScaling ) CALL DoBlockMatrixScaling(.TRUE.,i,i,b,UsePrecMat)
 
       ! The special preconditioning matrices have not been scaled with the monolithic system.
       ! So we need to transfer the (x,b) of this block to the unscaled system before going
@@ -3841,7 +3848,7 @@ CONTAINS
         CALL Info('BlockMatrixPrec',Message)
       END IF
         
-      IF( BlockScaling ) CALL BlockMatrixScaling(.FALSE.,i,i,b,UsePrecMat)
+      IF( BlockScaling ) CALL DoBlockMatrixScaling(.FALSE.,i,i,b,UsePrecMat)
 
       IF (isParallel) THEN
         x(1:offset(i+1)-offset(i)) = x(ParPerm) 
@@ -4074,7 +4081,7 @@ CONTAINS
 
         CALL ListPushNamespace('block '//i2s(11*RowVar)//':')          
 
-        IF( BlockScaling ) CALL BlockMatrixScaling(.TRUE.,i,i,b)
+        IF( BlockScaling ) CALL DoBlockMatrixScaling(.TRUE.,i,i,b)
               
         !IF( ListGetLogical( Solver % Values,'Linear System Complex', Found ) ) A % Complex = .TRUE.
 
@@ -4084,7 +4091,7 @@ CONTAINS
         
         CALL SolveLinearSystem( A, b, dx, Var % Norm, Var % DOFs, Solver )
 
-        IF( BlockScaling ) CALL BlockMatrixScaling(.FALSE.,i,i,b)
+        IF( BlockScaling ) CALL DoBlockMatrixScaling(.FALSE.,i,i,b)
 
         CALL ListPopNamespace()
 
@@ -5019,14 +5026,14 @@ CONTAINS
 
     IF( BlockScaling ) THEN   
       CALL CreateBlockMatrixScaling()
-      CALL BlockMatrixScaling(.FALSE.)
+      CALL DoBlockMatrixScaling(.FALSE.)
     END IF
 
     CALL ListPushNamespace('outer:')
 
     IF (BlockScaling) THEN
       ! This simplifies writing a consistent sif file:
-      CALL ListAddLogical(Solver % Values, 'Linear System Row Equilibration', .TRUE.)      
+      !CALL ListAddLogical(Solver % Values, 'Linear System Row Equilibration', .TRUE.)      
     END IF
     
     ! The case with one block is mainly for testing and developing features
@@ -5037,6 +5044,11 @@ CONTAINS
       
       Solver % Variable => TotMatrix % SubVector(1) % Var
       Solver % Matrix => TotMatrix % Submatrix(1,1) % Mat
+
+      IF (BlockScaling) THEN
+        ! This simplifies writing a consistent sif file:
+        CALL ListAddLogical(Solver % Values, 'Linear System Row Equilibration', .TRUE.)      
+      END IF
       
       TotNorm = DefaultSolve()
       MaxChange = Solver % Variable % NonlinChange 
@@ -5057,7 +5069,7 @@ CONTAINS
     CALL ListPopNamespace('outer:')
 
     IF( BlockScaling ) THEN
-      CALL BlockMatrixScaling(.TRUE.)
+      CALL DoBlockMatrixScaling(.TRUE.)
       CALL DestroyBlockMatrixScaling()
     END IF
 
