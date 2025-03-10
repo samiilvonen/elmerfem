@@ -5076,7 +5076,6 @@ CONTAINS
      Parallel = Solver % Parallel 
      !------------------------------------------------------------------------------
 
-
      IF( Solver % Mesh % Changed .OR. Solver % NumberOfActiveElements <= 0 ) THEN
        Solver % NumberOFActiveElements = 0
        EquationName = ListGetString( Solver % Values, 'Equation', Found)
@@ -5143,9 +5142,15 @@ BLOCK
          END IF
        END IF
 
+       IF ( ASSOCIATED(Solver  % Matrix) ) THEN
+          IF ( ASSOCIATED(Solver  % Matrix % ParMatrix) ) THEN
+            ParEnv => Solver % Matrix % ParMatrix % ParEnv
+          END IF
+       END IF
+
        CALL ParallelActive( MeActive )
        n = COUNT(ParEnv % Active)
-       
+
        IF ( n>0 .AND. n<ParEnv % PEs ) THEN
          IF ( ASSOCIATED(Solver % Matrix) ) THEN
            IF ( Solver % Matrix % Comm /= ELMER_COMM_WORLD .AND. Solver % Matrix % Comm /= MPI_COMM_NULL ) &
@@ -5221,7 +5226,7 @@ BLOCK
 END BLOCK
      END IF
 
-       
+
      IF ( ASSOCIATED(Solver % Matrix) ) THEN
        IF ( Parallel .AND. MeActive ) THEN
          IF ( ASSOCIATED(Solver % Mesh % ParallelInfo % GInterface) ) THEN
@@ -5256,6 +5261,7 @@ END BLOCK
      ELSE IF (.NOT.SlaveNotParallel) THEN
        Parenv % ActiveComm = ELMER_COMM_WORLD
      END IF
+
 
      ! This is more featured version than the original one with just one flag.
      ! This way different solvers can detect when their mesh has been updated. 
