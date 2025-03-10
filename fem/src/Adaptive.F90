@@ -242,7 +242,7 @@ CONTAINS
 
       Var => VariableGet( RefMesh % Variables, 'Hvalue', ThisOnly=.TRUE. )      
       IF(.NOT. ASSOCIATED(Var) ) THEN
-        CALL Fatal(Caller,'Could not add variable Var?')
+        CALL Fatal(Caller,'Could not add variable Hvalue?')
       END IF
       Hvalue = 0.0d0
     END IF
@@ -284,7 +284,7 @@ CONTAINS
     END WHERE
     CALL ParallelAverageHvalue(  RefMesh, Hvalue )
     
-!   Add estimate of the convergence with respecto to h:
+!   Add estimate of the convergence with respect to h:
 !  ----------------------------------------------------
     Var => VariableGet( RefMesh % Variables, 'hConvergence', ThisOnly=.TRUE. )
 
@@ -531,8 +531,8 @@ CONTAINS
 
     IF ( .NOT.ASSOCIATED( NewMesh ) ) THEN
       CALL Info( Caller,'Current mesh seems fine. Nothing to do.', Level=6 )
-      RefMesh % OUtputActive = .TRUE.
-      RefMesh % Parent % OutputActive = .FALSE.
+      RefMesh % OutputActive = .TRUE.
+      IF (ASSOCIATED(Refmesh % Parent)) RefMesh % Parent % OutputActive = .FALSE.
       GOTO 10
     ELSE
       CALL SetMeshMaxDofs(NewMesh)
@@ -1353,7 +1353,7 @@ CONTAINS
         CALL Info(Caller ,Message, Level=10)
         END IF 
         
-        ! write the bacground mesh in .pos format
+        ! write the background mesh in .pos format
         CALL Info( Caller,'Saving background mesh density in gmsh .pos format' )
         OPEN( 11, STATUS='UNKNOWN',FILE='gmsh_bgmesh.pos' )
         WRITE( 11,* ) 'View "mesh size field" {'           
@@ -1459,7 +1459,7 @@ CONTAINS
     ! Read the new mesh. 
     NewMesh => LoadMesh2( Model, OutPutPath, Path, .FALSE., 1, 0 )
 
-    ! Loading Gebhart factors is more or less obsolite. 
+    ! Loading Gebhart factors is more or less obsolete. 
     IF ( Solver % Variable % Name == 'temperature' ) THEN
        Name = ListGetString( Model % Simulation, 'Gebhart Factors', Found )
        IF ( Found ) THEN
