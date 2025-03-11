@@ -5222,7 +5222,7 @@ BLOCK
        ! IF (.NOT. ASSOCIATED(Solver % Matrix) ) RETURN
        ! or some such .... )
 
-       IF(.NOT. MeActive .AND. ChangedActiveParts) RETURN
+       IF(.NOT. MeActive .AND. n>0) RETURN
 END BLOCK
      END IF
 
