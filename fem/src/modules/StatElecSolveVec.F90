@@ -177,7 +177,7 @@ SUBROUTINE StatElecSolver_init( Model,Solver,dt,Transient )
   CALL ListAddLogical(Params,'PostSolver Active',PostActive)
 
   ! If library adaptivity is compiled with, use that by default.
-#ifdef LIBRARY_ADAPTIVIVTY
+#ifdef LIBRARY_ADAPTIVITY
   CALL ListAddNewLogical(Params,'Library Adaptivity',.TRUE.)
 #endif
   
