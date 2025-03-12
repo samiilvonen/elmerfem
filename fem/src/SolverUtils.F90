@@ -1429,12 +1429,22 @@ CONTAINS
          ! Check that active set vectors for limiters exist, otherwise allocate
          !---------------------------------------------------------------------
          IF( Upper == 0 ) THEN
+           IF(ASSOCIATED(Var % LowerLimitActive)) THEN
+             IF(SIZE(Var % LowerLimitActive) /= totsize) THEN
+               DEALLOCATE(Var % LowerLimitActive)
+             END IF
+           END IF
            IF( .NOT. ASSOCIATED(Var % LowerLimitActive ) ) THEN
              ALLOCATE( Var % LowerLimitActive( totsize ) )
              Var % LowerLimitActive = .FALSE.
            END IF
            LimitActive => Var % LowerLimitActive
          ELSE
+           IF(ASSOCIATED(Var % UpperLimitActive)) THEN
+             IF(SIZE(Var % UpperLimitActive) /= totsize) THEN
+               DEALLOCATE(Var % UpperLimitActive)
+             END IF
+           END IF
            IF( .NOT. ASSOCIATED( Var % UpperLimitActive ) ) THEN
              ALLOCATE( Var % UpperLimitActive( totsize ) )
              Var % UpperLimitActive = .FALSE.
@@ -1491,12 +1501,13 @@ CONTAINS
                  END IF
                END DO
                IF(.NOT. Found ) CYCLE
-             ELSE             
+             ELSE
+               IF(Element % BodyId == 0) CYCLE
                bf = ListGetInteger( Model % Bodies(Element % bodyid) % Values, &
                    'Body Force', Found)
-               IF(.NOT. Found ) CYCLE
-               Entity => Model % BodyForces(bf) % Values
-             END IF          
+               IF(.NOT. Found ) CYCLE               
+               Entity => Model % BodyForces(bf) % Values               
+             END IF
 
              ElemLimit(1:n) = ListGetReal( Entity, &
                  LimitName, n, NodeIndexes, Found)             
@@ -1688,6 +1699,7 @@ CONTAINS
              END DO
              IF(.NOT. Found ) CYCLE
            ELSE             
+             IF(Element % BodyId == 0) CYCLE
              bf = ListGetInteger( Model % Bodies(Element % bodyid) % Values, &
                  'Body Force', Found)
              IF(.NOT. Found ) CYCLE
