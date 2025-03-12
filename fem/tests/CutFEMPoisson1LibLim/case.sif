@@ -182,5 +182,5 @@ Boundary Condition 4
 End
 
 ! after 3 timesteps x mesh levels 3
-Solver 1 :: Reference Norm = 7.174917E-01
+Solver 1 :: Reference Norm = 5.95868518E-01
 Solver 2 :: Reference Norm = 1.00000000E+00

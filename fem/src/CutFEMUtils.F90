@@ -1651,7 +1651,9 @@ CONTAINS
     END IF
     CutFEMAddMesh => CreateCutFEMMesh(Solver,CutFEMOrigMesh,CutPerm,&
         .TRUE.,.TRUE.,.TRUE.,Solver % Values,'dummy variable') 
-
+    
+    CALL MeshStabParams( CutFEMAddMesh )
+    
     n = CutFEMAddMesh % NumberOfBulkElements
     ALLOCATE(AddActiveElements(n))
     DO i=1,n
@@ -1661,6 +1663,8 @@ CONTAINS
     Solver % ActiveElements => UnsplitActiveElements
     Solver % NumberOfActiveElements = SIZE(UnsplitActiveElements)
 
+
+    
   END SUBROUTINE CreateCutFEMAddMesh
     
   SUBROUTINE CutFEMSetAddMesh(Solver)
