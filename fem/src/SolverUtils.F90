@@ -15176,7 +15176,7 @@ END FUNCTION SearchNodeL
 
     CHARACTER(KIND=C_CHAR) :: cfg(MAX_NAME_LEN)
     CHARACTER(LEN=MAX_NAME_LEN) :: config
-    LOGICAL :: found, isparallel 
+    LOGICAL :: found, isparallel , nlin
     INTEGER :: nonlin_update, i, j, n, lrow, me, you
     REAL(KIND=dp)  :: bnrm
 
@@ -15184,9 +15184,12 @@ END FUNCTION SearchNodeL
     INTEGER, SAVE :: ng
     INTEGER, ALLOCATABLE, SAVE :: Owner(:), APerm(:), part_vec(:), iLPerm(:)
 
-    nonlin_update = 1
-    IF ( .NOT. ListGetLogical( Solver % Values, 'Linear System Refactorize', Found ) ) &
-      nonlin_update = 0;
+    nlin = ListGetLogical( Solver % Values, 'Linear System Refactorize', Found )
+    IF ( nlin .OR. .NOT. Found ) THEN
+      nonlin_update = 1
+    ELSE
+      nonlin_update = 0
+    END IF
 
     config = ListGetString( Solver % Values, 'AMGX Config')
     DO i=1,LEN_TRIM(config)
