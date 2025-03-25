@@ -1389,13 +1389,6 @@ CONTAINS
       END DO
     END IF
 
-    DO i = 1, NoBlock
-      IF( ListGetLogical( Solver % Values,'Block '//I2S(11*i)//': Linear System Save',Found ) ) THEN
-        B => TotMatrix % SubMatrix(i,i) % Mat
-        CALL SaveLinearSystem( Solver, B,'Block'//I2S(11*i) )
-      END IF
-    END DO
-      
     
   END SUBROUTINE BlockPickMatrixPerm
 
@@ -4974,7 +4967,7 @@ CONTAINS
 
     
     ! Currently we cannot have both structure-structure and fluid-structure couplings!
-    IF( ListGetLogical( Solver % Values,'Structure-Structure Coupling',Found ) ) THEN
+    IF( ListGetLogical( Params,'Structure-Structure Coupling',Found ) ) THEN
       CALL StructureCouplingBlocks( Solver )
     ELSE
       CALL FsiCouplingBlocks( Solver )
@@ -4991,6 +4984,22 @@ CONTAINS
     
     ! Create preconditioners for block matrices.
     CALL BlockPrecMatrix( Solver, NoVar )
+
+    IF( ListCheckSuffix(Params,': Linear System Save') ) THEN
+      DO RowVar=1,NoVar
+        DO ColVar=1,NoVar
+          IF( ListGetLogical( Params,'block '//I2S(10*ColVar+RowVar)//': Linear System Save',Found ) ) THEN
+            Amat => TotMatrix % SubMatrix(RowVar,ColVar) % Mat
+            CALL SaveLinearSystem( Solver, Amat,'block'//I2S(10*ColVar+RowVar) )
+          END IF
+        END DO
+        IF( ListGetLogical( Params,'prec '//I2S(11*RowVar)//': Linear System Save',Found ) ) THEN
+          Amat => TotMatrix % SubMatrix(RowVar,RowVar) % PrecMat
+          CALL SaveLinearSystem( Solver, Amat,'prec'//I2S(11*RowVar) )
+        END IF
+      END DO
+    END IF
+    
     
     Found = .FALSE.
     DO RowVar=1,NoVar
