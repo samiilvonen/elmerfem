@@ -490,7 +490,7 @@ SUBROUTINE IsosurfaceSolver( Model,Solver,dt,Transient )
     CALL SaveGmshGeo2D(IsoMesh)
   END IF
   IF( GetLogical( Params,'Save STL File',Found ) ) THEN
-    CALL SaveSTLSurface(IsoMesh)    
+    CALL SaveSTLSurface(IsoMesh, Params )    
   END IF
 
   ! Just create some variable that will act as a norm.
