@@ -1420,5 +1420,120 @@ CONTAINS
   END SUBROUTINE SaveGmshOutput
 !------------------------------------------------------------------------------
 
+
+  ! Saves a loop in STL format. 
+  ! This is still not general and assumes one body only.
+  !-------------------------------------------------------------- 
+  SUBROUTINE SaveSTLSurface(Mesh,Params)
+       
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(ValueList_t), POINTER :: Params
+
+    TYPE(Element_t), POINTER :: Element
+    CHARACTER(LEN=MAX_NAME_LEN) :: Filename
+    LOGICAL :: Found
+    INTEGER, PARAMETER :: GeoUnit = 10
+    INTEGER :: i,j,k,kmax,n, ReverseCnt, ElemCnt, t_start, t_end, StlInds(3)
+    INTEGER, POINTER :: NodeInds(:)    
+    TYPE(Nodes_t) :: Nodes 
+    REAL(KIND=dp) :: Normal(3), MeshCenter(3), ElemCenter(3), dVec(3)
+    LOGICAL :: Reverse
+
+    IF( ParEnv % PEs > 1 ) THEN
+      CALL Warn('SaveSTLSurface','Not implemented yet in parallel')
+    END IF
+
+    Filename = ListGetString(Params,'STL Filename',Found)
+    IF( .NOT. Found ) Filename = 'mesh.stl'
+
+    CALL Info('SaveSTLSurface','Writing the surface mesh to STL file: '//TRIM(Filename))
+
+    n = Mesh % NumberOfNodes
+    MeshCenter(1) = SUM(Mesh % Nodes % x(1:n)) / n
+    MeshCenter(2) = SUM(Mesh % Nodes % y(1:n)) / n
+    MeshCenter(3) = SUM(Mesh % Nodes % z(1:n)) / n
+
+    n = 4
+    ALLOCATE( Nodes % x(n), Nodes % y(n), Nodes % z(n))
+
+    IF(Mesh % Elements(1) % TYPE % ElementCode > 500 ) THEN
+      t_start = Mesh % NumberOfBulkElements
+      t_end = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+    ELSE
+      t_start = 1
+      t_end = Mesh % NumberOfBulkElements 
+    END IF
+
+    ElemCnt = 0
+    ReverseCnt = 0
+
+    OPEN( UNIT=GeoUnit, FILE=Filename, STATUS='UNKNOWN')     
+    WRITE( GeoUnit,'(A)') 'solid body'
+    DO i=t_start,t_end 
+      Element => Mesh % Elements(i)
+
+      n = Element % TYPE % ElementCode / 100
+      IF( n == 3 ) THEN
+        kmax = 1
+      ELSE IF( n == 4 ) THEN
+        kmax = 2
+      ELSE
+        CYCLE
+      END IF
+
+      NodeInds => Element % NodeIndexes
+      CALL CopyElementNodesFromMesh(Nodes,Mesh,n,NodeInds) 
+      Normal = NormalVector( Element, Nodes )  
+
+      ElemCenter(1) = SUM(Nodes % x(1:n)) / n
+      ElemCenter(2) = SUM(Nodes % y(1:n)) / n
+      ElemCenter(3) = SUM(Nodes % z(1:n)) / n
+
+      ! For simple geometries "MeshCenter" should be inside the object.
+      dVec = ElemCenter - MeshCenter
+
+      ! If the normal points differently than dVec then reverse nodes. 
+      Reverse = (SUM(Normal*dVec) < 0.0)
+      IF( Reverse) THEN
+        ReverseCnt = ReverseCnt + kmax
+        Normal = -Normal
+      END IF
+      ElemCnt = ElemCnt + kmax
+
+      DO k=1,kmax
+        IF(k==1) THEN
+          IF( Reverse ) THEN
+            StlInds(1:3) = [3,2,1]
+          ELSE
+            StlInds(1:3) = [1,2,3]
+          END IF
+        ELSE
+          IF( Reverse ) THEN
+            StlInds(1:3) = [4,3,1]
+          ELSE
+            StlInds(1:3) = [1,3,4]
+          END IF
+        END IF
+
+        WRITE( GeoUnit,'(A,3ES15.6)')   '  facet normal',Normal 
+        WRITE( GeoUnit,'(A)')           '    outer loop'
+        DO j=1,3
+          WRITE( GeoUnit,'(A,3ES15.6)') '      vertex',&
+              Nodes % x(StlInds(j)), Nodes % y(StlInds(j)), Nodes % z(StlInds(j)) 
+        END DO
+        WRITE( GeoUnit,'(A)')           '    end loop'
+        WRITE( GeoUnit,'(A)')           '  end facet'
+      END DO
+    END DO
+    WRITE( GeoUnit,'(A)') 'endsolid body'
+
+    CALL Info('SaveSTLSurface','Number of triangular elements in STL file: '//I2S(ElemCnt))
+    CALL Info('SaveSTLSurface','Number of element with reversed normal: '//I2S(ReverseCnt))
+
+    CALL Info('SaveSTLSurface','Finished writing the STL file!')
+
+  END SUBROUTINE SaveSTLSurface
+
+  
 END MODULE SaveUtils
   
