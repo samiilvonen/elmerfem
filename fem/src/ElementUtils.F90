@@ -3812,6 +3812,11 @@ CONTAINS
       ELSE
         DofIndexes(1:nd) = PtoIndexes(1:nd)
       END IF
+
+
+      ! This maybe should be checked earlier, but better late than never perhaps ?
+      IF (DGVar .AND. pElem ) nd = Element2 % Type % NumberOfNodes
+
       
         IF( IsGrad ) THEN          
           IF( Var % Dofs /= 1 ) THEN
