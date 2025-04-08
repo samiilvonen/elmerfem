@@ -3806,6 +3806,9 @@ CONTAINS
         CALL Fatal('EvaluteVariableAtGivenPoint',&
             'pToIndexes not associated for variable: '//TRIM(Var % Name))
       END IF
+
+      ! This maybe should be checked earlier, but better late than never perhaps ?
+      IF (DGVar .AND. pElem ) nd = Element2 % Type % NumberOfNodes
       
       IF( ASSOCIATED(Var % Perm) ) THEN
         DofIndexes(1:nd) = Var % Perm(PToIndexes(1:nd))
@@ -3813,9 +3816,6 @@ CONTAINS
         DofIndexes(1:nd) = PtoIndexes(1:nd)
       END IF
 
-
-      ! This maybe should be checked earlier, but better late than never perhaps ?
-      IF (DGVar .AND. pElem ) nd = Element2 % Type % NumberOfNodes
 
       
         IF( IsGrad ) THEN          
