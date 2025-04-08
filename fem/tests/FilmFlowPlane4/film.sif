@@ -59,7 +59,7 @@ Solver 1
   Linear System Solver = Direct
   Linear System Direct Method = umfpack
 
-  Friction Model = String "praks"
+  Friction Model = String "darcy"
 
   Convect = True
   Min Reynolds Number = Real 4000.0
