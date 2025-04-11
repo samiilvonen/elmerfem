@@ -97,7 +97,7 @@ SUBROUTINE EMWaveSolver_Init0(Model,Solver,dt,Transient)
   CALL ListAddNewString( SolverParams,'Variable','E')
   CALL ListAddNewLogical( SolverParams,'Linear System Complex', .FALSE.)
   
-  CALL ListAddInteger( SolverParams,'Time derivative order', 2 )
+  CALL ListAddNewInteger( SolverParams,'Time derivative order', 2 )
 
   ! Set a multiplier for the relative keywords
   !--------------------------------------------------------------------
@@ -143,7 +143,7 @@ SUBROUTINE EMWaveSolver( Model,Solver,dt,Transient )
   LOGICAL :: AllocationsDone = .FALSE., Found
   TYPE(Element_t),POINTER :: Element
   TYPE(ValueList_t), POINTER :: BC
-  INTEGER :: n,istat,i,nNodes,Active,dofs
+  INTEGER :: n,istat,i,nNodes,Active,dofs,TimeOrder
   INTEGER :: NoIterationsMax, EdgeBasisDegree
   TYPE(Mesh_t), POINTER :: Mesh
   REAL(KIND=dp) :: Norm
@@ -167,6 +167,8 @@ SUBROUTINE EMWaveSolver( Model,Solver,dt,Transient )
     CALL Fatal('EMWaveSolver', 'A 2D model needs Use Piola Transform = True')
   END IF
 
+  TimeOrder = ListGetInteger( SolverParams,'Time derivative order')
+  
   dofs = Solver % Variable % Dofs
 
   eps0 = GetConstReal( Model % Constants,'Permittivity of Vacuum')
@@ -248,14 +250,18 @@ CONTAINS
 
       ! Update global matrix and rhs vector from local matrix & vector:
       !---------------------------------------------------------------       
-      CALL Default2ndOrderTime( MASS, DAMP, STIFF, FORCE )
+      IF( TimeOrder == 2 ) THEN
+        CALL Default2ndOrderTime( MASS, DAMP, STIFF, FORCE )
+      ELSE IF( TimeOrder == 1 ) THEN
+        CALL Default1stOrderTime( DAMP, STIFF, FORCE )
+      END IF
       CALL DefaultUpdateEquations( STIFF, FORCE )
     END DO
 
     CALL DefaultFinishBulkAssembly()
 
     ConstantBulkInUse = ListGetLogical( SolverParams,'Constant Bulk Matrix',Found )       
-
+    
 !------------------------------------------------------------------------------
   END SUBROUTINE DoBulkAssembly
 !------------------------------------------------------------------------------
@@ -296,7 +302,11 @@ CONTAINS
       CALL LocalMatrixBC(MASS,DAMP,STIFF,FORCE,&
           Element,n,nd,PiolaVersion,InitHandles)
       
-      CALL Default2ndOrderTimeR( MASS, DAMP, STIFF, FORCE(1:nd), UElement=Element)
+      IF( TimeOrder == 2 ) THEN
+        CALL Default2ndOrderTimeR( MASS, DAMP, STIFF, FORCE(1:nd), UElement=Element)
+      ELSE IF( TimeOrder == 1 ) THEN
+        CALL Default1stOrderTimeR( DAMP, STIFF, FORCE(1:nd), UElement=Element)
+      END IF
       CALL DefaultUpdateEquationsR(STIFF,FORCE(1:nd), UElement=Element)
 
       InitHandles = .FALSE.
@@ -336,7 +346,7 @@ CONTAINS
       CALL ListInitElementKeyword( Cd_h(1),'Body Force','Current Density Rate 1')
       CALL ListInitElementKeyword( Cd_h(2),'Body Force','Current Density Rate 2')
       CALL ListInitElementKeyword( Cd_h(3),'Body Force','Current Density Rate 3')
-
+        
       ! These have been normalized by mu0 and eps0 in _init section
       CALL ListInitElementKeyword( Mu_h,'Material','Relative Permeability')
       CALL ListInitElementKeyword( Eps_h,'Material','Relative Permittivity')
