@@ -150,10 +150,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   TYPE(ValueList_t), POINTER :: Params, BodyForce, Material, BC
   TYPE(Mesh_t), POINTER :: Mesh
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:,:), &
-      FORCE(:), rho(:), gap(:), gap0(:), mu(:), ac(:), Pres(:), Velocity(:,:), MASS(:,:),&
+      FORCE(:), rho(:), gap(:), gap0(:), mu(:), ac(:), height(:), Pres(:), Velocity(:,:), MASS(:,:),&
       PrevPressure(:), FsiRhs(:,:), PrevGap(:)
   REAL(KIND=dp), POINTER :: gWork(:,:)
-  LOGICAL :: GradP, LateralStrain, GotAc, SurfAc, UsePrevGap, GotGrav
+  LOGICAL :: GradP, LateralStrain, GotAc, SurfAc, UsePrevGap, GotGrav, GotHeight
   TYPE(Variable_t), POINTER :: pVar, thisVar
   INTEGER :: GapDirection, FrictionModel 
   REAL(KIND=dp) :: GapFactor, Nm
@@ -161,7 +161,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   CHARACTER(*), PARAMETER :: Caller = 'FilmFlowSolver'
   LOGICAL :: Debug
   
-  SAVE STIFF, MASS, LOAD, FORCE, rho, ac, gap, gap0, mu, Pres, Velocity, &
+  SAVE STIFF, MASS, LOAD, FORCE, rho, ac, gap, gap0, mu, height, Pres, Velocity, &
       PrevPressure, AllocationsDone, pVar, GotAc, SurfAC, FsiRhs, PrevGap, &
       FrictionModel 
 !------------------------------------------------------------------------------
@@ -215,8 +215,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
     ELSE
       CALL Fatal(Caller,'Uknown friction model: '//TRIM(str))
     END IF
+    CALL Info(Caller,'Using friction model: '//TRIM(str),Level=7)
   END IF
-
+  
+  
   grav = 0.0_dp
   gWork => ListGetConstRealArray( CurrentModel % Constants,'Gravity',GotGrav)
   IF(GotGrav) THEN
@@ -224,7 +226,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   END IF
 
   IF( FrictionModel == 2 ) THEN
-    IF(GotGrav) CALL Fatal(Caller,'Manning equation not possible without gravity!')
+    IF(.NOT. GotGrav) CALL Fatal(Caller,'Manning equation not possible without gravity!')
     IF(CSymmetry) CALL Fatal(Caller,'Manning equation not applicable to axial symmetry!')
   END IF
     
@@ -237,7 +239,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
     n = (mdim+1)*(Mesh % MaxElementDOFs+4*BDOFs)  ! just big enough for elemental arrays
     ALLOCATE( FORCE(n), LOAD(mdim+2,n), STIFF(n,n), MASS(n,n), &
-        rho(n), ac(n), gap(n), gap0(n), mu(n), Pres(n), Velocity(mdim+1,n), STAT=istat )
+        rho(n), ac(n), gap(n), gap0(n), height(n), mu(n), Pres(n), Velocity(mdim+1,n), STAT=istat )
     Velocity = 0.0_dp
     IF ( istat /= 0 ) THEN
       CALL Fatal( Caller, 'Memory allocation error.' )
@@ -305,8 +307,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       mu(1:n)  = GetReal( Material, 'Viscosity' )
       gap(1:n) = GetReal( Material, 'Gap Height' )
 
+      height(1:n) = GetReal( Material,'Bedrock Height',GotHeight) 
+      
       IF(FrictionModel == 2 ) THEN
-        nm = ListGetCReal( Material,'Manning coefficient')
+        nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
       END IF
 
       
@@ -336,8 +340,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
         
       ! Get element local matrix and rhs vector:
       !-----------------------------------------
-      CALL LocalBulkMatrix(  MASS, STIFF, FORCE, LOAD, rho, gap, gap0, mu, &
-          ac, Velocity, Pres, Element, n, nd, nd+nb, &
+      CALL LocalBulkMatrix(  MASS, STIFF, FORCE, LOAD, rho, gap, gap0, height, &
+          mu, ac, Velocity, Pres, Element, n, nd, nd+nb, &
           dim, mdim )
       
       IF ( nb>0 ) THEN
@@ -474,12 +478,12 @@ CONTAINS
   
 !------------------------------------------------------------------------------
   SUBROUTINE LocalBulkMatrix(  MASS, STIFF, FORCE, LOAD, Nodalrho, NodalGap, &
-      NodalGap0, Nodalmu, NodalAC, NodalVelo, NodalPres, Element, n, nd, &
+      NodalGap0, NodalH, Nodalmu, NodalAC, NodalVelo, NodalPres, Element, n, nd, &
       ntot, dim, mdim )
 !------------------------------------------------------------------------------
     REAL(KIND=dp), TARGET :: MASS(:,:), STIFF(:,:), FORCE(:), LOAD(:,:)
     REAL(KIND=dp) :: Nodalmu(:), NodalAC(:), Nodalrho(:), &
-        NodalGap(:), NodalGap0(:), NodalPres(:), NodalVelo(:,:)
+        NodalGap(:), NodalGap0(:), NodalH(:), NodalPres(:), NodalVelo(:,:)
     INTEGER :: dim, mdim, n, nd, ntot
     TYPE(Element_t), POINTER :: Element
 !------------------------------------------------------------------------------
@@ -568,12 +572,18 @@ CONTAINS
          gapGrad(i) = SUM( NodalGap(1:nd) * dBasisdx(1:nd,i) )
          presGrad(i) = SUM( NodalPres(1:nd) * dBasisdx(1:nd,i) )
        END DO
-      
-       hGrad(1) = SUM( Nodes % x(1:n) * dBasisdx(1:n,1) ) 
-       IF(mdim > 1) THEN
-         hGrad(2) = SUM( Nodes % y(1:n) * dBasisdx(1:n,2) ) 
+
+       IF( GotHeight ) THEN
+         DO i=1,mdim
+           hGrad(i) = SUM( NodalH(1:nd) * dBasisdx(1:nd,i) ) 
+         END DO
+       ELSE
+         hGrad(1) = SUM( Nodes % x(1:n) * dBasisdx(1:n,1) ) 
+         IF(mdim > 1) THEN
+           hGrad(2) = SUM( Nodes % y(1:n) * dBasisdx(1:n,2) ) 
+         END IF
        END IF
-       
+         
        ! Previous velocity at the integration point:
        !--------------------------------------------
        Velo = MATMUL( NodalVelo(1:mdim,1:nd), Basis(1:nd) )
@@ -639,7 +649,6 @@ CONTAINS
 
        END SELECT
                  
-       
        ! Finally, the elemental matrix & vector:
        !----------------------------------------       
        DO p=1,ntot
