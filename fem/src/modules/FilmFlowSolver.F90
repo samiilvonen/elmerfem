@@ -181,7 +181,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   GradP = GetLogical( Params, 'GradP Discretization', Found ) 
   LateralStrain = GetLogical( Params,'Lateral Strain',Found )
   mingap = ListGetCReal( Params,'Min Gap Height',Found )
-  IF(.NOT. Found) mingap = TINY(mingap)
+  IF(.NOT. Found) mingap = 1.0e-20
   GotAC = ListCheckPresentAnyMaterial( Model,'Artificial Compressibility')
 
   UsePrevGap = ListGetLogical( Params,'Use Gap Average',Found )
@@ -294,8 +294,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       BodyForce => GetBodyForce()
       LOAD = 0.0d0
       IF ( ASSOCIATED(BodyForce) ) THEN
-        Load(1,1:n) = GetReal( BodyForce, 'Flow Bodyforce 1', Found )
-        IF(mdim>1) Load(2,1:n) = GetReal( BodyForce, 'Flow Bodyforce 2', Found )
+        Load(1,1:n) = GetReal( BodyForce, 'FilmFlow Bodyforce 1', Found )
+        IF(mdim>1) Load(2,1:n) = GetReal( BodyForce, 'FilmFlow Bodyforce 2', Found )
         Load(mdim+1,1:n) = GetReal( BodyForce, 'Normal Velocity', Found )
         Load(mdim+2,1:n) = GetReal( BodyForce, 'Fsi Velocity', Found )
       END IF
@@ -311,6 +311,9 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       
       IF(FrictionModel == 2 ) THEN
         nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
+      END IF
+      IF(FrictionModel == 1 ) THEN
+        nm = ListGetCReal( Material,'Darcy Roughness',UnfoundFatal=.TRUE.)
       END IF
 
       
@@ -334,9 +337,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       ! Get previous elementwise velocity iterate:
       ! Note: pressure is the dim+1 component here!
       !-------------------------------------------
-      IF ( Convect ) THEN
-        CALL GetVectorLocalSolution( Velocity )
-      END IF
+      CALL GetVectorLocalSolution( Velocity )
         
       ! Get element local matrix and rhs vector:
       !-----------------------------------------
@@ -621,14 +622,14 @@ CONTAINS
        SELECT CASE( FrictionModel )
        CASE( 1 ) 
          BLOCK
-           REAL(KIND=dp) :: Speed, D, R, fd, eps=0.01
+           REAL(KIND=dp) :: Speed, D, R, fd
            Speed = MAX(MinSpeed,SQRT(SUM(Velo**2)))
            IF( CSymmetry ) THEN                   
              D = 2 * gapi
            ELSE
              D = gapi / 2
            END IF
-           fd = FrictionLawPraks(Speed,rho,mu,D,eps)
+           fd = FrictionLawPraks(Speed,rho,mu,D,nm)
            MuCoeff = fd * rho * Speed / (2*D)
          END BLOCK
 

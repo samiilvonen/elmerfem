@@ -75,7 +75,7 @@ Solver 1
 
 ! activates also the newtonian linearization of viscosity
   Nonlinear System Newton After Iterations = 30
-  Nonlinear System Relaxation Factor = 1
+  Nonlinear System Relaxation Factor = 0.5
   Nonlinear System Newton After Tolerance = 1.0e-3
 
   Linear System Solver = Direct
@@ -117,6 +117,9 @@ Material 1
   Viscosity = $nu
 
   Manning Coefficient = Real 0.03
+
+  Darcy Roughness = Real 0.01
+
 
   Gap Height = Variable "Coordinate 1"
     Real
@@ -163,8 +166,8 @@ End
 !Solver 3 :: Reference Norm = 1.84323481E+02
 
 Solver 1 :: Friction model = String "darcy"
-Solver 1 :: Reference Norm = 9.08431521E-01
-Solver 3 :: Reference Norm = 1.84323481E+02
+Solver 1 :: Reference Norm = 2.32255285E-01
+Solver 3 :: Reference Norm = 1.82883672E+02
 
 
 !Solver 1 :: Friction model = String "manning"
