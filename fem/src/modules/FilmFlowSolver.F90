@@ -309,11 +309,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
       height(1:n) = GetReal( Material,'Bedrock Height',GotHeight) 
       
-      IF(FrictionModel == 2 ) THEN
-        nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
-      END IF
       IF(FrictionModel == 1 ) THEN
         nm = ListGetCReal( Material,'Darcy Roughness',UnfoundFatal=.TRUE.)
+      ELSE IF(FrictionModel == 2 ) THEN
+        nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
       END IF
 
       

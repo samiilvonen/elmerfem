@@ -103,6 +103,7 @@ Material 1
       0.0 $h0
       5.0 $h1
     End
+  Darcy Roughness = Real 0.01
 End
 
 Boundary Condition 1
