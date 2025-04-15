@@ -10713,8 +10713,7 @@ END FUNCTION SearchNodeL
     INTEGER :: ipar(1)
     TYPE(ValueList_t), POINTER :: SolverParams
     CHARACTER(*), PARAMETER :: Caller = 'ComputeChange'
-    LOGICAL :: Parallel, SingleMesh
-    
+    LOGICAL :: Parallel, SingleMesh, x0Allocated
     
     SolverParams => Solver % Values
     RelativeP = .FALSE.
@@ -10820,7 +10819,7 @@ END FUNCTION SearchNodeL
         IF( RelativeP) CALL Info(Caller,'Using relative pressure relaxation',Level=10)
       END IF
       
-      SkipConstraints = ListGetLogical(SolverParams,&
+      SkipConstraints = ListGetLogical( SolverParams,&
           'Nonlinear System Convergence Without Constraints',Stat) 
 
       NodalNorm = ListGetLogical(SolverParams,'Nonlinear System Nodal Norm',Stat)
@@ -10887,9 +10886,26 @@ END FUNCTION SearchNodeL
       END IF
     END IF
     
+    x0allocated = .FALSE.
     IF(Stat .AND. .NOT. SkipConstraints ) THEN
-      IF (SIZE(x0) /= SIZE(x)) CALL Info(Caller,'WARNING: Possible mismatch in length of vectors ('&
-          //I2S(SIZE(x))//' vs. '//I2S(SIZE(x0))//')!',Level=10)
+      IF (SIZE(x0) /= SIZE(x)) THEN
+         CALL Info(Caller,'WARNING: Possible mismatch in length of vectors ('&
+            //I2S(SIZE(x))//' vs. '//I2S(SIZE(x0))//')!',Level=10)
+
+         ! Try to account for differing sizes of the x & x0 (effectively "Relaxation Factor=1"
+         ! for the additional "x"-vector dofs."ResidualMode" -case unhandeled.
+         IF (n > SIZE(x0) .AND. .NOT. ResidualMode) THEN
+           BLOCK
+              REAL(KIND=dp), ALLOCATABLE :: y(:)
+              INTEGER :: n0
+              n0 = size(x0)
+              y = x0
+              ALLOCATE(x0(n))
+              x0allocated = .TRUE.
+              x0(1:n0) = y; x0(n0+1:n)=x(n0+1:n)
+           END BLOCK
+         END IF
+       END IF
     END IF
 
     ! This ensures that the relaxation does not affect the mean of the pressure
@@ -11280,6 +11296,7 @@ END FUNCTION SearchNodeL
       CALL UpdateDependentObjects( Solver, .FALSE. )        
     END IF
 
+    IF(x0allocated) DEALLOCATE(x0)
 
   CONTAINS
 
