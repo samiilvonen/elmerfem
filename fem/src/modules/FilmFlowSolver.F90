@@ -210,8 +210,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       FrictionModel = 0
     ELSE IF( str == 'darcy' ) THEN
       FrictionModel = 1
-    ELSE IF( str == 'manning' ) THEN
+    ELSE IF( str == 'darcy2' ) THEN
       FrictionModel = 2
+    ELSE IF( str == 'manning' ) THEN
+      FrictionModel = 3
     ELSE
       CALL Fatal(Caller,'Uknown friction model: '//TRIM(str))
     END IF
@@ -309,9 +311,9 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
       height(1:n) = GetReal( Material,'Bedrock Height',GotHeight) 
       
-      IF(FrictionModel == 1 ) THEN
+      IF(FrictionModel == 1 .OR. FrictionModel == 2 ) THEN
         nm = ListGetCReal( Material,'Darcy Roughness',UnfoundFatal=.TRUE.)
-      ELSE IF(FrictionModel == 2 ) THEN
+      ELSE IF(FrictionModel == 3 ) THEN
         nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
       END IF
 
@@ -440,7 +442,7 @@ CONTAINS
   ! Eq (29) in:
   ! P. Praks and D. Brkić, Review of new flow friction equations:
   ! Constructing Colebrook’s explicit correlations accurately, Rev. int. métodos numér. cálc. diseño ing. (2020).
-  ! Vol. 36, (3), 41 URL https://www.scipedia.com/PUBLIC/Praks_Brkic_2020a
+  ! Vol. 36, (3), 41 URL https://www.scipedia.com/public/Praks_Brkic_2020a
   ! https://en.wikipedia.org/wiki/Darcy_friction_factor_formulae
   !--------------------------------------------------------------------------------------
   FUNCTION FrictionLawPraks(v,rho,nu,D,eps) RESULT (f)
@@ -619,20 +621,27 @@ CONTAINS
        END IF
 
        SELECT CASE( FrictionModel )
-       CASE( 1 ) 
+       CASE( 1, 2 ) 
          BLOCK
-           REAL(KIND=dp) :: Speed, D, R, fd
+           REAL(KIND=dp) :: Speed, D, R, fd, GradZphi2
            Speed = MAX(MinSpeed,SQRT(SUM(Velo**2)))
-           IF( CSymmetry ) THEN                   
-             D = 2 * gapi
-           ELSE
-             D = gapi / 2
-           END IF
+           ! for a cross-section that is uniform along the tube or channel length, the wetted diameter is defined as Dh=4*A/P
+           ! where A is the cross-sectional area of the flow, and P is the wetted perimeter of the cross-section, see
+           ! https://en.wikipedia.org/wiki/Hydraulic_diameter
+           ! this leads to consistent friction from the Colebrook–White equation whether Dh or Rh are used, see
+           ! https://en.wikipedia.org/wiki/Darcy_friction_factor_formulae             
+           ! Note that for csummetry "gapi" is radius as the same formula works as well. 
+           D = 2 * gapi
            fd = FrictionLawPraks(Speed,rho,mu,D,nm)
-           MuCoeff = fd * rho * Speed / (2*D)
+           IF( FrictionModel == 1 ) THEN
+             MuCoeff = fd * rho * Speed / (2*D)
+           ELSE
+             GradZphi2 = SUM((hGrad(1:mdim) + presGrad(1:mdim)/(rho*Grav))**2)
+             MuCoeff = rho * SQRT(fd*Grav) * (2*gap)**(-1.0/2.0) * GradZphi2**(1.0/4.0)
+           END IF
          END BLOCK
 
-       CASE( 2 ) 
+       CASE( 3 ) 
          BLOCK
            REAL(KIND=dp) :: GradZphi2
            GradZphi2 = SUM((hGrad(1:mdim) + presGrad(1:mdim)/(rho*Grav))**2)
