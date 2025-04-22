@@ -1042,16 +1042,16 @@ SUBROUTINE StressSolver_Init( Model,Solver,dt,Transient )
              CALL DisplaceMesh( Mesh, StressSol % Values, 1, &
                StressSol % Perm, StressSol % DOFs,.FALSE.)
          END IF
+       END IF
+     END IF
  
-         IF ( MeshDisplacementActive ) THEN
-           IF (Incompr ) THEN
-             CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
-                 DisplPerm, STDOFs, .FALSE., STDOFs-1 )
-           ELSE
-             CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
-                 DisplPerm, STDOFs, .FALSE. )
-           END IF
-         END IF
+     IF ( MeshDisplacementActive ) THEN
+       IF (Incompr ) THEN
+         CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
+             DisplPerm, STDOFs, .FALSE., STDOFs-1 )
+       ELSE
+         CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
+             DisplPerm, STDOFs, .FALSE. )
        END IF
      END IF
 
