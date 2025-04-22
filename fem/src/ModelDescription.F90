@@ -3305,7 +3305,7 @@ CONTAINS
 
 
     CALL TagRadiationSolver() 
-    
+
 !------------------------------------------------------------------------------
 
   CONTAINS
@@ -3320,7 +3320,8 @@ CONTAINS
       
       DO i=1,Model % NumberOfSolvers
         Params => Model % Solvers(i) % Values
-        str = ListGetString( Params, 'Equation' )
+        str = ListGetString( Params, 'Equation', Found )
+        IF (.NOT. Found) CYCLE
         IF ( TRIM(str) == 'heat equation' ) THEN
           CALL Info('LoadModel','Defined radition solver by Equation name "heat equation"',Level=10) 
           CALL ListAddLogical( Params,'Radiation Solver',.TRUE.)
