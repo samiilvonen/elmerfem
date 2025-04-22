@@ -143,32 +143,32 @@
 
 
      INTERFACE
-        FUNCTION HeatBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+        SUBROUTINE EnthalpySolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END FUNCTION HeatBoundaryResidual
+        END SUBROUTINE EnthalpySolver_Boundary_Residual
 
-        FUNCTION HeatEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+        SUBROUTINE EnthalpySolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END FUNCTION HeatEdgeResidual
+        END SUBROUTINE EnthalpySolver_Edge_Residual
 
-        FUNCTION HeatInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+        SUBROUTINE EnthalpySolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm, Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END FUNCTION HeatInsideResidual
+        END SUBROUTINE EnthalpySolver_Inside_Residual
      END INTERFACE
 
 #ifdef USE_ISO_C_BINDINGS
@@ -1409,9 +1409,12 @@ enddo
 
    DEALLOCATE( PrevSolution )
 
-   IF ( ListGetLogical( Solver % Values, 'Adaptive Mesh Refinement', Found ) ) &
-      CALL RefineMesh( Model,Solver,Enthalpy_h,EnthalpyPerm, &
-            HeatInsideResidual, HeatEdgeResidual, HeatBoundaryResidual )
+   IF ( ListGetLogical( Solver % Values, 'Adaptive Mesh Refinement', Found ) ) THEN
+     IF ( .NOT. ListGetLogical( Solver % Values, 'Library Adaptivity', Found ) ) THEN
+       CALL RefineMesh( Model,Solver,Enthalpy_h,EnthalpyPerm, &
+            EnthalpySolver_Inside_Residual, EnthalpySolver_Edge_Residual, EnthalpySolver_Boundary_Residual )
+     END IF
+   END IF
 
 CONTAINS
 
@@ -2098,7 +2101,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  FUNCTION HeatBoundaryResidual( Model, Edge, Mesh, Quant, Perm,Gnorm ) RESULT( Indicator )
+  SUBROUTINE EnthalpySolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm,Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      USE Radiation
@@ -2399,13 +2402,13 @@ CONTAINS
         x, y, z, EdgeBasis, dBasisdx, NodalConductivity, Flux, &
         NodalEmissivity ) 
 !------------------------------------------------------------------------------
-  END FUNCTION HeatBoundaryResidual
+  END SUBROUTINE EnthalpySolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-  FUNCTION HeatEdgeResidual( Model, Edge, Mesh, Quant, Perm ) RESULT( Indicator )
+  SUBROUTINE EnthalpySolver_Edge_Residual( Model, Edge, Mesh, Quant, Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -2608,13 +2611,13 @@ CONTAINS
      DEALLOCATE( NodalConductivity, EdgeBasis, Basis, dBasisdx, Enthalpy_h)
 
 !------------------------------------------------------------------------------
-  END FUNCTION HeatEdgeResidual
+  END SUBROUTINE EnthalpySolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION HeatInsideResidual( Model, Element, Mesh, &
-        Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE EnthalpySolver_Inside_Residual( Model, Element, Mesh, &
+        Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -2956,6 +2959,6 @@ CONTAINS
          Velo, Pressure, NodalSource, Enthalpy_h, PrevTemp, Basis, &
          dBasisdx, ddBasisddx )
 !------------------------------------------------------------------------------
-  END FUNCTION HeatInsideResidual
+  END SUBROUTINE EnthalpySolver_Inside_Residual
 !------------------------------------------------------------------------------
 
