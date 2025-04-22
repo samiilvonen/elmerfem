@@ -39,14 +39,38 @@
 
 #include "../config.h"
 !------------------------------------------------------------------------------
-!>  Utility routines for the elmer main program.
+!>  Utility routines for the Elmer main program.
 !------------------------------------------------------------------------------
 MODULE MainUtils
-
 !------------------------------------------------------------------------------
-  Use BlockSolve
+  USE BlockSolve
   USE IterSolve, ONLY : NumericalError
-  USE LoadMod
+  USE LoadMod, ONLY : ExecLocalAssembly, ExecSolver
+  USE ModelDescription, ONLY : GetProcAddr
+  USE MatrixAssembly, ONLY : CreateChildMatrix, GlueLocalSubMatrix, MoveRow, &
+      SetMatrixElement
+  USE ElementDescription, ONLY : SwapRefElemNodes
+  USE ElementUtils, ONLY : CreateOdeMatrix, CreateMatrix
+  
+  USE MeshUtils, ONLY : BackCoordinateTransformation, Colouring_deallocate, &
+      CoordinateTransformation, CreateDiscontMesh, ElmerColouringToGraph, &
+      ElmerGraphColour, ElmerMeshToDualGraph, Graph_deallocate, LoadMesh2, &
+      MakePermUsingMask, MeshStabParams, ReleaseMesh, SetActivEelementsTable, &
+      SetCurrentMesh, SetMeshMaxDOFs, SplitMeshEqual, TransferCoordAndTime, &
+      UpdateSolverMesh
+  
+  USE SolverUtils, ONLY : CalculateEntityWeights, &
+      CalculateNodalWeights, CheckStepSize, ComputeChange, &
+      ComputeNorm, CreateIpPerm, GenerateProjectors, GetPassiveBoundary, &
+      InitializeTimestep, InitializeToZero, InvalidateVariable, &
+      MatrixVectorMultiply, UpdateDependentObjects, UpdateExportedVariables, &
+      FinalizeLumpedMatrix
+
+  USE DefUtils, ONLY : GetString, GetCReal, GetElementNOFNodes, GetLogical, &
+      DefaultDirichletBCs, GetMesh, GetInteger, GetMatrix, GetElementNOFNodes, &
+      GetBodyForce, GetBC, Default2ndOrderTime, DefaultFinishBulkAssembly, &
+      DefaultUpdateMass, DefaultFinishBoundaryAssembly, DefaultInitialize, &
+      DefaultUpdateDamp, DefaultFinishAssembly, Default1stOrderTime
 #ifdef LIBRARY_ADAPTIVITY
   USE Adaptivity, ONLY : RefineMesh
 #endif  
@@ -1010,6 +1034,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE AddEquationBasics( Solver, Name, Transient )
 !------------------------------------------------------------------------------
+    USE CoordinateSystems
     TYPE(Solver_t), POINTER :: Solver
     LOGICAL :: Transient
     CHARACTER(LEN=*) :: Name
