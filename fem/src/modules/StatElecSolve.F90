@@ -550,10 +550,13 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
    END IF
    
 
-   IF ( ListGetLogical( Params, 'Adaptive Mesh Refinement', GotIt ) ) &
+   IF ( ListGetLogical( Params, 'Adaptive Mesh Refinement', GotIt ) ) THEN
+     IF ( .NOT. ListGetLogical( Params, 'Library Adaptivity', GotIt ) ) THEN
        CALL RefineMesh( Model, Solver, Potential, PotentialPerm, &
        StatElecSolver_Inside_Residual, StatElecSolver_Edge_Residual, &
        StatElecSolver_Boundary_Residual )
+     END IF
+   END IF
    
    CALL InvalidateVariable( Model % Meshes, Solver % Mesh, 'Potential')
 

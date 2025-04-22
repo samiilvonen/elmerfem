@@ -157,32 +157,32 @@
 !------------------------------------------------------------------------------
 
      INTERFACE
-        SUBROUTINE FlowBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
+        SUBROUTINE FlowSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END SUBROUTINE FlowBoundaryResidual
+        END SUBROUTINE FlowSolver_Boundary_Residual
 
-        SUBROUTINE FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
+        SUBROUTINE FlowSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END SUBROUTINE FlowEdgeResidual
+        END SUBROUTINE FlowSolver_Edge_Residual
 
-        SUBROUTINE FlowInsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm,Indicator)
+        SUBROUTINE FlowSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm,Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END SUBROUTINE FlowInsideResidual
+        END SUBROUTINE FlowSolver_Inside_Residual
      END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -1469,9 +1469,12 @@
       END DO
     END IF
 
-    IF (ListGetLogical(Solver % Values,'Adaptive Mesh Refinement',GotIt)) &
-      CALL RefineMesh( Model,Solver,FlowSolution,FlowPerm, &
-         FlowInsideResidual, FlowEdgeResidual, FlowBoundaryResidual ) 
+    IF (ListGetLogical(Solver % Values,'Adaptive Mesh Refinement',GotIt)) THEN
+      IF (.NOT.ListGetLogical(Solver % Values,'Library Adaptivity',GotIt)) THEN
+        CALL RefineMesh( Model,Solver,FlowSolution,FlowPerm, &
+           FlowSolver_Inside_Residual, FlowSolver_Edge_Residual, FlowSolver_Boundary_Residual ) 
+      END IF
+    END IF
 
 !------------------------------------------------------------------------------
     CALL CheckCircleBoundary()
@@ -1547,7 +1550,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the boundary elements.
 !------------------------------------------------------------------------------
-  SUBROUTINE FlowBoundaryResidual( Model, Edge, Mesh, &
+  SUBROUTINE FlowSolver_Boundary_Residual( Model, Edge, Mesh, &
         Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
@@ -1908,14 +1911,14 @@ CONTAINS
       ExtPressure, Temperature, Tension,SlipCoeff, Velocity, Pressure, &
       Force, NodalViscosity )
 !------------------------------------------------------------------------------
-  END SUBROUTINE FlowBoundaryResidual
+  END SUBROUTINE FlowSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the edge elements.
 !------------------------------------------------------------------------------
-  SUBROUTINE FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
+  SUBROUTINE FlowSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -2141,14 +2144,14 @@ CONTAINS
      DEALLOCATE( NodalViscosity, x, y, z, EdgeBasis, &
            Basis, dBasisdx, Velocity, Pressure )
 !------------------------------------------------------------------------------
-  END SUBROUTINE FlowEdgeResidual
+  END SUBROUTINE FlowSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the bulk elements.
 !------------------------------------------------------------------------------
-   SUBROUTINE FlowInsideResidual( Model, Element,  &
+   SUBROUTINE FlowSolver_Inside_Residual( Model, Element,  &
           Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
@@ -2658,7 +2661,7 @@ CONTAINS
         NodalForce, HeatCapacity, ReferenceTemperature, HeatExpansionCoeff,&
         Nodes % x, Nodes % y, Nodes % z )
 !------------------------------------------------------------------------------
-  END SUBROUTINE FlowInsideResidual
+  END SUBROUTINE FlowSolver_Inside_Residual
 !------------------------------------------------------------------------------
 
 !> \} 

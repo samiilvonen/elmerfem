@@ -314,32 +314,32 @@ SUBROUTINE StressSolver_Init( Model,Solver,dt,Transient )
      REAL(KIND=dp) :: LumpedArea, LumpedCenter(3), LumpedMoments(3,3)
 
      INTERFACE
-        SUBROUTINE StressBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
+        SUBROUTINE StressSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END SUBROUTINE StressBoundaryResidual
+        END SUBROUTINE StressSolver_Boundary_Residual
 
-        SUBROUTINE StressEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
+        SUBROUTINE StressSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END SUBROUTINE StressEdgeResidual
+        END SUBROUTINE StressSolver_Edge_Residual
 
-        SUBROUTINE StressInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
+        SUBROUTINE StressSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END SUBROUTINE StressInsideResidual
+        END SUBROUTINE StressSolver_Inside_Residual
      END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -1032,24 +1032,26 @@ SUBROUTINE StressSolver_Init( Model,Solver,dt,Transient )
 
 
      IF ( GetLogical( SolverParams, 'Adaptive Mesh Refinement', Found) ) THEN
-       CALL RefineMesh( Model, Solver, Displacement, DisplPerm, &
-           StressInsideResidual, StressEdgeResidual, StressBoundaryResidual )
+       IF ( .NOT. GetLogical( SolverParams, 'Library Adaptivity', Found) ) THEN
+         CALL RefineMesh( Model, Solver, Displacement, DisplPerm, &
+             StressSolver_Inside_Residual, StressSolver_Edge_Residual, StressSolver_Boundary_Residual )
        
-       IF ( MeshDisplacementActive ) THEN
-         StressSol => Solver % Variable
-         IF ( .NOT.ASSOCIATED( Mesh, Model % Mesh ) ) &
+         IF ( MeshDisplacementActive ) THEN
+           StressSol => Solver % Variable
+           IF ( .NOT.ASSOCIATED( Mesh, Model % Mesh ) ) &
              CALL DisplaceMesh( Mesh, StressSol % Values, 1, &
                StressSol % Perm, StressSol % DOFs,.FALSE.)
-       END IF
-     END IF
+         END IF
  
-     IF ( MeshDisplacementActive ) THEN
-       IF (Incompr ) THEN
-         CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
-             DisplPerm, STDOFs, .FALSE., STDOFs-1 )
-       ELSE
-         CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
-             DisplPerm, STDOFs, .FALSE. )
+         IF ( MeshDisplacementActive ) THEN
+           IF (Incompr ) THEN
+             CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
+                 DisplPerm, STDOFs, .FALSE., STDOFs-1 )
+           ELSE
+             CALL DisplaceMesh(Model % Mesh, Displacement, 1, &
+                 DisplPerm, STDOFs, .FALSE. )
+           END IF
+         END IF
        END IF
      END IF
 
@@ -2920,7 +2922,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   SUBROUTINE StressBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
+   SUBROUTINE StressSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
      USE DefUtils
@@ -3132,12 +3134,12 @@ CONTAINS
       dBasisdx, Force, NodalDisplacement, ElasticModulus, NodalPoissonRatio, &
       LocalTemp, LocalHexp )
 !------------------------------------------------------------------------------
-   END SUBROUTINE StressBoundaryResidual
+   END SUBROUTINE StressSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE StressEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
+  SUBROUTINE StressSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
      USE DefUtils
@@ -3323,12 +3325,12 @@ CONTAINS
      DEALLOCATE( LocalTemp, LocalHexp, x, y, z, NodalDisplacement, &
        ElasticModulus, NodalPoissonRatio, EdgeBasis, Basis, dBasisdx )
 !------------------------------------------------------------------------------
-   END SUBROUTINE StressEdgeResidual
+   END SUBROUTINE StressSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   SUBROUTINE StressInsideResidual( Model, Element,  &
+   SUBROUTINE StressSolver_Inside_Residual( Model, Element,  &
                       Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
@@ -3606,5 +3608,5 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-   END SUBROUTINE StressInsideResidual
+   END SUBROUTINE StressSolver_Inside_Residual
 !------------------------------------------------------------------------------

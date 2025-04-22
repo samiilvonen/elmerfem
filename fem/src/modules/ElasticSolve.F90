@@ -359,32 +359,32 @@ SUBROUTINE ElasticSolver( Model, Solver, dt, TransientSimulation )
       UmatEnergy0, UmatStress0, UmatState0, UmatInitDone
 !-----------------------------------------------------------------------------------------------------
   INTERFACE
-    SUBROUTINE ElastBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
+    SUBROUTINE ElasticSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
       INTEGER :: Perm(:)
-    END SUBROUTINE ElastBoundaryResidual
+    END SUBROUTINE ElasticSolver_Boundary_Residual
 
-    SUBROUTINE ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
+    SUBROUTINE ElasticSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2)
       INTEGER :: Perm(:)
-    END SUBROUTINE ElastEdgeResidual
+    END SUBROUTINE ElasticSolver_Edge_Residual
 
-    SUBROUTINE ElastInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
+    SUBROUTINE ElasticSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Element
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
       INTEGER :: Perm(:)
-    END SUBROUTINE ElastInsideResidual
+    END SUBROUTINE ElasticSolver_Inside_Residual
   END INTERFACE
 
 
@@ -1367,9 +1367,9 @@ SUBROUTINE ElasticSolver( Model, Solver, dt, TransientSimulation )
   IF ( ListGetLogical(SolverParams, 'Adaptive Mesh Refinement', GotIt) ) THEN
      IF (UseUmat .OR. NeoHookeanMaterial) THEN
         CALL Info(Caller,'Adaptive Mesh Refinement is not available') 
-     ELSE
+     ELSE IF(.NOT.ListGetLogical(SolverParams, 'Library Adaptivity', GotIt ) ) THEN
         CALL RefineMesh( Model, Solver, Displacement, StressPerm, &
-             ElastInsideResidual, ElastEdgeResidual, ElastBoundaryResidual )
+             ElasticSolver_Inside_Residual, ElasticSolver_Edge_Residual, ElasticSolver_Boundary_Residual )
 
         IF ( MeshDisplacementActive ) THEN
            StressSol => Solver % Variable
@@ -4567,7 +4567,7 @@ END SUBROUTINE ElasticSolver
 
 
 !------------------------------------------------------------------------------
-   SUBROUTINE ElastBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
+   SUBROUTINE ElasticSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -4883,13 +4883,13 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   END SUBROUTINE ElastBoundaryResidual
+   END SUBROUTINE ElasticSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-  SUBROUTINE ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
+  SUBROUTINE ElasticSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -5162,12 +5162,12 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   END SUBROUTINE ElastEdgeResidual
+   END SUBROUTINE ElasticSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   SUBROUTINE ElastInsideResidual( Model, Element,  &
+   SUBROUTINE ElasticSolver_Inside_Residual( Model, Element,  &
                       Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
@@ -5509,5 +5509,5 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-   END SUBROUTINE ElastInsideResidual
+   END SUBROUTINE ElasticSolver_Inside_Residual
 !------------------------------------------------------------------------------
