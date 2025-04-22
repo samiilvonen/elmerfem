@@ -47,9 +47,6 @@ MODULE MainUtils
   Use BlockSolve
   USE IterSolve, ONLY : NumericalError
   USE LoadMod
-#ifdef LIBRARY_ADAPTIVITY
-  USE Adaptivity, ONLY : RefineMesh
-#endif  
 !------------------------------------------------------------------------------
   IMPLICIT NONE
 !------------------------------------------------------------------------------
@@ -5327,53 +5324,100 @@ END BLOCK
          INTEGER(KIND=AddrInt) :: IResidual, EResidual, BResidual
 
          INTERFACE
-           FUNCTION BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+           SUBROUTINE RefineMeshExt(Model,Solver,Quant,Perm,InsideResidual,EdgeResidual,BoundaryResidual)
+             USE Types
+
+             TYPE( Model_t ) :: Model
+             TYPE(Solver_t), TARGET :: Solver
+             REAL(KIND=dp) :: Quant(:)
+             INTEGER :: Perm(:)
+
+             INTERFACE
+                SUBROUTINE BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator )
+                   USE Types
+                   TYPE(Element_t), POINTER :: Edge
+                   TYPE(Model_t) :: Model
+                   TYPE(Mesh_t), POINTER :: Mesh
+                   REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
+                   INTEGER :: Perm(:)
+                END SUBROUTINE BoundaryResidual
+
+                SUBROUTINE EdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator)
+                   USE Types
+                   TYPE(Element_t), POINTER :: Edge
+                   TYPE(Model_t) :: Model
+                   TYPE(Mesh_t), POINTER :: Mesh
+                   REAL(KIND=dp) :: Quant(:), Indicator(2)
+                   INTEGER :: Perm(:)
+                END SUBROUTINE EdgeResidual
+
+
+                SUBROUTINE InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm, Indicator)
+                   USE Types
+                   TYPE(Element_t), POINTER :: Element
+                   TYPE(Model_t) :: Model
+                   TYPE(Mesh_t), POINTER :: Mesh
+                   REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
+                   INTEGER :: Perm(:)
+                END SUBROUTINE InsideResidual
+             END INTERFACE
+           END SUBROUTINE RefineMeshExt
+
+           SUBROUTINE BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
              USE Types
              TYPE(Element_t), POINTER :: Edge
              TYPE(Model_t) :: Model
              TYPE(Mesh_t), POINTER :: Mesh
              REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
              INTEGER :: Perm(:)
-           END FUNCTION BoundaryResidual
+           END SUBROUTINE BoundaryResidual
 
-           FUNCTION EdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+           SUBROUTINE EdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
              USE Types
              TYPE(Element_t), POINTER :: Edge
              TYPE(Model_t) :: Model
              TYPE(Mesh_t), POINTER :: Mesh
              REAL(KIND=dp) :: Quant(:), Indicator(2)
              INTEGER :: Perm(:)
-           END FUNCTION EdgeResidual
+           END SUBROUTINE EdgeResidual
 
-           FUNCTION InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm ) RESULT(Indicator)
+           SUBROUTINE InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm,Indicator)
              USE Types
              TYPE(Element_t), POINTER :: Element
              TYPE(Model_t) :: Model
              TYPE(Mesh_t), POINTER :: Mesh
              REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
              INTEGER :: Perm(:)
-           END FUNCTION InsideResidual
+           END SUBROUTINE InsideResidual
          END INTERFACE
 
          PROCEDURE(InsideResidual), POINTER :: InsidePtr
          PROCEDURE(EdgeResidual), POINTER :: EdgePtr
          PROCEDURE(BoundaryResidual), POINTER :: BoundaryPtr
 
-         POINTER( Eresidual, Edgeptr )
-         POINTER( Iresidual, Insideptr )
-         POINTER( Bresidual, BoundaryPtr )
+         TYPE(C_FUNPTR) :: IResFunC, EResFunC, BresFunC
 
-         AdaptiveActive = ListGetLogical( Solver % Values,'Adaptive Mesh Refinement',Found )
+!        POINTER( Eresidual, Edgeptr )
+!        POINTER( Iresidual, Insideptr )
+!        POINTER( Bresidual, BoundaryPtr )
 
-         IF( AdaptiveActive ) THEN
-           ProcName = ListGetString( Solver % Values,'Procedure', Found )
-           IResidual = GetProcAddr( TRIM(ProcName)//'_inside_residual', abort=.FALSE. )
-           EResidual   = GetProcAddr( TRIM(ProcName)//'_edge_residual', abort=.FALSE. )
-           BResidual   = GetProcAddr( TRIM(ProcName)//'_boundary_residual', abort=.FALSE. )
-           IF( IResidual/=0 .AND. EResidual /= 0 .AND. BResidual /= 0 ) THEN
-             Var => Solver % Variable
-             CALL RefineMesh( Model, Solver, Var % Values, Var % Perm, InsidePtr, EdgePtr, BoundaryPtr )
-           END IF
+         ProcName = ListGetString( Solver % Values,'Procedure', Found )
+
+         IResidual = GetProcAddr( TRIM(ProcName)//'_inside_residual', abort=.FALSE. )
+         EResidual   = GetProcAddr( TRIM(ProcName)//'_edge_residual', abort=.FALSE. )
+         BResidual   = GetProcAddr( TRIM(ProcName)//'_boundary_residual', abort=.FALSE. )
+
+         IF( IResidual/=0 .AND. EResidual /= 0 .AND. BResidual /= 0 ) THEN
+           IResFunC = TRANSFER( Iresidual, IresFunC )
+           EResFunC = TRANSFER( Eresidual, EresFunC )
+           BResFunC = TRANSFER( Bresidual, BresFunC )
+
+           CALL C_F_PROCPOINTER(IresFunC, InsidePtr)
+           CALL C_F_PROCPOINTER(EResFunC, EdgePtr )
+           CALL C_F_PROCPOINTER(BResFunC, BoundaryPtr )
+
+           Var => Solver % Variable
+           CALL RefineMeshExt( Model, Solver, Var % Values, Var % Perm, InsidePtr, EdgePtr, BoundaryPtr )
          END IF
        END BLOCK
 #else

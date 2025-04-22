@@ -90,32 +90,32 @@ SUBROUTINE DCRComplexSolver( Model,Solver,dt,TransientSimulation )
    REAL(KIND=dp) :: at,at0,totat,st,totst,t1
 !------------------------------------------------------------------------------
      INTERFACE
-        FUNCTION DCRBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+        SUBROUTINE DCRBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END FUNCTION DCRBoundaryResidual
+        END SUBROUTINE DCRBoundaryResidual
 
-        FUNCTION DCREdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+        SUBROUTINE DCREdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END FUNCTION DCREdgeResidual
+        END SUBROUTINE DCREdgeResidual
 
-        FUNCTION DCRInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+        SUBROUTINE DCRInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END FUNCTION DCRInsideResidual
+        END SUBROUTINE DCRInsideResidual
      END INTERFACE
 
 !------------------------------------------------------------------------------
@@ -779,7 +779,7 @@ END SUBROUTINE DCRComplexSolver
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  FUNCTION DCRBoundaryResidual( Model, Edge, Mesh, Quant, Perm,Gnorm ) RESULT( Indicator )
+  SUBROUTINE DCRBoundaryResidual( Model, Edge, Mesh, Quant, Perm,Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -1105,12 +1105,12 @@ END SUBROUTINE DCRComplexSolver
 !------------------------------------------------------------------------------
     END SUBROUTINE InputVector
 !------------------------------------------------------------------------------
-   END FUNCTION DCRBoundaryResidual
+   END SUBROUTINE DCRBoundaryResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-  FUNCTION DCREdgeResidual( Model, Edge, Mesh, Quant, Perm ) RESULT( Indicator )
+  SUBROUTINE DCREdgeResidual( Model, Edge, Mesh, Quant, Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -1442,13 +1442,13 @@ END SUBROUTINE DCRComplexSolver
 !------------------------------------------------------------------------------
 
 
-   END FUNCTION DCREdgeResidual
+   END SUBROUTINE DCREdgeResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION DCRInsideResidual( Model, Element, Mesh, &
-        Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE DCRInsideResidual( Model, Element, Mesh, &
+        Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -1787,7 +1787,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-   END FUNCTION DCRInsideResidual
+   END SUBROUTINE DCRInsideResidual
 !------------------------------------------------------------------------------
 
 

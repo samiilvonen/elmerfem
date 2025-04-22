@@ -359,32 +359,32 @@ SUBROUTINE ElasticSolver( Model, Solver, dt, TransientSimulation )
       UmatEnergy0, UmatStress0, UmatState0, UmatInitDone
 !-----------------------------------------------------------------------------------------------------
   INTERFACE
-    FUNCTION ElastBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm ) RESULT(Indicator)
+    SUBROUTINE ElastBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
       INTEGER :: Perm(:)
-    END FUNCTION ElastBoundaryResidual
+    END SUBROUTINE ElastBoundaryResidual
 
-    FUNCTION ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+    SUBROUTINE ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2)
       INTEGER :: Perm(:)
-    END FUNCTION ElastEdgeResidual
+    END SUBROUTINE ElastEdgeResidual
 
-    FUNCTION ElastInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+    SUBROUTINE ElastInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Element
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
       INTEGER :: Perm(:)
-    END FUNCTION ElastInsideResidual
+    END SUBROUTINE ElastInsideResidual
   END INTERFACE
 
 
@@ -4567,7 +4567,7 @@ END SUBROUTINE ElasticSolver
 
 
 !------------------------------------------------------------------------------
-   FUNCTION ElastBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm ) RESULT( Indicator )
+   SUBROUTINE ElastBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -4883,13 +4883,13 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   END FUNCTION ElastBoundaryResidual
+   END SUBROUTINE ElastBoundaryResidual
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-  FUNCTION ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT( Indicator )
+  SUBROUTINE ElastEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -5162,13 +5162,13 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   END FUNCTION ElastEdgeResidual
+   END SUBROUTINE ElastEdgeResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION ElastInsideResidual( Model, Element,  &
-                      Mesh, Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE ElastInsideResidual( Model, Element,  &
+                      Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -5509,5 +5509,5 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-   END FUNCTION ElastInsideResidual
+   END SUBROUTINE ElastInsideResidual
 !------------------------------------------------------------------------------

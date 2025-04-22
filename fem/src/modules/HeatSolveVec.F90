@@ -187,32 +187,32 @@ SUBROUTINE HeatSolver( Model,Solver,dt,Transient )
   CHARACTER(*), PARAMETER :: Caller = 'HeatSolver'
 
   INTERFACE
-    FUNCTION HeatSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+    SUBROUTINE HeatSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
       INTEGER :: Perm(:)
-    END FUNCTION HeatSolver_Boundary_Residual
+    END SUBROUTINE HeatSolver_Boundary_Residual
 
-    FUNCTION HeatSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+    SUBROUTINE HeatSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2)
       INTEGER :: Perm(:)
-    END FUNCTION HeatSolver_Edge_Residual
+    END SUBROUTINE HeatSolver_Edge_Residual
 
-    FUNCTION HeatSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+    SUBROUTINE HeatSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Element
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
       INTEGER :: Perm(:)
-    END FUNCTION HeatSolver_Inside_Residual
+    END SUBROUTINE HeatSolver_Inside_Residual
   END INTERFACE
   
   IF (.NOT. ASSOCIATED(Solver % Matrix)) RETURN
@@ -1993,7 +1993,7 @@ END SUBROUTINE HeatSolver
 
 
 !------------------------------------------------------------------------------
-  FUNCTION HeatSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm,Gnorm ) RESULT( Indicator )
+  SUBROUTINE HeatSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm,Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      USE Radiation
@@ -2275,13 +2275,13 @@ END SUBROUTINE HeatSolver
 !    Gnorm = EdgeLength * Gnorm
      Indicator = EdgeLength * ResidualNorm
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Boundary_Residual
+   END SUBROUTINE HeatSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-  FUNCTION HeatSolver_Edge_Residual(Model,Edge,Mesh,Quant,Perm) RESULT( Indicator )
+  SUBROUTINE HeatSolver_Edge_Residual(Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -2464,13 +2464,13 @@ END SUBROUTINE HeatSolver
      IF (dim==3) EdgeLength = SQRT(EdgeLength)
      Indicator = EdgeLength * ResidualNorm
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Edge_Residual
+   END SUBROUTINE HeatSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION HeatSolver_Inside_Residual( Model, Element, Mesh, &
-        Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE HeatSolver_Inside_Residual( Model, Element, Mesh, &
+        Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -2799,5 +2799,5 @@ END SUBROUTINE HeatSolver
 !    Fnorm = Element % hk**2 * Fnorm
      Indicator = Element % hK**2 * ResidualNorm
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Inside_Residual
+   END SUBROUTINE HeatSolver_Inside_Residual
 !------------------------------------------------------------------------------

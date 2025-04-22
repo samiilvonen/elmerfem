@@ -188,32 +188,32 @@ END SUBROUTINE HeatSolver_Init
 
 
      INTERFACE
-        FUNCTION HeatSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+        SUBROUTINE HeatSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END FUNCTION HeatSolver_Boundary_Residual
+        END SUBROUTINE HeatSolver_Boundary_Residual
 
-        FUNCTION HeatSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+        SUBROUTINE HeatSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END FUNCTION HeatSolver_Edge_Residual
+        END SUBROUTINE HeatSolver_Edge_Residual
 
-        FUNCTION HeatSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+        SUBROUTINE HeatSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END FUNCTION HeatSolver_Inside_Residual
+        END SUBROUTINE HeatSolver_Inside_Residual
      END INTERFACE
 
      REAL(KIND=dp) :: at,at0,totat,st,totst,t1
@@ -2291,7 +2291,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-  FUNCTION HeatSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm,Gnorm ) RESULT( Indicator )
+  SUBROUTINE HeatSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm,Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      USE Radiation
@@ -2586,13 +2586,11 @@ CONTAINS
 !    Gnorm = EdgeLength * Gnorm
      Indicator = EdgeLength * ResidualNorm
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Boundary_Residual
+   END SUBROUTINE HeatSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
-
-
 !------------------------------------------------------------------------------
-  FUNCTION HeatSolver_Edge_Residual(Model,Edge,Mesh,Quant,Perm) RESULT( Indicator )
+  SUBROUTINE HeatSolver_Edge_Residual(Model,Edge,Mesh,Quant,Perm,Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -2785,13 +2783,13 @@ CONTAINS
      Indicator = EdgeLength * ResidualNorm
 
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Edge_Residual
+   END SUBROUTINE HeatSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION HeatSolver_Inside_Residual( Model, Element, Mesh, &
-        Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE HeatSolver_Inside_Residual( Model, Element, Mesh, &
+        Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -3123,5 +3121,5 @@ CONTAINS
 !    Fnorm = Element % hk**2 * Fnorm
      Indicator = Element % hK**2 * ResidualNorm
 !------------------------------------------------------------------------------
-   END FUNCTION HeatSolver_Inside_Residual
+   END SUBROUTINE HeatSolver_Inside_Residual
 !------------------------------------------------------------------------------

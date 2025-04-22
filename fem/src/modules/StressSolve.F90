@@ -314,32 +314,32 @@ SUBROUTINE StressSolver_Init( Model,Solver,dt,Transient )
      REAL(KIND=dp) :: LumpedArea, LumpedCenter(3), LumpedMoments(3,3)
 
      INTERFACE
-        FUNCTION StressBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm ) RESULT(Indicator)
+        SUBROUTINE StressBoundaryResidual( Model,Edge,Mesh,Quant,Perm, Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END FUNCTION StressBoundaryResidual
+        END SUBROUTINE StressBoundaryResidual
 
-        FUNCTION StressEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+        SUBROUTINE StressEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END FUNCTION StressEdgeResidual
+        END SUBROUTINE StressEdgeResidual
 
-        FUNCTION StressInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+        SUBROUTINE StressInsideResidual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END FUNCTION StressInsideResidual
+        END SUBROUTINE StressInsideResidual
      END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -2920,7 +2920,7 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-   FUNCTION StressBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm ) RESULT( Indicator )
+   SUBROUTINE StressBoundaryResidual( Model, Edge, Mesh, Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
      USE DefUtils
@@ -3132,12 +3132,12 @@ CONTAINS
       dBasisdx, Force, NodalDisplacement, ElasticModulus, NodalPoissonRatio, &
       LocalTemp, LocalHexp )
 !------------------------------------------------------------------------------
-   END FUNCTION StressBoundaryResidual
+   END SUBROUTINE StressBoundaryResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-  FUNCTION StressEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT( Indicator )
+  SUBROUTINE StressEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
      USE DefUtils
@@ -3323,13 +3323,13 @@ CONTAINS
      DEALLOCATE( LocalTemp, LocalHexp, x, y, z, NodalDisplacement, &
        ElasticModulus, NodalPoissonRatio, EdgeBasis, Basis, dBasisdx )
 !------------------------------------------------------------------------------
-   END FUNCTION StressEdgeResidual
+   END SUBROUTINE StressEdgeResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION StressInsideResidual( Model, Element,  &
-                      Mesh, Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE StressInsideResidual( Model, Element,  &
+                      Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE StressLocal
      USE DefUtils
@@ -3606,5 +3606,5 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-   END FUNCTION StressInsideResidual
+   END SUBROUTINE StressInsideResidual
 !------------------------------------------------------------------------------

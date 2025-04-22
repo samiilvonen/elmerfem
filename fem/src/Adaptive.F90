@@ -74,34 +74,34 @@ CONTAINS
     INTEGER :: Perm(:)
 
     INTERFACE
-       FUNCTION BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+       SUBROUTINE BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator )
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-       END FUNCTION BoundaryResidual
+       END SUBROUTINE BoundaryResidual
 
 
-       FUNCTION EdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+       SUBROUTINE EdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-       END FUNCTION EdgeResidual
+       END SUBROUTINE EdgeResidual
 
 
-       FUNCTION InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm ) RESULT(Indicator)
+       SUBROUTINE InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm, Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-       END FUNCTION InsideResidual
+       END SUBROUTINE InsideResidual
     END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -2522,32 +2522,32 @@ CONTAINS
     REAL(KIND=dp) :: ErrorIndicator(:), Quant(:), MaxError
 
     INTERFACE
-       FUNCTION BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+       SUBROUTINE BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm, Indicator)
          USE Types
          TYPE(Element_t), POINTER :: Edge
          TYPE(Model_t) :: Model
          TYPE(Mesh_t), POINTER :: Mesh
          REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
          INTEGER :: Perm(:)
-       END FUNCTION BoundaryResidual
+       END SUBROUTINE BoundaryResidual
 
-       FUNCTION EdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+       SUBROUTINE EdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator)
          USE Types
          TYPE(Element_t), POINTER :: Edge
          TYPE(Model_t) :: Model
          TYPE(Mesh_t), POINTER :: Mesh
          REAL(KIND=dp) :: Quant(:), Indicator(2)
          INTEGER :: Perm(:)
-       END FUNCTION EdgeResidual
+       END SUBROUTINE EdgeResidual
 
-       FUNCTION InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm ) RESULT(Indicator)
+       SUBROUTINE InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm, Indicator)
          USE Types
          TYPE(Element_t), POINTER :: Element
          TYPE(Model_t) :: Model
          TYPE(Mesh_t), POINTER :: Mesh
          REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
          INTEGER :: Perm(:)
-       END FUNCTION InsideResidual
+       END SUBROUTINE InsideResidual
     END INTERFACE
 !------------------------------------------------------------------------------
     TYPE(Element_t), POINTER :: Edge, Face, Boundary, Element
@@ -2569,8 +2569,8 @@ CONTAINS
        Element => RefMesh % Elements(i)
        CurrentModel % CurrentElement => Element
 
-       LocalIndicator = InsideResidual( Model, Element, &
-             RefMesh, Quant, Perm, LocalFnorm )
+       CALL InsideResidual( Model, Element, &
+             RefMesh, Quant, Perm, LocalFnorm, LocalIndicator )
 
        Fnorm = Fnorm + LocalFnorm
        TempIndicator(:,i) = TempIndicator(:,i) + LocalIndicator
@@ -2589,7 +2589,7 @@ CONTAINS
        IF ( .NOT. ASSOCIATED( Edge % BoundaryInfo ) ) CYCLE
 
        IF ( ASSOCIATED( Edge % BoundaryInfo % Right ) ) THEN
-          LocalIndicator = EdgeResidual( Model, Edge, RefMesh, Quant, Perm )
+          CALL EdgeResidual( Model, Edge, RefMesh, Quant, Perm, LocalIndicator )
 
           Parent = Edge % BoundaryInfo % Left % ElementIndex
           TempIndicator( :,Parent ) = &
@@ -2613,7 +2613,7 @@ CONTAINS
        IF ( .NOT. ASSOCIATED( Face % BoundaryInfo ) ) CYCLE
 
        IF ( ASSOCIATED( Face % BoundaryInfo % Right ) ) THEN
-          LocalIndicator = EdgeResidual( Model, Face, RefMesh, Quant, Perm )
+          CALL EdgeResidual( Model, Face, RefMesh, Quant, Perm, LocalIndicator )
 
           Parent = Face % BoundaryInfo % Left % ElementIndex
           TempIndicator( :,Parent ) = TempIndicator( :,Parent ) + LocalIndicator
@@ -2635,8 +2635,8 @@ CONTAINS
 
        IF ( Boundary % Type % ElementCode == 101 ) CYCLE
 
-       LocalIndicator = BoundaryResidual( Model, Boundary, &
-             RefMesh, Quant, Perm, LocalFnorm )
+       CALL BoundaryResidual( Model, Boundary, &
+             RefMesh, Quant, Perm, LocalFnorm, LocalIndicator )
 
        Fnorm = Fnorm + LocalFnorm
 
@@ -3502,5 +3502,52 @@ END SUBROUTINE FluxRecovery
 !------------------------------------------------------------------------------
 END MODULE Adaptive
 !-----------------------------------------------------------------------------
+
+SUBROUTINE RefineMeshExt(Model,Solver,Quant,Perm,InsideResidual,EdgeResidual,BoundaryResidual)
+  USE adaptive
+
+  IMPLICIT NONE
+
+  TYPE( Model_t ) :: Model
+  TYPE(Solver_t), TARGET :: Solver
+  REAL(KIND=dp) :: Quant(:)
+  INTEGER :: Perm(:)
+
+    INTERFACE
+       SUBROUTINE BoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator )
+          USE Types
+          TYPE(Element_t), POINTER :: Edge
+          TYPE(Model_t) :: Model
+          TYPE(Mesh_t), POINTER :: Mesh
+          REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
+          INTEGER :: Perm(:)
+       END SUBROUTINE BoundaryResidual
+
+
+       SUBROUTINE EdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator)
+          USE Types
+          TYPE(Element_t), POINTER :: Edge
+          TYPE(Model_t) :: Model
+          TYPE(Mesh_t), POINTER :: Mesh
+          REAL(KIND=dp) :: Quant(:), Indicator(2)
+          INTEGER :: Perm(:)
+       END SUBROUTINE EdgeResidual
+
+
+       SUBROUTINE InsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm, Indicator)
+          USE Types
+          TYPE(Element_t), POINTER :: Element
+          TYPE(Model_t) :: Model
+          TYPE(Mesh_t), POINTER :: Mesh
+          REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
+          INTEGER :: Perm(:)
+       END SUBROUTINE InsideResidual
+    END INTERFACE
+
+  CALL RefineMesh( Model,Solver,Quant,Perm, &
+            InsideResidual, EdgeResidual, BoundaryResidual )
+END SUBROUTINE RefineMeshExt
+
+!------------------------------------------------------------------------------
 
 !> \} 

@@ -157,32 +157,32 @@
 !------------------------------------------------------------------------------
 
      INTERFACE
-        FUNCTION FlowBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+        SUBROUTINE FlowBoundaryResidual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
           INTEGER :: Perm(:)
-        END FUNCTION FlowBoundaryResidual
+        END SUBROUTINE FlowBoundaryResidual
 
-        FUNCTION FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+        SUBROUTINE FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Edge
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2)
           INTEGER :: Perm(:)
-        END FUNCTION FlowEdgeResidual
+        END SUBROUTINE FlowEdgeResidual
 
-        FUNCTION FlowInsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm ) RESULT(Indicator)
+        SUBROUTINE FlowInsideResidual( Model,Element,Mesh,Quant,Perm,Fnorm,Indicator)
           USE Types
           TYPE(Element_t), POINTER :: Element
           TYPE(Model_t) :: Model
           TYPE(Mesh_t), POINTER :: Mesh
           REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
           INTEGER :: Perm(:)
-        END FUNCTION FlowInsideResidual
+        END SUBROUTINE FlowInsideResidual
      END INTERFACE
 !------------------------------------------------------------------------------
 
@@ -1547,8 +1547,8 @@ CONTAINS
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the boundary elements.
 !------------------------------------------------------------------------------
-  FUNCTION FlowBoundaryResidual( Model, Edge, Mesh, &
-        Quant, Perm, Gnorm ) RESULT( Indicator )
+  SUBROUTINE FlowBoundaryResidual( Model, Edge, Mesh, &
+        Quant, Perm, Gnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -1908,14 +1908,14 @@ CONTAINS
       ExtPressure, Temperature, Tension,SlipCoeff, Velocity, Pressure, &
       Force, NodalViscosity )
 !------------------------------------------------------------------------------
-  END FUNCTION FlowBoundaryResidual
+  END SUBROUTINE FlowBoundaryResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the edge elements.
 !------------------------------------------------------------------------------
-  FUNCTION FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm ) RESULT( Indicator )
+  SUBROUTINE FlowEdgeResidual( Model,Edge,Mesh,Quant,Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -2141,15 +2141,15 @@ CONTAINS
      DEALLOCATE( NodalViscosity, x, y, z, EdgeBasis, &
            Basis, dBasisdx, Velocity, Pressure )
 !------------------------------------------------------------------------------
-  END FUNCTION FlowEdgeResidual
+  END SUBROUTINE FlowEdgeResidual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
 !> Compute the residual of the Navier-Stokes equation for the bulk elements.
 !------------------------------------------------------------------------------
-   FUNCTION FlowInsideResidual( Model, Element,  &
-          Mesh, Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE FlowInsideResidual( Model, Element,  &
+          Mesh, Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -2658,7 +2658,7 @@ CONTAINS
         NodalForce, HeatCapacity, ReferenceTemperature, HeatExpansionCoeff,&
         Nodes % x, Nodes % y, Nodes % z )
 !------------------------------------------------------------------------------
-  END FUNCTION FlowInsideResidual
+  END SUBROUTINE FlowInsideResidual
 !------------------------------------------------------------------------------
 
 !> \} 

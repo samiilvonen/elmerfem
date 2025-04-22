@@ -199,32 +199,32 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
   !$omp               Basis, dBasisdx, PiezoMaterial)
   
   INTERFACE
-    FUNCTION StatElecSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm ) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Boundary_Residual( Model,Edge,Mesh,Quant,Perm,Gnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Boundary_Residual
+    END SUBROUTINE StatElecSolver_Boundary_Residual
     
-    FUNCTION StatElecSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm ) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Edge_Residual( Model,Edge,Mesh,Quant,Perm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2)
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Edge_Residual
+    END SUBROUTINE StatElecSolver_Edge_Residual
     
-    FUNCTION StatElecSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm ) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Inside_Residual( Model,Element,Mesh,Quant,Perm, Fnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Element
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Inside_Residual
+    END SUBROUTINE StatElecSolver_Inside_Residual
   END INTERFACE
   
 !------------------------------------------------------------------------------
@@ -1508,8 +1508,7 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-  FUNCTION StatElecSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm, Gnorm ) &
-       RESULT( Indicator )
+  SUBROUTINE StatElecSolver_Boundary_Residual( Model, Edge, Mesh, Quant, Perm, Gnorm,Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -1753,13 +1752,13 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
      DEALLOCATE( EdgeBasis, Basis, dBasisdx, Flux, x, y, z, &
              NodalPermittivity, Potential )
 !------------------------------------------------------------------------------
-   END FUNCTION StatElecSolver_Boundary_Residual
+   END SUBROUTINE StatElecSolver_Boundary_Residual
 !------------------------------------------------------------------------------
 
 
 
 !------------------------------------------------------------------------------
-  FUNCTION StatElecSolver_Edge_Residual( Model, Edge, Mesh, Quant, Perm ) RESULT( Indicator )
+  SUBROUTINE StatElecSolver_Edge_Residual( Model, Edge, Mesh, Quant, Perm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
      IMPLICIT NONE
@@ -1971,13 +1970,13 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
      DEALLOCATE( x, y, z, NodalPermittivity, EdgeBasis, Basis, &
                 dBasisdx, Potential )
 !------------------------------------------------------------------------------
-   END FUNCTION StatElecSolver_Edge_Residual
+   END SUBROUTINE StatElecSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 
 !------------------------------------------------------------------------------
-   FUNCTION StatElecSolver_Inside_Residual( Model, Element, Mesh, &
-        Quant, Perm, Fnorm ) RESULT( Indicator )
+   SUBROUTINE StatElecSolver_Inside_Residual( Model, Element, Mesh, &
+        Quant, Perm, Fnorm, Indicator )
 !------------------------------------------------------------------------------
      USE DefUtils
 !------------------------------------------------------------------------------
@@ -2196,6 +2195,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
      DEALLOCATE( Nodes % x, Nodes % y, Nodes % z, NodalPermittivity, &
         Basis, dBasisdx, ddBasisddx, PrevPot, NodalSource, Potential )
 !------------------------------------------------------------------------------
-   END FUNCTION StatElecSolver_Inside_Residual
+   END SUBROUTINE StatElecSolver_Inside_Residual
 !------------------------------------------------------------------------------
 

@@ -212,32 +212,32 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,Transient )
 
 #ifndef LIBRARY_ADAPTIVITY
   INTERFACE
-    FUNCTION StatElecSolver_Boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Gnorm
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Boundary_Residual
+    END SUBROUTINE StatElecSolver_Boundary_Residual
     
-    FUNCTION StatElecSolver_Edge_Residual(Model, Edge, Mesh, Quant, Perm) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Edge_Residual(Model, Edge, Mesh, Quant, Perm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Edge
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2)
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Edge_Residual
+    END SUBROUTINE StatElecSolver_Edge_Residual
     
-    FUNCTION StatElecSolver_Inside_Residual(Model, Element, Mesh, Quant, Perm, Fnorm) RESULT(Indicator)
+    SUBROUTINE StatElecSolver_Inside_Residual(Model, Element, Mesh, Quant, Perm, Fnorm,Indicator)
       USE Types
       TYPE(Element_t), POINTER :: Element
       TYPE(Model_t) :: Model
       TYPE(Mesh_t), POINTER :: Mesh
       REAL(KIND=dp) :: Quant(:), Indicator(2), Fnorm
       INTEGER :: Perm(:)
-    END FUNCTION StatElecSolver_Inside_Residual
+    END SUBROUTINE StatElecSolver_Inside_Residual
   END INTERFACE
 #endif
   
@@ -1253,7 +1253,7 @@ END SUBROUTINE StatElecSolver_Post
 !------------------------------------------------------------------------------
 ! Subroutine for computing residuals for adaptive mesh refinement.
 !------------------------------------------------------------------------------
-FUNCTION StatElecSolver_boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm) RESULT(Indicator)
+SUBROUTINE StatElecSolver_boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm,Indicator)
 !------------------------------------------------------------------------------
   USE DefUtils
   IMPLICIT NONE
@@ -1478,11 +1478,11 @@ FUNCTION StatElecSolver_boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm)
 !    Gnorm = EdgeLength * Gnorm
   Indicator = EdgeLength * ResidualNorm
 !------------------------------------------------------------------------------
-END FUNCTION StatElecSolver_boundary_residual
+END SUBROUTINE StatElecSolver_boundary_residual
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-FUNCTION StatElecSolver_edge_residual(Model, Edge, Mesh, Quant, Perm) RESULT(Indicator)
+SUBROUTINE StatElecSolver_edge_residual(Model, Edge, Mesh, Quant, Perm,Indicator)
 !------------------------------------------------------------------------------
   USE DefUtils
   IMPLICIT NONE
@@ -1677,12 +1677,12 @@ FUNCTION StatElecSolver_edge_residual(Model, Edge, Mesh, Quant, Perm) RESULT(Ind
   DEALLOCATE (x, y, z, NodalPermittivity, EdgeBasis, &
               Basis, dBasisdx, Potential)
 !------------------------------------------------------------------------------
-END FUNCTION StatElecSolver_Edge_Residual
+END SUBROUTINE StatElecSolver_Edge_Residual
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-FUNCTION StatElecSolver_Inside_residual(Model, Element, Mesh, &
-                                Quant, Perm, Fnorm) RESULT(Indicator)
+SUBROUTINE StatElecSolver_Inside_residual(Model, Element, Mesh, &
+                                Quant, Perm, Fnorm,Indicator)
 !------------------------------------------------------------------------------
   USE DefUtils
 !------------------------------------------------------------------------------
@@ -1901,5 +1901,5 @@ FUNCTION StatElecSolver_Inside_residual(Model, Element, Mesh, &
 !    Fnorm = Element % hk**2 * Fnorm
   Indicator = Element % hK**2 * ResidualNorm
 !------------------------------------------------------------------------------
-END FUNCTION StatElecSolver_inside_residual
+END SUBROUTINE StatElecSolver_inside_residual
 !------------------------------------------------------------------------------
