@@ -58,7 +58,7 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   INTEGER :: SaveSolverMeshIndex
   LOGICAL :: CalcNrm
   REAL(KIND=dp) :: Nrm
-  REAL(KIND=dp), POINTER :: RefResults(:,:)
+  REAL(KIND=dp), POINTER :: RefResults(:,:), ThisResults(:,:)
   
   
   SAVE SubroutineVisited, OutputCount, ListSet, MeshDim, ListMeshName
@@ -328,12 +328,17 @@ SUBROUTINE ResultOutputSolver( Model,Solver,dt,TransientSimulation )
   IF( CalcNrm ) THEN
     IF( SaveVtu ) THEN
       Nrm = AscBinCompareNorm(RefResults(:,1))
-      Solver % Variable % Norm = Nrm
-      WRITE( Message,'(A,ES15.6)' ) 'Calculate Pseudonorm:',Nrm
-      CALL Info(Caller, Message)
+    ELSE IF(SaveStl) THEN
+      ! For STL format these have been precomputed.
+      ThisResults => ListGetConstRealArray( Params,'This Values')
+      Nrm = AscBinCompareNorm(RefResults(:,1),ThisResults(:,1))      
     ELSE
-      CALL Warn(Caller,'Reference norm computation implemented only for VTU format!')
+      CALL Fatal(Caller,'Reference norm computation implemented only for (VTU,STL) formats!')
     END IF
+    
+    Solver % Variable % Norm = Nrm
+    WRITE( Message,'(A,ES15.6)' ) 'Calculate Pseudonorm:',Nrm
+    CALL Info(Caller, Message)
   END IF
 
   
