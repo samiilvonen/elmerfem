@@ -5422,27 +5422,27 @@ END BLOCK
 
          TYPE(C_FUNPTR) :: IResFunC, EResFunC, BresFunC
 
-!        POINTER( Eresidual, Edgeptr )
-!        POINTER( Iresidual, Insideptr )
-!        POINTER( Bresidual, BoundaryPtr )
+         AdaptiveActive = ListGetLogical(Solver % Values, 'Adaptive Mesh Refinement', Found)
 
-         ProcName = ListGetString( Solver % Values,'Procedure', Found )
+         IF (AdaptiveActive) THEN
+           ProcName = ListGetString( Solver % Values,'Procedure', Found )
 
-         IResidual = GetProcAddr( TRIM(ProcName)//'_inside_residual', abort=.FALSE. )
-         EResidual   = GetProcAddr( TRIM(ProcName)//'_edge_residual', abort=.FALSE. )
-         BResidual   = GetProcAddr( TRIM(ProcName)//'_boundary_residual', abort=.FALSE. )
+           IResidual = GetProcAddr( TRIM(ProcName)//'_inside_residual', abort=.FALSE. )
+           EResidual   = GetProcAddr( TRIM(ProcName)//'_edge_residual', abort=.FALSE. )
+           BResidual   = GetProcAddr( TRIM(ProcName)//'_boundary_residual', abort=.FALSE. )
 
-         IF( IResidual/=0 .AND. EResidual /= 0 .AND. BResidual /= 0 ) THEN
-           IResFunC = TRANSFER( Iresidual, IresFunC )
-           EResFunC = TRANSFER( Eresidual, EresFunC )
-           BResFunC = TRANSFER( Bresidual, BresFunC )
+           IF( IResidual/=0 .AND. EResidual /= 0 .AND. BResidual /= 0 ) THEN
+             IResFunC = TRANSFER( Iresidual, IresFunC )
+             EResFunC = TRANSFER( Eresidual, EresFunC )
+             BResFunC = TRANSFER( Bresidual, BresFunC )
 
-           CALL C_F_PROCPOINTER(IresFunC, InsidePtr)
-           CALL C_F_PROCPOINTER(EResFunC, EdgePtr )
-           CALL C_F_PROCPOINTER(BResFunC, BoundaryPtr )
+             CALL C_F_PROCPOINTER(IresFunC, InsidePtr)
+             CALL C_F_PROCPOINTER(EResFunC, EdgePtr )
+             CALL C_F_PROCPOINTER(BResFunC, BoundaryPtr )
 
-           Var => Solver % Variable
-           CALL RefineMeshExt( Model, Solver, Var % Values, Var % Perm, InsidePtr, EdgePtr, BoundaryPtr )
+             Var => Solver % Variable
+             CALL RefineMeshExt( Model, Solver, Var % Values, Var % Perm, InsidePtr, EdgePtr, BoundaryPtr )
+           END IF
          END IF
        END BLOCK
 #else

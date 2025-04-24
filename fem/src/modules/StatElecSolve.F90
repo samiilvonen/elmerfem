@@ -548,7 +548,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,TransientSimulation )
        END IF
      END IF
    END IF
-   
 
    IF ( ListGetLogical( Params, 'Adaptive Mesh Refinement', GotIt ) ) THEN
      IF ( .NOT. ListGetLogical( Params, 'Library Adaptivity', GotIt ) ) THEN

@@ -211,7 +211,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,Transient )
   TYPE(Mesh_t), POINTER :: Mesh
   CHARACTER(*), PARAMETER :: Caller = 'StatElecSolver'
 
-#ifndef LIBRARY_ADAPTIVITY
   INTERFACE
     SUBROUTINE StatElecSolver_Boundary_Residual(Model, Edge, Mesh, Quant, Perm, Gnorm,Indicator)
       USE Types
@@ -240,7 +239,6 @@ SUBROUTINE StatElecSolver( Model,Solver,dt,Transient )
       INTEGER :: Perm(:)
     END SUBROUTINE StatElecSolver_Inside_Residual
   END INTERFACE
-#endif
   
 !------------------------------------------------------------------------------
 
