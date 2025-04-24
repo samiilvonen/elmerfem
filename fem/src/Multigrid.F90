@@ -49,10 +49,21 @@ MODULE Multigrid
    USE DirectSolve
    USE Smoothers
    USE ClusteringMethods
-   USE ElementUtils, ONLY : mGetElementDofs
+   USE ElementUtils, ONLY : FreeMatrix, mGetElementDofs
+   USE ElementDescription, ONLY : ElementBasisDegree
+   USE MeshUtils, ONLY : LoadMesh2, UpdateSolverMesh, SetCurrentmesh
    
    IMPLICIT NONE
 
+   INTERFACE
+     SUBROUTINE BlockSolveExt(A,x,b,Solver)
+       USE Types
+       TYPE(Matrix_t), POINTER :: A
+       TYPE(Solver_t) :: Solver
+       REAL(KIND=dp) :: x(:),b(:)
+     END SUBROUTINE BlockSolveExt
+   END INTERFACE
+   
 
 CONTAINS
 
@@ -64,7 +75,6 @@ CONTAINS
     RECURSIVE SUBROUTINE MultiGridSolve( Matrix1, Solution, &
         ForceVector, DOFs, Solver, Level, NewSystem )
 !------------------------------------------------------------------------------
-       USE ModelDescription
        IMPLICIT NONE
 
        TYPE(Matrix_t), POINTER :: Matrix1
@@ -120,7 +130,7 @@ CONTAINS
     RECURSIVE SUBROUTINE GMGSolve( Matrix1, Solution, &
         ForceVector, DOFs, Solver, Level, NewSystem )
 !------------------------------------------------------------------------------
-       USE ModelDescription
+       USE ModelDescription, ONLY : OutputPath
        IMPLICIT NONE
 
        TYPE(Matrix_t), POINTER :: Matrix1
@@ -870,7 +880,7 @@ CONTAINS
     RECURSIVE SUBROUTINE PMGSolve( Matrix1, Solution, &
         ForceVector, DOFs, Solver, Level, NewSystem )
 !------------------------------------------------------------------------------
-       USE ModelDescription
+
        IMPLICIT NONE
 
        TYPE(Matrix_t), POINTER :: Matrix1
@@ -907,14 +917,14 @@ CONTAINS
        TYPE(Element_t), POINTER :: Element
        TYPE(ValueList_t), POINTER :: Params
 
-       INTERFACE
-         SUBROUTINE BlockSolveExt(A,x,b,Solver)
-           USE Types
-           TYPE(Matrix_t), POINTER :: A
-           TYPE(Solver_t) :: Solver
-           REAL(KIND=dp) :: x(:),b(:)
-         END SUBROUTINE BlockSolveExt 
-       END INTERFACE
+ !      INTERFACE
+ !        SUBROUTINE BlockSolveExt(A,x,b,Solver)
+ !          USE Types
+ !          TYPE(Matrix_t), POINTER :: A
+ !          TYPE(Solver_t) :: Solver
+ !          REAL(KIND=dp) :: x(:),b(:)
+ !        END SUBROUTINE BlockSolveExt 
+ !      END INTERFACE
 !------------------------------------------------------------------------------
        tt = CPUTime()
 
@@ -1462,7 +1472,6 @@ CONTAINS
   RECURSIVE SUBROUTINE AMGSolve( Matrix1, Solution, &
     ForceVector, DOFs, Solver, Level, NewSystem )
 !------------------------------------------------------------------------------
-    USE ModelDescription
     IMPLICIT NONE
     
     TYPE(Matrix_t), POINTER :: Matrix1
@@ -5049,7 +5058,6 @@ CONTAINS
   RECURSIVE SUBROUTINE CMGSolve( Matrix1, Solution, &
     ForceVector, DOFs, Solver, Level, NewSystem )
 !------------------------------------------------------------------------------
-    USE ModelDescription
     USE Smoothers
 
     IMPLICIT NONE
@@ -6082,9 +6090,8 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE MSolverActivate( Model, Solver, dt, TransientSimulation )
 !------------------------------------------------------------------------------
-     USE MeshUtils
-     TYPE(Model_t)  :: Model
-     TYPE(Solver_t),TARGET :: Solver
+     TYPE(Model_t) :: Model
+     TYPE(Solver_t), TARGET :: Solver
      LOGICAL :: TransientSimulation
      REAL(KIND=dp) :: dt, OrigDT, DTScal
 !------------------------------------------------------------------------------

@@ -44,7 +44,12 @@
 
 MODULE ModelDescription
 
-    USE MeshUtils
+    USE SParIterGlobals
+    USE ParallelUtils, ONLY : ParallelReduction, ParallelIter, ParallelInitMatrix
+    USE ElementUtils, ONLY : CreateMatrix, FreeMatrix
+    USE MeshUtils, ONLY : AllocateMesh, DetectMortarPairs, Graph_deallocate, &
+        Loadmesh2, MeshStabParams, PrepareMesh, ReleaseMesh, SetMeshDimension, &
+        SetMeshMaxDOFs, SetMeshPartitionOffSet, SplitMeshEqual, SplitMeshLevelSet
     USE LoadMod
     USE BinIO
     USE Messages
@@ -3300,7 +3305,7 @@ CONTAINS
 
 
     CALL TagRadiationSolver() 
-    
+
 !------------------------------------------------------------------------------
 
   CONTAINS
@@ -3315,7 +3320,8 @@ CONTAINS
       
       DO i=1,Model % NumberOfSolvers
         Params => Model % Solvers(i) % Values
-        str = ListGetString( Params, 'Equation' )
+        str = ListGetString( Params, 'Equation', Found )
+        IF (.NOT. Found) CYCLE
         IF ( TRIM(str) == 'heat equation' ) THEN
           CALL Info('LoadModel','Defined radition solver by Equation name "heat equation"',Level=10) 
           CALL ListAddLogical( Params,'Radiation Solver',.TRUE.)
@@ -3709,11 +3715,11 @@ CONTAINS
 
     DO i=1,Model % NumberOfBCs
       List => Model % BCs(i) % Values
-      CALL ListObsoliteFatal( List,'Transmittivity','Transmissivity') 
+      CALL ListObsoleteFatal( List,'Transmittivity','Transmissivity') 
     END DO
     DO i=1,Model % NumberOfMaterials
       List => Model % Materials(i) % Values
-      CALL ListObsoliteFatal( List,'Transmittivity','Transmissivity') 
+      CALL ListObsoleteFatal( List,'Transmittivity','Transmissivity') 
     END DO
           
 

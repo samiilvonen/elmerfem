@@ -49,7 +49,8 @@ MODULE DefUtils
 
 #include "../config.h"
 
-   USE MeshGenerate 
+   USE MeshGenerate
+   USE MeshUtils, ONLY : AllocateElement, SaveParallelInfo
    USE ElementUtils
    USE SolverUtils
    USE CutFEMUtils
@@ -5534,6 +5535,7 @@ CONTAINS
   SUBROUTINE DefaultDirichletBCs( USolver,Ux,UOffset,OffDiagonalMatrix)
 !------------------------------------------------------------------------------------------
      USE ElementDescription, ONLY: FaceElementOrientation
+     USE LinearAlgebra, ONLY : SolveLinSys
      IMPLICIT NONE
 
      INTEGER, OPTIONAL :: UOffset

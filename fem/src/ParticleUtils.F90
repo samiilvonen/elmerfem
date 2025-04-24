@@ -47,7 +47,8 @@ MODULE ParticleUtils
   
   USE DefUtils
   USE Lists
-  USE MeshUtils
+  USE ElementUtils, ONLY : FreeMatrix, CopyElementNodesFromMesh
+  USE MeshUtils, ONLY : FindMeshEdges
   USE GeneralUtils
   USE SaveUtils
   
@@ -3869,6 +3870,8 @@ RETURN
   SUBROUTINE LocateParticleInMeshMarch( ElementIndex, Rinit, Rfin, Init, &
       ParticleStatus, AccurateAtFace, StopFaceIndex, Lambda, Velo, &
       No, ParticleWallKernel, Particles )
+
+    USE LinearAlgebra, ONLY : SolveLinsys2x2, SolveLinsys3x3
     
     TYPE(Particle_t), POINTER :: Particles
     INTEGER :: ElementIndex
@@ -7204,7 +7207,6 @@ RETURN
 !------------------------------------------------------------------------------
 
     USE DefUtils 
-    USE MeshUtils
     USE ElementDescription
     USE AscBinOutputUtils
     

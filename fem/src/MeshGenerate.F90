@@ -38,7 +38,7 @@
 !> \{
 
 !--------------------------------------------------------------------------------------------------------
-!> Module for determinishting meshing routines without adaptivivity.
+!> Module for deterministic meshing routines without adaptivity.
 !--------------------------------------------------------------------------------------------------------
 MODULE MeshGenerate
 
@@ -46,7 +46,9 @@ MODULE MeshGenerate
   USE SolverUtils
   USE ModelDescription
   USE LoadMod
-  USE MeshUtils
+  USE MeshUtils, ONLY : MeshStabParams, ReleaseMesh, ReleaseMeshEdgeTables, &
+      ReleaseMeshFaceTables, SetCurrentMesh, SetMeshMaxDOFs, &
+      TransferCoordAndTime, UpdateSolverMesh, WriteMeshToDisk, WriteMeshToDisk2
   USE MeshRemeshing
 
   IMPLICIT NONE

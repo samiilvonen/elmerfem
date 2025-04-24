@@ -58,12 +58,32 @@
 !------------------------------------------------------------------------------
 
      USE Lists
-     USE MainUtils
-     USE OptimizationUtils
-     USE SolverUtils, ONLY: GetControlValue
-     USE ElementUtils, ONLY: FreeMatrix, TangentDirections
-    
-!------------------------------------------------------------------------------
+     USE SParIterGlobals
+     USE ParallelUtils, ONLY : ParallelInit, ParallelFinalize 
+     USE ElementUtils, ONLY: FreeMatrix, TangentDirections, CreateMatrix
+     USE ElementDescription, ONLY : InitializeElementDescriptions, NormalVector
+#ifdef HAVE_EXTOPTIM
+     USE OptimizationUtils, ONLY : ControlParameters, ControlResetMesh, &
+         ExternalOptimization_minpack, ExternalOptimization_newuoa, &
+         ExternalOptimization_bobyqa
+#else
+     USE OptimizationUtils, ONLY : ControlParameters, ControlResetMesh
+#endif
+     USE ModelDescription , ONLY : SaveResult, OutputPath, InFileUnit, LoadInputFile, &
+         ReloadInputFile, LoadRestartFile, GetProcAddr, LoadModel, FreeModel, WritePostFile, &
+         CompleteModelKeywords, SetIntegerParametersMatc, SetRealParametersMatc
+     USE SolverUtils, ONLY: GetControlValue, FinalizeLumpedMatrix, UpdateExportedVariables, &
+         UpdateIpPerm, VectorValuesRange
+     USE MeshUtils, ONLY : MeshExtrude, MeshExtrudeSlices, PeriodicProjector, &
+         CoordinateTransformation, InitializeElementDescriptions, ReleaseMesh, &
+         CalculateMeshPieces, SetActiveElementsTable, SetCurrentMesh
+     USE MainUtils, ONLY : AddEquationBasics, AddEquationSolution, AddExecWhenFlag, &
+         PredictorCorrectorControl, SingleSolver, SolveEquations, SolverActivate, &
+         SwapMesh
+     USE DefUtils, ONLY : GetSimulation, GetCompilationDate, GetRevision, GetVersion, &
+         GetReal, GetCReal, GetLogical, GetElementNOFNodes, GetElementDOFs, GetBC, &
+         GetElementFamily, GetElementNodes, VectorElementEdgeDOFs
+
      IMPLICIT NONE
 !------------------------------------------------------------------------------
 
@@ -1770,7 +1790,8 @@
 !------------------------------------------------------------------------------
    SUBROUTINE SetInitialConditions()
 !------------------------------------------------------------------------------
-     USE DefUtils
+     USE CoordinateSystems, ONLY : CoordinateSystemDimension
+
      INTEGER :: DOFs
      CHARACTER(:), ALLOCATABLE :: str
      LOGICAL :: Found, NamespaceFound
@@ -2007,7 +2028,10 @@
 !------------------------------------------------------------------------------
    SUBROUTINE InitCond()
 !------------------------------------------------------------------------------
-     USE DefUtils
+     USE Integration, ONLY : GaussIntegrationPoints_t
+     USE SolverUtils, ONLY : GaussPointsAdapt
+     USE ElementDescription, ONLY : ElementInfo
+     
      TYPE(Element_t), POINTER :: Edge
      INTEGER :: DOFs,i,i2,j,k,k1,k2,l,n,n2,m,nsize
      CHARACTER(:), ALLOCATABLE :: str, VarName
@@ -2433,11 +2457,10 @@
 !------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
-!> Check if we are restarting are if yes, read in field values.
+!> Check if we are restarting and if yes, read in field values.
 !------------------------------------------------------------------------------
    SUBROUTINE Restart()
 !------------------------------------------------------------------------------
-     USE DefUtils
      LOGICAL :: Gotit, DoIt
      INTEGER :: i, j, k, l
      REAL(KIND=dp) :: StartTime
@@ -2621,10 +2644,12 @@
 !> Execute the individual solvers in defined sequence. 
 !------------------------------------------------------------------------------
    SUBROUTINE ExecSimulation(TimeIntervals,  CoupledMinIter, &
-              CoupledMaxIter, OutputIntervals, Transient, Scanning)
+       CoupledMaxIter, OutputIntervals, Transient, Scanning)
+!------------------------------------------------------------------------------     
+     USE Integration, ONLY : GaussPointsInitialized, GaussPointsInit
      IMPLICIT NONE
-      INTEGER :: TimeIntervals,CoupledMinIter, CoupledMaxIter,OutputIntervals(:)
-      LOGICAL :: Transient,Scanning
+     INTEGER :: TimeIntervals,CoupledMinIter, CoupledMaxIter,OutputIntervals(:)
+     LOGICAL :: Transient,Scanning
 !------------------------------------------------------------------------------
      INTEGER :: interval, timestep, i, j, k, n
      REAL(KIND=dp) :: dt, ddt, dtfunc, timeleft

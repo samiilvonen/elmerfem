@@ -43,7 +43,6 @@
 
 MODULE MeshUtils
 
-    USE LoadMod
     USE BandwidthOptimize
     USE ElementDescription
     USE Interpolation
@@ -14324,21 +14323,6 @@ CONTAINS
     END IF
       
     DEALLOCATE( Nodes % x, Nodes % y, Nodes % z )
-
-  CONTAINS
-    
-    ! Compute the value of 3x3 determinant
-    !-------------------------------------------
-    FUNCTION Det3x3( A ) RESULT ( val ) 
-      
-      REAL(KIND=dp) :: A(:,:)
-      REAL(KIND=dp) :: val
-
-      val = A(1,1) * ( A(2,2) * A(3,3) - A(2,3) * A(3,2) ) &
-          - A(1,2) * ( A(2,1) * A(3,3) - A(2,3) * A(3,1) ) &
-          + A(1,3) * ( A(2,1) * A(3,2) - A(2,2) * A(3,1) ) 
-
-    END FUNCTION Det3x3
 
   END SUBROUTINE CylinderFit
 
