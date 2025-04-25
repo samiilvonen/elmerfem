@@ -386,14 +386,16 @@ extern "C" void ROCParallelSolve( int *gn, int *n, int *rows, int *cols, double 
       MPI_Comm_rank(comm, &rank);
     }
 
-        // Disable OpenMP thread affinity
-//    set_omp_affinity_rocalution(false);
+    // Disable OpenMP thread affinity
+    set_omp_affinity_rocalution(false);
 
     // Initialize platform with rank and # of accelerator devices in the node
     init_rocalution(rank);
 
     // Disable OpenMP
-    set_omp_threads_rocalution(1);
+    //set_omp_threads_rocalution(1);
+
+    info_rocalution();
 
     // Start time measurement
     double tick, tack;

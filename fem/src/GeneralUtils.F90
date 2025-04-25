@@ -2849,27 +2849,35 @@ CONTAINS
   END SUBROUTINE AscBinInitNorm
 
   
-  FUNCTION AscBinCompareNorm(RefResults) RESULT ( RelativeNorm ) 
-    REAL(KIND=dp), DIMENSION(*) :: RefResults 
+  FUNCTION AscBinCompareNorm(RefResults,ExtResults) RESULT ( RelativeNorm ) 
+    REAL(KIND=dp), DIMENSION(*) :: RefResults
+    REAL(KIND=dp), DIMENSION(*), OPTIONAL :: ExtResults
     REAL(KIND=dp) :: RelativeNorm
-    REAL(KIND=dp) :: ThisResults(6)
+    REAL(KIND=dp), POINTER :: ThisResults(:)
     REAL(KIND=dp) :: c
-    INTEGER :: i 
+    INTEGER :: i, n 
     
-    ThisResults(1) = scount
-    ThisResults(2) = icount
-    ThisResults(3) = rcount
-    ThisResults(4) = ssum
-    ThisResults(5) = isum ! we use real for isum since it could be huge too!
-    ThisResults(6) = rsum
-    
+    n = 6 !SIZE(RefResults)
+    ALLOCATE(ThisResults(n))      
+
+    IF( PRESENT( ExtResults ) ) THEN
+      ThisResults(1:n) = ExtResults(1:n)
+    ELSE     
+      ThisResults(1) = scount
+      ThisResults(2) = icount
+      ThisResults(3) = rcount
+      ThisResults(4) = ssum
+      ThisResults(5) = isum ! we use real for isum since it could be huge too!
+      ThisResults(6) = rsum
+    END IF
+      
     PRINT *,'Checksums for file output:'
-    PRINT *,'RefResults:',NINT(RefResults(1:4)),RefResults(5:6)
-    PRINT *,'ThisResults:',NINT(ThisResults(1:4)),ThisResults(5:6)
+    PRINT *,'RefResults:',RefResults(1:n)
+    PRINT *,'ThisResults:',ThisResults(1:n)
 
     ! We have a special relative pseunonorm that should be one!
     RelativeNorm = 0.0
-    DO i=1,6
+    DO i=1,n
       IF( ABS(RefResults(i) ) > EPSILON(c) ) THEN
         c = ThisResults(i)/RefResults(i)
         c = MAX( c, 1.0_dp /c ) 
@@ -2878,7 +2886,7 @@ CONTAINS
       END IF
       RelativeNorm = RelativeNorm + c
     END DO
-    RelativeNorm = RelativeNorm / 6
+    RelativeNorm = RelativeNorm / n
     
   END FUNCTION AscBinCompareNorm
    
