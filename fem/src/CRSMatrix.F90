@@ -3602,6 +3602,9 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
          END IF
          IF ( Retry ) THEN
            Scl = Scl * cFactor
+           WRITE(Message, *) Scl
+           CALL Warn( 'Cholesky factorization:', &
+                  'Retry using diagonal scaling:'//TRIM(Message) )
            GOTO 1
          END IF
        ELSE
