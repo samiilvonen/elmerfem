@@ -3448,17 +3448,18 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
 !>    Builds an incomplete (ILU(n)) factorization for a iterative solver
 !>    preconditioner. Real matrix version.
 !------------------------------------------------------------------------------
-  FUNCTION CRS_IncompleteLU(A,ILUn) RESULT(Status)
+  FUNCTION CRS_IncompleteLU(A,ILUn,Params) RESULT(Status)
 !------------------------------------------------------------------------------
     TYPE(Matrix_t) :: A          !< Structure holding input matrix, will also hold the factorization on exit.
     INTEGER, INTENT(IN) :: ILUn  !< Order of fills allowed 0-9
+    TYPE(ValueList_t), POINTER, INTENT(in) :: Params !< 
     LOGICAL :: Status            !< Whether or not the factorization succeeded.
 !------------------------------------------------------------------------------
-    LOGICAL :: Warned
+    LOGICAL :: Warned, Retry, Found
     INTEGER :: i,j,k,l,m,n,istat
     INTEGER, POINTER :: Cols(:),Rows(:),Diag(:)
     REAL(KIND=dp), POINTER :: ILUValues(:), Values(:)
-    REAL(KIND=dp) :: st, tx
+    REAL(KIND=dp) :: st, tx, scl, cFactor
     LOGICAL, ALLOCATABLE :: C(:), D(:)
     REAL(KIND=dp), ALLOCATABLE ::  S(:), T(:)
     INTEGER, POINTER :: ILUCols(:),ILURows(:),ILUDiag(:)
@@ -3546,12 +3547,23 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
       CALL Info('CRS_IncompleteLU','Performing incomplete Cholesky',Level=12)
 
       ALLOCATE( T(n) )
-      T =  0._dp
+
+      Retry = ListGetLogical( Params, 'Linear System Cholesky Retry', Found )
+      IF( Retry ) THEN
+        cFactor = ListGetCReal( Params, 'Linear System Cholesky Factor', Found )
+        cFactor = cFactor + 1._dp
+      END IF
+
+      Scl = 1._dp
+
+1     CONTINUE
+
+     T =  0._dp
      !
      ! The factorization row by row:
      ! -----------------------------
      Warned = .FALSE.
-     DO i=1,N
+     DO i=1,n
 
        ! Convert current row to full form for speed,
        ! only flagging the nonzero entries:
@@ -3569,7 +3581,7 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
 
        ! This is the factorization part for the current row:
        ! ---------------------------------------------------
-       S(i) = T(i)
+       S(i) = Scl * T(i)
        DO m=ILURows(i),ILUDiag(i)-1
          j = ILUCols(m)
          S(j) = T(j)
@@ -3587,6 +3599,10 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
            CALL Warn( 'Cholesky factorization:', &
                'Negative diagonal: not pos.def. or badly conditioned matrix' )
            Warned = .TRUE.
+         END IF
+         IF ( Retry ) THEN
+           Scl = Scl * cFactor
+           GOTO 1
          END IF
        ELSE
          S(i) = 1._dp / SQRT(S(i))

@@ -575,7 +575,7 @@ CONTAINS
         PCondType = PRECOND_NONE
         CALL Warn( 'IterSolve', 'Unknown preconditioner type: '//TRIM(str)//', feature disabled.' )
       END IF
-      
+
       IF ( .NOT. ListGetLogical( Params, 'No Precondition Recompute',GotIt ) ) THEN
         CALL ResetTimer("Prec-"//TRIM(str))
 
@@ -728,7 +728,7 @@ CONTAINS
                   END DO
 
                   CALL List_ToCRSMatrix(PrecMat)
-                  Condition = CRS_IncompleteLU(PrecMat,ILUn)
+                  Condition = CRS_IncompleteLU(PrecMat,ILUn,Params)
 
                   A % ILURows => PrecMat % IluRows
                   A % ILUCols => PrecMat % IluCols
@@ -741,19 +741,19 @@ CONTAINS
                   IF(.NOT.ASSOCIATED(A % ILUDiag,PrecMat % Diag)) DEALLOCATE(PrecMat % Diag)
                   DEALLOCATE(PrecMat)
                 ELSE
-                  Condition = CRS_IncompleteLU(A,ILUn)
+                  Condition = CRS_IncompleteLU(A,ILUn,Params)
                 END IF
               CASE(PRECOND_ILUT)
                 Condition = CRS_ILUT( A,ILUT_TOL )
               CASE(PRECOND_BILUn)
                 Blocks = Solver % Variable % Dofs
                 IF ( Blocks <= 1 ) THEN
-                  Condition = CRS_IncompleteLU(A,ILUn)
+                  Condition = CRS_IncompleteLU(A,ILUn,Params)
                 ELSE
                   IF( .NOT. ASSOCIATED( A % ILUValues ) ) THEN
                     Adiag => AllocateMatrix()
                     CALL CRS_BlockDiagonal(A,Adiag,Blocks)
-                    Condition = CRS_IncompleteLU(Adiag,ILUn)
+                    Condition = CRS_IncompleteLU(Adiag,ILUn,Params)
                     A % ILURows   => Adiag % ILURows
                     A % ILUCols   => Adiag % ILUCols
                     A % ILUValues => Adiag % ILUValues
@@ -763,7 +763,7 @@ CONTAINS
                     END IF
                     DEALLOCATE( Adiag )
                   ELSE
-                    Condition = CRS_IncompleteLU(A,ILUn)
+                    Condition = CRS_IncompleteLU(A,ILUn,Params)
                   END IF
                 END IF
               CASE(PRECOND_VANKA)

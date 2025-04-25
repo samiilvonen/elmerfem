@@ -1853,8 +1853,9 @@ END SUBROUTINE CheckResidualsComplex
 
       KMatrix % Cholesky = ListGetLogical( Solver % Values,  &
               'Linear System Symmetric ILU', Stat )
-      Stat = CRS_IncompleteLU( KMatrix, ILU )
-      IF ( .NOT. UseI ) Stat = CRS_IncompleteLU( MMatrix, ILU )
+
+      Stat = CRS_IncompleteLU( KMatrix, ILU, Solver % Values )
+      IF ( .NOT. UseI ) Stat = CRS_IncompleteLU( MMatrix, ILU, Solver % Values )
 
 !     %-------------------------------------------%
 !     | M A I N   L O O P (Reverse communication) |

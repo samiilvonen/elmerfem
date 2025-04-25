@@ -468,11 +468,11 @@ CONTAINS
              IF ( Parallel ) THEN
                 PMatrix % Cholesky = ListGetLogical( Params, &
                     'Linear System Symmetric ILU', Found )
-                Condition = CRS_IncompleteLU( PMatrix, k )
+                Condition = CRS_IncompleteLU( PMatrix, k, Params )
              ELSE
                 Matrix1 % Cholesky = ListGetLogical( Params, &
                   'Linear System Symmetric ILU', Found )
-                Condition = CRS_IncompleteLU( Matrix1, k )
+                Condition = CRS_IncompleteLU( Matrix1, k, Params )
              END IF
           END IF
 
@@ -1312,11 +1312,11 @@ CONTAINS
            IF ( Parallel ) THEN
               PMatrix % Cholesky = ListGetLogical( Params, &
                   'Linear System Symmetric ILU', Found )
-              Condition = CRS_IncompleteLU( PMatrix, k )
+              Condition = CRS_IncompleteLU( PMatrix, k, Params )
             ELSE
               Matrix1 % Cholesky = ListGetLogical( Params, &
                   'Linear System Symmetric ILU', Found )
-              Condition = CRS_IncompleteLU( Matrix1, k )
+              Condition = CRS_IncompleteLU( Matrix1, k, Params )
             END IF
           END IF
         END IF
@@ -1744,11 +1744,11 @@ CONTAINS
         IF ( Parallel ) THEN
           PMatrix % Cholesky = ListGetLogical( Params, &
                  'Linear System Symmetric ILU', Found )
-          Condition = CRS_IncompleteLU( PMatrix, k )
+          Condition = CRS_IncompleteLU( PMatrix, k, Params )
         ELSE
           Matrix1 % Cholesky = ListGetLogical( Params, &
                  'Linear System Symmetric ILU', Found )
-          Condition = CRS_IncompleteLU( Matrix1, k )
+          Condition = CRS_IncompleteLU( Matrix1, k, Params )
         END IF
       END IF      
     END IF
@@ -5424,11 +5424,11 @@ CONTAINS
         IF ( Parallel ) THEN
           PMatrix % Cholesky = ListGetLogical( Params, &
                  'Linear System Symmetric ILU', Found )
-          Condition = CRS_IncompleteLU( PMatrix, k )
+          Condition = CRS_IncompleteLU( PMatrix, k,Params )
         ELSE
           Matrix1 % Cholesky = ListGetLogical( Params, &
                  'Linear System Symmetric ILU', Found )
-          Condition = CRS_IncompleteLU( Matrix1, k )
+          Condition = CRS_IncompleteLU( Matrix1, k,Params )
         END IF
       END IF      
     END IF
