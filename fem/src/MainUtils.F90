@@ -194,10 +194,10 @@ CONTAINS
       END IF
 
       ! Naming replacement: 'cholesky' for 'symmetric ILU'
-      str = ListGetString(Params, 'Linear System Iterative Method', Found)
+      str = ListGetString(Params, 'Linear System Preconditioning', Found)
       IF ( LEN_TRIM(str) >= 8 ) THEN
         IF( str(1:8) == 'cholesky') THEN
-          CALL ListAddString(Params, 'Linear System Iterative Method', 'ilu'//TRIM(str(9:)) )
+          CALL ListAddString(Params, 'Linear System Preconditioning', 'ilu'//TRIM(str(9:)) )
           CALL ListAddLogical(Params, 'Linear System Symmetric', .TRUE.)
           CALL ListAddLogical(Params, 'Linear System Symmetric ILU', .TRUE.)
         END IF
