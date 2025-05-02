@@ -677,7 +677,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
    REAL(KIND=DP), POINTER :: Cwrk(:,:,:)=>NULL(), Cwrk_im(:,:,:)=>NULL()
 
-   REAL(KIND=dp) :: ItoJCoeff, CircuitCurrent, CircEqVoltageFactor
+   REAL(KIND=dp) :: ItoJCoeff=0, CircuitCurrent=0, CircEqVoltageFactor=0
    TYPE(ValueList_t), POINTER :: CompParams
    REAL(KIND=dp) :: DetF, F(3,3), G(3,3), GT(3,3)
    REAL(KIND=dp), ALLOCATABLE :: EBasis(:,:), CurlEBasis(:,:) 
@@ -952,6 +952,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    ALLOCATE( PR(n), omega_velo(3,n), lorentz_velo(3,n) )
    ALLOCATE( Magnetization(3,n), BodyForceCurrDens(3,n), R_Z(n) )
 !------------------------------------------------------------------------------
+   Wbase = 0; alpha=0; NF_ip=0
    SOL = 0._dp; PSOL=0._dp
 
    IF ( ASSOCIATED(ESP) ) THEN
@@ -1167,6 +1168,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      CompParams => GetComponentParams( Element )
      CoilType = ''
      RotM = 0._dp
+     CircEqVoltageFactor = 0._dp
      IF (ASSOCIATED(CompParams)) THEN
        CoilType = GetString(CompParams, 'Coil Type', Found)
        IF (Found) CoilBody = .TRUE.
@@ -2264,7 +2266,6 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
            ! we assume 3D massive coil here
            E(1,:) = Omega * MATMUL(SOL(2,np+1:nd), WBasis(1:nd-np,:))
            E(2,:) = -Omega * MATMUL(SOL(1,np+1:nd), WBasis(1:nd-np,:))
-
            localV(1) = localV(1) + LagrangeVar % Values(VvarId) * CircEqVoltageFactor
            localV(2) = localV(2) + LagrangeVar % Values(VvarId+1) * CircEqVoltageFactor
            E(1,:) = E(1,:)-localV(1) * MATMUL(Wbase(1:np), dBasisdx(1:np,:))

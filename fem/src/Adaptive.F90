@@ -325,9 +325,9 @@ CONTAINS
 !   solution error to the mesh variable list:
 !   --------------------------------------------------
     VarName = GetVarName(Solver % Variable)
-    NLen = LEN_TRIM(VarName)
+    nlen = LEN_TRIM(VarName)
     Var => VariableGet( RefMesh % Variables, &
-         VarName(1:NLen)  // '.error', ThisOnly=.TRUE. )
+         VarName(1:nlen)  // '.error', ThisOnly=.TRUE. )
 
     IF ( ASSOCIATED( Var ) ) THEN
        NodalError  => Var % Values
@@ -335,11 +335,11 @@ CONTAINS
     ELSE
        CALL AllocateVector( NodalError, nn )
        CALL VariableAdd( RefMesh % Variables, RefMesh, Solver, &
-          VarName(1:NLen) // '.error', 1, NodalError )
+          VarName(1:nlen) // '.error', 1, NodalError )
     END IF
 
     Var => VariableGet( RefMesh % Variables, &
-         VarName(1:NLen) // '.perror', ThisOnly=.TRUE. )
+         VarName(1:nlen) // '.perror', ThisOnly=.TRUE. )
 
     IF ( ASSOCIATED( Var ) ) THEN
       PrevNodalError  => Var % Values
@@ -349,7 +349,7 @@ CONTAINS
       CALL AllocateVector( PrevNodalError, RefMesh % NumberOfNodes )
       PrevNodalError = 0.0d0
       CALL VariableAdd( RefMesh % Variables, RefMesh, Solver, &
-          VarName(1:NLen) // '.perror', 1, PrevNodalError, Output=AdaptiveOutput)
+          VarName(1:nlen) // '.perror', 1, PrevNodalError, Output=AdaptiveOutput)
     END IF
 
     NodalError = 0.0d0
@@ -404,7 +404,7 @@ CONTAINS
 !   Add reference error to variable list:
 !   -------------------------------------
     Var => VariableGet( RefMesh % Variables, &
-         VarName(1:NLen) // '.eRef', ThisOnly=.TRUE. )
+         VarName(1:nlen) // '.eRef', ThisOnly=.TRUE. )
 
     IF ( ASSOCIATED( Var ) ) THEN
       eRef => Var % Values
@@ -414,7 +414,7 @@ CONTAINS
       CALL AllocateVector( eRef, nn )
       eRef(1:nn) = NodalError(1:nn)      
       CALL VariableAdd( RefMesh % Variables, RefMesh, Solver, &
-          VarName(1:NLen) // '.eRef',1,eRef, Output=AdaptiveOutput )
+          VarName(1:nlen) // '.eRef',1,eRef, Output=AdaptiveOutput )
     END IF
 !
 !   Mesh projection may alter the values somewhat!
@@ -605,7 +605,7 @@ CONTAINS
     
     NewMesh % AdaptiveDepth = RefMesh % AdaptiveDepth + 1
     IF( MeshNumbering ) THEN
-      NewMesh % Name = TRIM( NewMesh % Name(1:NLen) ) // I2S(NewMesh % AdaptiveDepth)
+      NewMesh % Name = TRIM( NewMesh % Name ) // I2S(NewMesh % AdaptiveDepth)
     END IF
 
     IF ( ListGetLogical( Params, 'Adaptive Save Mesh', Found ) ) THEN 
@@ -1382,14 +1382,14 @@ CONTAINS
 
     ! Save the current mesh in Elmer mesh format 
     Path = ListGetString( Params, 'Adaptive Mesh Name', Found )
-    nLen = LEN_TRIM(Path)
+    nlen = LEN_TRIM(Path)
    
     IF ( .NOT. Found ) THEN
       i = RefMesh % AdaptiveDepth + 1
       Path = 'RefinedMesh'//I2S(i)
     END IF
 
-    nLen = LEN_TRIM(OutputPath)
+    nlen = LEN_TRIM(OutputPath)
     IF ( nlen > 0 ) THEN
       Path = OutputPath(1:nlen) // '/' // TRIM(Path)
     ELSE
