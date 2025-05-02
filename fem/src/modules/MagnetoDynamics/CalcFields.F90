@@ -1168,7 +1168,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      CompParams => GetComponentParams( Element )
      CoilType = ''
      RotM = 0._dp
-     CircEqVoltageFactor = 0._dp
+     CircEqVoltageFactor = 1._dp
      IF (ASSOCIATED(CompParams)) THEN
        CoilType = GetString(CompParams, 'Coil Type', Found)
        IF (Found) CoilBody = .TRUE.
