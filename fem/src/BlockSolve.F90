@@ -4893,7 +4893,7 @@ CONTAINS
       ELSE IF(BlockHorVer .OR. BlockCart) THEN
         CALL BlockPickMatrixHorVer( PSolver, BlockDofs, BlockCart, BlockIndex )
       END IF
-
+      GotSlaveSolvers = .FALSE.
     ELSE
       SlaveSolvers =>  ListGetIntegerArray( Params, &
           'Block Solvers', GotSlaveSolvers )
