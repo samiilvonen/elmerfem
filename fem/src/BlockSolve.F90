@@ -72,17 +72,19 @@ CONTAINS
     CALL Info('CreateSchurApproximation','Creating Shcur complement for preconditioning!',Level=20)
 
     NULLIFY(S)
-    S => AllocateMatrix()
-    S % FORMAT = MATRIX_LIST
-
-    IF(.NOT. ASSOCIATED(P)) THEN
+    IF(.NOT. ASSOCIATED(P) .OR. .NOT. ASSOCIATED(Q)) THEN
       CALL Info('CreateSchurApproximation','Constraint matrix not associated!')
+      RETURN
     END IF
+    S => AllocateMatrix()
+    
     n = P % NumberOfRows
     IF(n == 0) THEN
       CALL Info('CreateSchurApproximation','No rows in Constraint matrix!')
       RETURN
     END IF
+
+    S % FORMAT = MATRIX_LIST
           
     ! Add the corner entry to give the max size for list.  
     CALL List_AddToMatrixElement(S % ListMatrix, n, n, 0.0_dp ) 
@@ -1575,7 +1577,11 @@ CONTAINS
     
     CALL Info('BlockPickMatrixHorVer','Dividing matrix into vertical and horizontal dofs',Level=10)
 
-    NoVar = 2
+    IF (Cart) THEN
+      NoVar = 3
+    ELSE
+      NoVar = 2
+    END IF
     n = MAXVAL(Solver % Variable % Perm)
     Mesh => Solver % Mesh 
     
@@ -4795,25 +4801,21 @@ CONTAINS
 !------------------------------------------------------------------------------
     TYPE(Solver_t), POINTER :: PSolver
     TYPE(Variable_t), POINTER :: Var
-    INTEGER :: i,j,k,l,n,nd,NonLinIter,tests,NoTests,iter
-    LOGICAL :: GotIt, GotIt2, BlockPrec, BlockAV, &
+    INTEGER :: i,j,k,l,n
+    LOGICAL :: GotIt, BlockPrec, BlockAV, &
         BlockHdiv, BlockReIm, BlockHcurl, BlockHorVer, BlockCart, BlockNodal, BlockDomain, &
         BlockDummy, BlockComplex, SkipPrec
     INTEGER :: ColVar, RowVar, NoVar, BlockDofs, VarDofs
     
-    REAL(KIND=dp) :: NonlinearTol, Norm, PrevNorm, Residual, PrevResidual, &
-        TotNorm, MaxChange, alpha, beta, omega, rho, oldrho, s, r, PrevTotNorm, &
-        Coeff
+    REAL(KIND=dp) :: TotNorm, MaxChange
     REAL(KIND=dp), POINTER :: SaveValues(:)
     REAL(KIND=dp), POINTER CONTIG :: SaveRHS(:)
-    LOGICAL :: Robust, LinearSearch, ErrorReduced, IsProcedure, ScaleSystem,&
-        LS, BlockScaling, BlockMonolithic, Found
+    LOGICAL :: BlockScaling, BlockMonolithic, Found
     INTEGER :: HaveConstraint, HaveAdd
     INTEGER, POINTER :: VarPerm(:)
     INTEGER, POINTER :: BlockPerm(:)
     INTEGER, POINTER :: SlaveSolvers(:)
     LOGICAL :: GotSlaveSolvers, DoMyOwnVars,OldMatrix
-    
     
     TYPE(Matrix_t), POINTER :: Amat, SaveCM
     TYPE(Mesh_t), POINTER :: Mesh
@@ -4862,8 +4864,6 @@ CONTAINS
     BlockDummy = ListGetLogical( Params,'Block Nested System',GotIt)
     BlockComplex = ListGetLogical( Params,'Block Complex System',GotIt) 
     
-    SlaveSolvers =>  ListGetIntegerArray( Params, &
-         'Block Solvers', GotSlaveSolvers )
 
     DoMyOwnVars = .FALSE.
     
@@ -4895,9 +4895,9 @@ CONTAINS
       END IF
 
     ELSE
-      IF( BlockCart ) THEN
-        BlockDofs = 3
-      ELSE IF( GotSlaveSolvers ) THEN
+      SlaveSolvers =>  ListGetIntegerArray( Params, &
+          'Block Solvers', GotSlaveSolvers )
+      IF( GotSlaveSolvers ) THEN
         BlockDofs = SIZE( SlaveSolvers )
       ELSE IF( BlockDummy ) THEN
         BlockDofs = 1
@@ -4919,6 +4919,10 @@ CONTAINS
     END IF
     HaveAdd = ParallelReduction(HaveAdd)
 
+    IF( HaveConstraint > 0 .AND. HaveAdd > 0 ) THEN
+      CALL Fatal('BlockSolveInt','Cannot yet do both Constraint and Add matrix!')
+    END IF
+    
     IF( HaveConstraint > 0 ) THEN
       i = A % ConstraintMatrix % NumberOfRows 
       CALL Info('BlockSolveInt','Block system has ConstraintMatrix with '//I2S(i)//' rows!',Level=10)
@@ -4931,9 +4935,6 @@ CONTAINS
       BlockDofs = BlockDofs + 1    
     END IF
 
-    IF( HaveConstraint > 0 .AND. HaveAdd > 0 ) THEN
-      CALL Fatal('BlockSolveInt','Cannot yet do both Constraint and Add matrix!')
-    END IF
     
     IF(.NOT. OldMatrix ) THEN
       CALL BlockInitMatrix( Solver, TotMatrix, BlockDofs, VarDofs, DoMyOwnVars )
