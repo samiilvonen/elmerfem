@@ -1605,7 +1605,7 @@ CONTAINS
         WRITE( GeoUnit,'(A)') 'solid '//TRIM(str)
         BodyStarted = .TRUE.
         CALL Info('SaveSTLSurface','Starting writing surface: '//TRIM(str),Level=15)
-        ThisResults(1) = ThisResults(1) + 1
+        IF(CalcNrm) ThisResults(1) = ThisResults(1) + 1
       END IF
               
       DO k=1,kmax
