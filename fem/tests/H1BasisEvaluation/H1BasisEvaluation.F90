@@ -1777,6 +1777,8 @@ CONTAINS
 
     INTEGER :: i, j, dim
 
+    SAVE ntot
+    
     WRITE (*,'(A)') 'TestBasis: Testing basis functions versus reference implementation.'
     WRITE (*,'(3(A,I0))') 'TestBasis: ngp=', ngp, ', nbasis=', nbasis, &
             ', ndim=', ndim
