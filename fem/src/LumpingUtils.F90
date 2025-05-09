@@ -769,7 +769,6 @@ MODULE LumpingUtils
       CALL Info('UpdateDepedentComponents','Updating component: '//I2S(j))
       CompParams => CurrentModel % Components(j) % Values
 
-
       NoVar = 0
       DO WHILE( .TRUE. )
         NoVar = NoVar + 1
@@ -880,19 +879,18 @@ MODULE LumpingUtils
     REAL(KIND=dp) :: Center(3), Coord(3), Coord0(3), Coord1(3), Coord2(3), &
         Normal(3), Tangent1(3), Tangent2(3), x1, y1, x2, y2, phi, phi1, phi2, &
         phisum, g, ssum, h, hmin, hmax, htol, hgoal, hrel, r, rmin, rmax, rtol
-    COMPLEX :: gradv(3), Circ
-    REAL(KIND=dp) :: EdgeVector(3), ds, r2, r2min, dsmax, dphi, dphimax
+    COMPLEX :: gradv(3)
+    REAL(KIND=dp) :: EdgeVector(3), ds, r2, r2min, dsmax, dphi, dphimax, &
+        ReCirc, ImCirc
     INTEGER :: nsteps, sgn, t, i, j, k, i1, i2, j1, j2, l, &
-        lp, n0, r2ind, imax, kmax, n
+        lp, n0, r2ind, imax, kmax, n, InsideBC
     INTEGER, POINTER :: NodeIndexes(:)
     INTEGER, POINTER :: TargetBodies(:)
-    LOGICAL :: Found, SaveLoop, Debug, GotHtol, GotRtol 
+    LOGICAL :: Found, SaveLoop, Debug, GotHtol, GotRtol, BCMode
     TYPE(Element_t), POINTER :: Edge, Element
     LOGICAL, ALLOCATABLE :: NodeActive(:),Inside(:),Outside(:)       
     CHARACTER(*), PARAMETER :: Caller = 'ComponentStokesTheorem'
    
-    CALL Info(Caller,'Calculating line integral for:'//TRIM(avar % name))
-    
     TargetBodies => ListGetIntegerArray( VList,'Master Bodies',Found )
     IF( .NOT. Found ) TargetBodies => ListGetIntegerArray( VList,'Body',Found )
     IF( .NOT. Found ) CALL Fatal(Caller,'Stokes theorem requires > Master Bodies <') 
@@ -903,52 +901,80 @@ MODULE LumpingUtils
     HelperArray => ListGetConstRealArray( Vlist, 'Coil normal', UnfoundFatal = .TRUE. )
     Normal(1:3) = HelperArray(1:3,1)
     CALL TangentDirections(Normal, Tangent1, Tangent2)
-    
+      
     n = Mesh % NumberOfNodes 
     ALLOCATE(NodeActive(n))
 
+    InsideBC = ListGetInteger( Vlist,'Inside Boundary', BCMode ) 
+           
     CALL SetActiveNodeSet()
-
+    
     IF(Surf) THEN
+      CALL Info(Caller,'Calculating cylinder integral for: '//TRIM(avar % name))    
       CALL ComputeCylinderIntegral()
     ELSE
+      CALL Info(Caller,'Calculating line integral for: '//TRIM(avar % name))   
       CALL ComputeLineIntegral()
     END IF
 
-    FL = REAL(Circ)
+    FL = ReCirc
+      
     
   CONTAINS
 
+    ! Set active nodes such that when we try to create a closed circle we will only check the marked
+    ! nodes. We need a quick look-up table since otherwise there is no quick way to determine whether
+    ! a node is part of a suitable edge. Also compute the height of the domain for other purposes.
+    !------------------------------------------------------------------------------------------------
+    
     SUBROUTINE SetActiveNodeSet()
 
-      ALLOCATE(Inside(n), Outside(n))
-      Inside = .FALSE.
-      Outside = .FALSE.    
-
-      DO t=1,Mesh % NumberOfBulkElements
-        Element => Mesh % Elements(t)
-        IF( ANY(TargetBodies == Element % BodyId) ) THEN
-          Inside(Element % NodeIndexes) = .TRUE.
-        ELSE
-          Outside(Element % NodeIndexes) = .TRUE.
-        END IF
-      END DO
-
-      !PRINT *,'Inside nodes:',COUNT(Inside)
-      !PRINT *,'Outside nodes:',COUNT(Outside)
-
-      ! We make the stokes theorem on the interface
-      NodeActive = Inside .AND. Outside
-      DEALLOCATE(Inside,Outside)
-
+      IF( BCMode ) THEN
+        DO t=Mesh % NumberOfBulkElements+1, &
+            Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+          Element => Mesh % Elements(t)
+          n = Element % TYPE % NumberOfNodes
+          NodeIndexes => Element % NodeIndexes 
+          
+          IF(.NOT. ASSOCIATED(Element % BoundaryInfo)) CYCLE
+          IF(Element % BoundaryInfo % Constraint == 0) CYCLE
+          DO i=1,CurrentModel % NumberOfBCs
+            IF ( Element % BoundaryInfo % Constraint == CurrentModel % BCs(i) % Tag ) EXIT
+          END DO
+          IF(i /= InsideBC) CYCLE
+          NodeActive(NodeIndexes) = .TRUE.
+        END DO
+      ELSE
+        ! No BC elements given, initialize the list of candidate nodes using
+        ! an intersection between inside and outside nodes. 
+        ALLOCATE(Inside(n), Outside(n))
+        Inside = .FALSE.
+        Outside = .FALSE.    
+        
+        DO t=1,Mesh % NumberOfBulkElements
+          Element => Mesh % Elements(t)
+          IF( ANY(TargetBodies == Element % BodyId) ) THEN
+            Inside(Element % NodeIndexes) = .TRUE.
+          ELSE
+            Outside(Element % NodeIndexes) = .TRUE.
+          END IF
+        END DO
+        
+        ! We make the stokes theorem on the interface
+        NodeActive = Inside .AND. Outside
+        DEALLOCATE(Inside,Outside)
+      END IF
+        
       n = COUNT(NodeActive)
-      CALL Info(Caller,'Active nodes for edge path candidates: '//I2S(n))
+      CALL Info(Caller,'Active nodes for edge patch candidates: '//I2S(n))
 
       ! We may limit the active set of nodes through which path may be drawn.
       ! The idea could be to choose only the upper or lower surface of the coil. 
       htol = ListGetConstReal( Vlist,'Flux linkage height tolerance',GotHtol )
       rtol = ListGetConstReal( Vlist,'Flux linkage radius tolerance',GotRtol )
-      IF(Found ) THEN      
+
+      ! We always make one round to get the bounding box!
+      IF(.TRUE.) THEN      
         hgoal = ListGetConstReal( Vlist,'Flux linkage relative height',Found ) 
         hmin = HUGE(hmin)
         hmax = -HUGE(hmax)
@@ -986,19 +1012,42 @@ MODULE LumpingUtils
               rmin = ParallelReduction(rmin,1)
               rmax = ParallelReduction(rmax,2)
             END IF
-            !PRINT *,'Height interval in n-t system: ',hmin,hmax
-            !PRINT *,'Radius interval in n-t system: ',hmin,hmax
+            IF(InfoActive(20)) THEN
+              PRINT *,'Height interval in n-t system: ',hmin,hmax
+              PRINT *,'Radius interval in n-t system: ',hmin,hmax
+            END IF
           END IF
+          
+          IF(.NOT. (GotHTol .OR. GotRTol ) ) EXIT
         END DO
+      END IF
+
+      IF(GotHTol .OR. GotRTol ) THEN
         n = COUNT(NodeActive)
-        CALL Info(Caller,'Active nodes after tolerance check: '//I2S(n))
+        CALL Info(Caller,'Active nodes after tolerance check (out of '&
+            //I2S(SIZE(NodeActive))//'): '//I2S(n))
       END IF
      
     END SUBROUTINE SetActiveNodeSet
       
 
+    ! This compute a line integral. No line may exist so we go through a line created on-the-fly from
+    ! existing node-to-node connections. We rotate through the axis until 360 degrees are passed
+    ! going always to the node among the candidate nodes that is as efficient as possible in terms of angle.
+    ! Unfortunately this logic may fail if the circle is not a true circle. 
+    !------------------------------------------------------------------------------------------------------    
     SUBROUTINE ComputeLineIntegral()
 
+      INTEGER :: WhoActive, PrevWhoActive, NoStat, kprev(3)
+      LOGICAL :: FileOpen
+      REAL(KIND=dp) :: r2min_par
+      CHARACTER(:), ALLOCATABLE :: str
+      
+      
+      FileOpen = .FALSE.
+      NoStat = 0
+
+      
       ! Create a graph for node-to-edge connectivity
       !----------------------------------------------
       NodeGraph => AllocateMatrix()
@@ -1013,16 +1062,9 @@ MODULE LumpingUtils
       END DO
       CALL List_ToCRSMatrix(NodeGraph)
       WRITE(Message,*) 'Nonzeros per row NodeGraph:',1.0_dp * SIZE(NodeGraph % Values) / NodeGraph % NumberOfRows
-      CALL Info(Caller, Message)
+      CALL Info(Caller, Message, Level=7)
 
       n0 = Mesh % NumberOfNodes
-
-      SaveLoop = .FALSE.
-      IF( SaveLoop ) THEN
-        OPEN (10, FILE='Loop.dat' )
-      END IF
-      Debug = .FALSE.
-
 
       ! Find the node closest to the origin
       r2min = HUGE(r2min)
@@ -1040,8 +1082,12 @@ MODULE LumpingUtils
         END IF
       END DO
 
+      WRITE(Message,'(A,ES10.3)') 'Minimum distance (node '//I2S(r2ind)//'):',SQRT(r2min)
+      CALL Info(Caller,Message,Level=7)
+      
+      Debug = .FALSE.
       IF( Debug ) THEN
-        PRINT *,'Minimum distance:',SQRT(r2min),r2ind,NodeActive(r2ind)
+        PRINT *,'Center:',Center
         PRINT *,'Normal:',Normal
         PRINT *,'Tangent1:',Tangent1    
         PRINT *,'Tangent2:',Tangent2
@@ -1050,25 +1096,82 @@ MODULE LumpingUtils
 
       phisum = 0.0_dp
       nsteps = 0
-      Circ = CMPLX(0.0_dp, 0.0_dp)
+      ReCirc = 0.0_dp
+      ImCirc = 0.0_dp
       ssum = 0.0_dp
 
       Coord1 = Coord0    
       i1 = r2ind 
-      x1 = SUM(Coord1*Tangent1)
-      y1 = SUM(Coord1*Tangent2) 
-      phi1 = (180.0_dp/PI) * ATAN2(y1,x1)
 
-      IF(SaveLoop) WRITE(10,*) nsteps, Coord1, phi1, phisum, ssum, REAL(Circ) 
+      ! We have to assume that one partition finds the entire circle.
+      ! If this is done in many pieces we should generate an algo that passed on the
+      ! process on a joint node that turns out to be otherwise the end of the path. 
+      IF(ParEnv % PEs > 1) THEN
+        WhoActive = -1 
+        r2min_par = ParallelReduction(r2min,1)
+        IF( ABS(r2min_par - r2min) < TINY(r2min)) THEN
+          WhoActive = ParEnv % MyPe
+        END IF
+        
+        ! We start from this partition.
+        ! I.e. the largest partition index with the minimum distance. 
+        WhoActive = ParallelReduction(WhoActive,2)
 
+        ! We need Coord0 always in parallel in each partition. 
+        IF(WhoActive /= ParEnv % MyPe ) THEN
+          Coord0 = -HUGE(Coord0)
+          r2ind = 0
+        END IF
+        DO k=1,3
+          Coord0(k) = ParallelReduction(Coord0(k),2)
+        END DO          
+      ELSE
+        WhoActive = ParEnv % Mype        
+      END IF
+      PrevWhoActive = WhoActive
+      
+10    IF( WhoActive == ParEnv % MyPe ) THEN
+        x1 = SUM(Coord1*Tangent1)
+        y1 = SUM(Coord1*Tangent2) 
+        phi1 = (180.0_dp/PI) * ATAN2(y1,x1)
+        str = ListGetString( Vlist,'Line Integral File',SaveLoop )
+      ELSE
+        Coord1 = -HUGE(Coord1)
+        SaveLoop = .FALSE.
+      END IF
+
+      IF( ParEnv % PEs > 1) THEN
+        ! If this is not active partition go to wait for the active one for further instructions.
+        IF( WhoActive /= ParEnv % MyPe ) GOTO 20 
+      END IF
+              
+      IF( SaveLoop ) THEN
+        ! Only open the file once!
+        IF(.NOT. FileOpen ) THEN
+          IF( ParEnv % PEs > 1 ) THEN            
+            OPEN (10, FILE=TRIM(str)//'_'//I2S(ParEnv % MyPe) )
+          ELSE
+            OPEN (10, FILE=str )
+          END IF
+          FileOpen = .TRUE.
+        END IF
+        WRITE(10,*) nsteps, Coord1, phi1, phisum, ssum, ReCirc
+      END IF
+
+      kprev = 0
       DO WHILE(.TRUE.)
-        dsmax = 0.0_dp !-HUGE(dsmax) !0.0_dp
+        dsmax = -EPSILON(dsmax) 
+        kprev(2:3) = kprev(1:2)
+        kprev(1) = kmax
         kmax = 0
 
         ! Among the edges related to node "i1" find the one that has makes us further in
         ! minimizing the distance.
-        DO j = NodeGraph % Rows(i1),NodeGraph % Rows(i1+1)-1
+        DO j = NodeGraph % Rows(i1),NodeGraph % Rows(i1+1)-1          
           k = NodeGraph % Cols(j)
+
+          ! Do not use any of the previous node again!
+          IF(ANY(k==kprev)) CYCLE
           Edge => Mesh % Edges(k)
           NodeIndexes => Edge % NodeIndexes
 
@@ -1109,7 +1212,7 @@ MODULE LumpingUtils
           END IF
 
           ! Have we found a better edge candidate? Memorize that!
-          IF( ds > dsmax ) THEN
+          IF( ds >= dsmax ) THEN
             kmax = k
             imax = i2
             dsmax = ds
@@ -1119,11 +1222,27 @@ MODULE LumpingUtils
           END IF
         END DO
 
-        ! When no way to get further we are node!
+        ! When no way to get further we are done!
         IF( kmax == 0 ) THEN
-          PRINT *,'Cands:',i1,NodeGraph % Rows(i1),NodeGraph % Rows(i1+1)-1
-
-          CALL Fatal(Caller,'We had to stop because not route was found!')
+          IF( ParEnv % PEs > 1 ) THEN
+            BLOCK
+              INTEGER, POINTER :: Neig(:)
+              Neig => Mesh % ParallelInfo % NeighbourList(i1) % Neighbours
+              IF( SIZE(Neig) > 1 ) THEN
+                !PRINT *,'Swapping to partition:',Neig
+                IF( WhoActive == Neig(1) ) THEN
+                  WhoActive = Neig(2)
+                ELSE
+                  WhoActive = Neig(1)
+                END IF
+                EXIT
+              END IF
+            END BLOCK
+          END IF
+            
+          !PRINT *,'Cands:',i1,NodeGraph % Rows(i1),NodeGraph % Rows(i1+1)-1
+          NoStat = 1
+          CALL Warn(Caller,'We had to stop because no route was found!')
           EXIT
         END IF
 
@@ -1153,7 +1272,8 @@ MODULE LumpingUtils
                   avar % Values(6*(j1-1)+3+k) + avar % Values(6*(j2-1)+3+k) ) / 2
             END IF
           END DO
-          Circ = Circ + SUM(gradv*EdgeVector)
+          ReCirc = ReCirc + REAL(SUM(gradv*EdgeVector))
+          ImCirc = ImCirc + AIMAG(SUM(gradv*EdgeVector))
         ELSE                
           ! Integral over edge field.
 
@@ -1171,9 +1291,10 @@ MODULE LumpingUtils
           IF( j==0) CALL Fatal(Caller,'Edge field missing on path!')
 
           IF( avar % dofs == 1 ) THEN
-            Circ = Circ + sgn * avar % Values(j)
+            ReCirc = ReCirc + sgn * avar % Values(j)
           ELSE
-            Circ = Circ + sgn * CMPLX( avar % Values(2*j-1),avar % Values(2*j) )
+            ReCirc = ReCirc + sgn * avar % Values(2*j-1)
+            ImCirc = ImCirc + sgn * avar % Values(2*j) 
           END IF
         END IF
 
@@ -1187,14 +1308,13 @@ MODULE LumpingUtils
 
         phisum = phisum + dphimax      
 
-        IF(Debug) PRINT *,'phisum:',nsteps,Coord1,phisum,ssum,phi1,REAL(Circ)
-
+        IF(Debug) PRINT *,'phisum:',nsteps,Coord1,phisum,ssum,phi1,ReCirc
 
         IF( ABS(phisum) > 720.0_dp ) THEN
           CALL Fatal(Caller,'We circled twice around!?')
         END IF
 
-        IF(SaveLoop) WRITE(10,*) nsteps, Coord1, phi1, phisum, ssum, REAL(Circ)
+        IF(SaveLoop) WRITE(10,*) nsteps, Coord1, phi1, phisum, ssum, ReCirc
 
         ! We have come home to roost!
         IF(i1 == r2ind) THEN
@@ -1203,11 +1323,73 @@ MODULE LumpingUtils
         END IF
       END DO
 
-      !PRINT *,'Path integral:',avar % dofs, targetbodies, nsteps, phisum, ssum, Circ
+20    IF( ParEnv % PEs > 1 ) THEN
+        phisum = ParallelReduction(phisum)
+        !PRINT *,'phisum:',phisum, ParEnv % MyPe
+        !PRINT *,'whoactive:',whoactive, prevwhoactive, ParEnv % Mype
 
-      CALL FreeMatrix(NodeGraph)
-      IF(SaveLoop) CLOSE(10)
+        ! Find out the new active partition. It has been set only in the previous active partition.
+        IF(PrevWhoActive /= ParEnv % MyPe) THEN
+          WhoActive = -1
+        END IF
+        WhoActive = ParallelReduction(WhoActive,2)
+
+        !PRINT *,'New whoactive:',WhoActive, PrevWhoActive, ParEnv % MyPe
+        
+        IF(WhoActive /= PrevWhoActive) THEN
+          PrevWhoActive = WhoActive
+
+          ! Find the new starting node.
+          DO k=1,3
+            Coord1(k) = ParallelReduction(Coord1(k),2)
+          END DO
+
+          ! For the new active partition find a new starting point. 
+          IF( WhoActive == ParEnv % MyPe ) THEN
+            r2min = HUGE(r2min)
+            i1 = 0
+            DO i=1,Mesh % NumberOfNodes
+              IF(.NOT. NodeActive(i)) CYCLE
+              Coord(1) = Mesh % Nodes % x(i)
+              Coord(2) = Mesh % Nodes % y(i)
+              Coord(3) = Mesh % Nodes % z(i)
+              r2 = SUM((Coord-Coord1)**2)
+              IF(r2 < r2min) THEN
+                r2min = r2
+                i1 = i
+              END IF
+            END DO
+            !PRINT *,'New starting point:',i1,SQRT(r2min)
+          ELSE
+            ! Have the counter active only in the active partition.
+            phisum = 0.0_dp
+          END IF
+
+          !PRINT *,'WhoIsActice:',ParEnv % MyPe, WhoActive, WhoActive == ParEnv % MyPe          
+          GOTO 10
+        END IF
+      END IF      
+
+      IF(ParEnv % PEs > 1 ) THEN
+        ReCirc = ParallelReduction(ReCirc)
+        ImCirc = ParallelReduction(ImCirc)
+        ssum = ParallelReduction(ssum)        
+      END IF
       
+      IF(InfoActive(20)) THEN
+        PRINT *,'PathIntegralLine:',ParEnv % MyPe, avar % dofs, targetbodies, nsteps, phisum, ssum, ReCirc
+      END IF
+
+      NoStat = ParallelReduction(NoStat)
+      IF(Nostat > 0 ) THEN
+        CALL Info(Caller,'Setting values to zero because of issues!')
+        ReCirc = 0.0_dp
+        ImCirc = 0.0_dp
+      END IF
+      
+      CALL FreeMatrix(NodeGraph)
+      IF(FileOpen) CLOSE(10)
+                   
     END SUBROUTINE ComputeLineIntegral           
 
 
@@ -1216,11 +1398,12 @@ MODULE LumpingUtils
       TYPE(Nodes_t), SAVE :: ElementNodes
       LOGICAL :: AllocationsDone = .FALSE.
       TYPE(GaussIntegrationPoints_t) :: IP
-      REAL(KIND=dp) :: detJ, Area, s, TestVec(3)
+      REAL(KIND=dp) :: detJ, Area, s, TestVec(3), ParentNormal(3), Coeff
       TYPE(ValueList_t), POINTER :: Params
-      LOGICAL :: Stat, PiolaVersion, EdgeBasis 
-      INTEGER :: np, nd, EdgeBasisDegree
+      LOGICAL :: Stat, PiolaVersion, EdgeBasis
+      INTEGER :: np, nd, EdgeBasisDegree, tmin, tmax
       INTEGER, POINTER, SAVE :: Indexes(:)
+      TYPE(Element_t), POINTER :: Element, Parent, pElem
       REAL(KIND=dp), POINTER, SAVE :: Basis(:), SOL(:,:), WBasis(:,:), dBasisdx(:,:), RotWBasis(:,:)
 
       CALL Info(Caller,'Estimating line integral from surface integral!')
@@ -1231,9 +1414,10 @@ MODULE LumpingUtils
             Basis(n), dBasisdx(n,3), WBasis(n,3), RotWBasis(n,3), SOL(6,n), Indexes(n) )      
         AllocationsDone = .TRUE.
       END IF
-
+      
       Area = 0.0_dp
-      Circ = 0.0_dp
+      ReCirc = 0.0_dp
+      ImCirc = 0.0_dp
       
       EdgeBasis = .FALSE.
       IF(avar % dofs <= 2) THEN
@@ -1242,18 +1426,82 @@ MODULE LumpingUtils
 
         CALL EdgeElementStyle(avar % Solver % Values, PiolaVersion, BasisDegree = EdgeBasisDegree ) 
       END IF      
+
+      IF( BCMode ) THEN
+        tmin = Mesh % NumberOfBulkElements + 1
+        tmax = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+      ELSE
+        tmin = 1
+        tmax = Mesh % NumberOfFaces
+      END IF
       
-      DO t=1, Mesh % NumberOfFaces
-        Element => Mesh % Faces(t)
+      !PRINT *,'Center:',Center
+      !PRINT *,'Normal:',Normal
+      !PRINT *,'BCMode:',BCMode,tmin,tmax,InsideBC
+      
+      DO t=tmin, tmax
+        IF(BCMode) THEN
+          Element => Mesh % Elements(t)
+        ELSE          
+          Element => Mesh % Faces(t)
+        END IF
         n = Element % TYPE % NumberOfNodes
         NodeIndexes => Element % NodeIndexes 
-
-        IF(.NOT. ALL(NodeActive(NodeIndexes))) CYCLE
-                
+        
+        IF( BCMode ) THEN
+          IF(.NOT. ASSOCIATED(Element % BoundaryInfo)) CYCLE
+          IF(Element % BoundaryInfo % Constraint == 0) CYCLE
+          DO i=1,CurrentModel % NumberOfBCs
+            IF ( Element % BoundaryInfo % Constraint == CurrentModel % BCs(i) % Tag ) EXIT
+          END DO
+          IF(i /= InsideBC) CYCLE
+        ELSE
+          IF(.NOT. ALL(NodeActive(NodeIndexes))) CYCLE
+        END IF
+          
+        ! Check that we have a parent that is on the boundary.
+        k = 0
+        DO i=1,2
+          IF(i==1) THEN
+            pElem => Element % BoundaryInfo % Left        
+          ELSE
+            pElem => Element % BoundaryInfo % Right        
+          END IF           
+          IF(ASSOCIATED(pElem)) THEN
+            IF( ANY( TargetBodies == pElem % BodyId ) ) THEN
+              k=k+1
+              Parent => pElem
+            END IF
+          END IF
+        END DO
+        IF(k/=1) CYCLE
+                        
         ElementNodes % x(1:n) = Mesh % Nodes % x(NodeIndexes(1:n))
         ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes(1:n))
         ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes(1:n))
 
+        ! Normal pointing out of the parent
+        ParentNormal = NormalVector(Element,ElementNodes,Parent=Parent)
+        ! Normal just in xy-plane
+        ParentNormal = ParentNormal - SUM(Normal*ParentNormal)*Normal
+
+        ! Center of face element
+        Coord1(1) = SUM(ElementNodes % x(1:n)) / n
+        Coord1(2) = SUM(ElementNodes % y(1:n)) / n
+        Coord1(3) = SUM(ElementNodes % z(1:n)) / n
+        ! Face element direction vector in xy-plane
+        Coord1 = Coord1 - Center
+        Coord1 = Coord1 - SUM(Normal*Coord1)*Normal
+        ! Normalize such that |Coord1| == 1.
+        ds = SQRT(SUM(Coord1**2))
+        IF(ds > EPSILON(ds)) Coord1 = Coord1 / ds
+
+        ! If we are not pointing inwards at all then skip the face element. 
+        Coeff = -SUM(ParentNormal * Coord1)
+        IF(Coeff < EPSILON(Coeff) ) CYCLE
+        
+        ! Find the maximum distance edge on the boundary in the local coordinates.
+        ! This edge is oriented with the surface having the desired direction. 
         dsmax = -HUGE(dsmax) 
         DO i=1,n
           Coord1(1) = ElementNodes % x(i)
@@ -1317,7 +1565,7 @@ MODULE LumpingUtils
           !   CALL GetEdgeBasis(Element, WBasis, RotWBasis, Basis, dBasisdx)
           ! END IF
           
-          s = DetJ * IP % s(l)            
+          s = Coeff * DetJ * IP % s(l)            
           Area = Area + S
 
           SELECT CASE( avar % dofs )
@@ -1335,14 +1583,20 @@ MODULE LumpingUtils
             END DO
           END SELECT
           
-          Circ = Circ + s * SUM(gradv*EdgeVector)
+          ReCirc = ReCirc + s * REAL(SUM(gradv*EdgeVector))
+          ImCirc = ImCirc + s * AIMAG(SUM(gradv*EdgeVector))
         END DO
       END DO
 
-      Circ = Circ / (hmax-hmin)       
-      !PRINT *,'Path integral cyl:',avar % dofs, targetbodies, area, &
-      !    area/((hmax-hmin)*2*PI), Circ
-      
+      ! Move from surface integral to line integral correspondent by dividing with the height.
+      ReCirc = ReCirc / (hmax-hmin)       
+      ImCirc = ImCirc / (hmax-hmin)       
+
+      IF(InfoActive(20)) THEN
+        PRINT *,'PathIntegralCyl:',avar % dofs, targetbodies, area, &
+            area/((hmax-hmin)*2*PI), ReCirc, ImCirc
+      END IF
+        
     END SUBROUTINE ComputeCylinderIntegral
           
   END FUNCTION ComponentStokesTheorem
