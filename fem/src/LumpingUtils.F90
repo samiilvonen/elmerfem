@@ -1423,7 +1423,6 @@ MODULE LumpingUtils
       IF(avar % dofs <= 2) THEN
         EdgeBasis = .TRUE.
         Params => avar % Solver % Values
-
         CALL EdgeElementStyle(avar % Solver % Values, PiolaVersion, BasisDegree = EdgeBasisDegree ) 
       END IF      
 
@@ -1588,7 +1587,12 @@ MODULE LumpingUtils
         END DO
       END DO
 
-      ! Move from surface integral to line integral correspondent by dividing with the height.
+      ! Sum up in parallel.
+      Area = ParallelReduction(Area)
+      ReCirc = ParallelReduction(ReCirc)
+      ImCirc = ParallelReduction(ImCirc)
+      
+      ! Move from surface integral to line integral correspondent by dividing with the height.     
       ReCirc = ReCirc / (hmax-hmin)       
       ImCirc = ImCirc / (hmax-hmin)       
 
