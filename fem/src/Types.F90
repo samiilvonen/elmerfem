@@ -991,6 +991,7 @@ MODULE Types
     CHARACTER(MAX_NAME_LEN), ALLOCATABLE :: names(:), source(:)
     TYPE(Component_t), POINTER :: Components(:)=>NULL()
     TYPE(CircuitVariable_t), POINTER :: CircuitVariables(:)=>NULL()
+    TYPE(Solver_t), POINTER :: ASolver => NULL()
   END TYPE Circuit_t
 !-------------------Circuit stuff----------------------------------------------
 

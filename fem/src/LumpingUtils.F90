@@ -1043,7 +1043,6 @@ MODULE LumpingUtils
       REAL(KIND=dp) :: r2min_par
       CHARACTER(:), ALLOCATABLE :: str
       
-      
       FileOpen = .FALSE.
       NoStat = 0
 
@@ -1061,8 +1060,9 @@ MODULE LumpingUtils
         END IF
       END DO
       CALL List_ToCRSMatrix(NodeGraph)
-      WRITE(Message,*) 'Nonzeros per row NodeGraph:',1.0_dp * SIZE(NodeGraph % Values) / NodeGraph % NumberOfRows
-      CALL Info(Caller, Message, Level=7)
+      WRITE(Message,'(A,ES12.3)') 'Nonzeros per row NodeGraph:',&
+          1.0_dp * SIZE(NodeGraph % Values) / NodeGraph % NumberOfRows
+      CALL Info(Caller, Message, Level=10)
 
       n0 = Mesh % NumberOfNodes
 
@@ -1611,14 +1611,14 @@ MODULE LumpingUtils
 !> This is actually not energy, but twice the energy, since the values are
 !> used to computed inductance matrix. 
 !------------------------------------------------------------------------------
-  FUNCTION ComponentCoilEnergy(Model, Mesh, MasterEntities, AVar, CVar, BCMode ) RESULT ( AIint ) 
+  FUNCTION ComponentCoilEnergy(Model, Mesh, MasterEntities, AVar, CVar, BCMode ) RESULT ( AIintRe ) 
 !------------------------------------------------------------------------------
     TYPE(Model_t) :: Model    
     TYPE(Mesh_t), POINTER :: Mesh
     INTEGER, POINTER :: MasterEntities(:) 
     TYPE(Variable_t), POINTER :: AVar, CVar
     LOGICAL, OPTIONAL :: BCMode 
-    REAL(KIND=dp) :: AIint
+    REAL(KIND=dp) :: AIintRe
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------
@@ -1627,6 +1627,7 @@ MODULE LumpingUtils
     REAL(KIND=dp) :: volume
     LOGICAL :: Found
     LOGICAL :: Stat, PiolaVersion, EdgeBasis, DoBCs 
+    COMPLEX(KIND=dp) :: AIint
     CHARACTER(LEN=MAX_NAME_LEN) :: str
     CHARACTER(*), PARAMETER :: Caller = 'ComponentCoilEnergy'
         
@@ -1667,8 +1668,8 @@ MODULE LumpingUtils
     IF( CVar % Dofs /= 3 ) THEN
       CALL Fatal(Caller,'Expecting 3 components for current density!')
     END IF
-    IF( ALL([1,3] /= AVar % Dofs) ) THEN
-      CALL Fatal(Caller,'Expecting 1 or 3 components for vector potential!')
+    IF( ALL([1,2,3,6] /= AVar % Dofs) ) THEN
+      CALL Fatal(Caller,'Expecting 1,2,3 or 6 components for vector potential!')
     END IF
 
     DO t=t1, t2
@@ -1681,9 +1682,13 @@ MODULE LumpingUtils
       CALL LocalIntegElem()
     END DO
 
-    !AIint = ParallelReduction( AIint ) 
-    !Volume = ParallelReduction( volume ) 
+    AIint = ParallelReduction( AIint ) 
+    Volume = ParallelReduction( volume ) 
 
+    !PRINT *,'AiInit:',AiInt,Volume
+    
+    AIIntRe = REAL(AIint)    
+    
     CALL Info(Caller,'Reduction operator finished',Level=12)
 
   CONTAINS
@@ -1695,7 +1700,8 @@ MODULE LumpingUtils
       LOGICAL, SAVE :: AllocationsDone = .FALSE.
       INTEGER, POINTER, SAVE :: EdgeIndexes(:)
       INTEGER, POINTER :: NodeIndexes(:), pIndexes(:)
-      REAL(KIND=dp) :: DetJ,S,Cip(3),Aip(3)
+      REAL(KIND=dp) :: DetJ,S,Cip(3)
+      COMPLEX(KIND=dp) :: Aip(3)
       REAL(KIND=dp), POINTER, SAVE :: Basis(:), WBasis(:,:), dBasisdx(:,:), RotWBasis(:,:), &
           Aelem(:,:), Celem(:,:)    
 
@@ -1751,36 +1757,27 @@ MODULE LumpingUtils
               RotBasis = RotWBasis, USolver = avar % Solver )
         END IF
 
-        !stat = EdgeElementInfo(Element, ElementNodes, IP % U(l), IP % V(l), IP % W(l), &
-        !      DetF = DetJ, Basis = Basis, EdgeBasis = WBasis, dBasisdx = dBasisdx, &
-        !      BasisDegree = EdgeBasisDegree, ApplyPiolaTransform = .TRUE.)
-        !ELSE
-        !  stat = ElementInfo(Element, ElementNodes, IP % U(l), IP % V(l), IP % W(l), &
-        !      detJ, Basis, dBasisdx)           
-        !  CALL GetEdgeBasis(Element, WBasis, RotWBasis, Basis, dBasisdx)
-        !END IF
-
         s = DetJ * IP % s(l)            
 
         ! Vector potential at IP
         SELECT CASE( avar % dofs )
         CASE( 1 )
           Aip = MATMUL(Aelem(1,np+1:nd), WBasis(1:nd-np,:))
-          !CASE( 2 ) 
-          !  Aip = CMPLX( MATMUL(Aelem(1,np+1:nd), WBasis(1:nd-np,:)), &
-          !      MATMUL(Aelem(2,np+1:nd), WBasis(1:nd-np,:)))
+        CASE( 2 ) 
+          Aip = CMPLX( MATMUL(Aelem(1,np+1:nd), WBasis(1:nd-np,:)), &
+              MATMUL(Aelem(2,np+1:nd), WBasis(1:nd-np,:)))
         CASE( 3 )
           Aip = MATMUL(Aelem(1:3,1:n),Basis(1:n))
-          !CASE( 6 ) 
-          !  Aip = CMPLX( MATMUL(Aelem(1:2:5,1:n),Basis(1:n)), &
-          !      MATMUL(Aelem(2:2:6,1:n),Basis(1:n)) )
-        CASE DEFAULT
-          CALL Fatal(Caller,'Invalid number of components for vector potential!')
+        CASE( 6 ) 
+          Aip = CMPLX( MATMUL(Aelem(1:2:5,1:n),Basis(1:n)), &
+              MATMUL(Aelem(2:2:6,1:n),Basis(1:n)) )
         END SELECT
 
         ! Current density at IP
         Cip = MATMUL(Celem(1:3,1:n),Basis(1:n))
 
+        !PRINT *,'Ai:',s,SQRT(SUM(REAL(Aip)**2)),SQRT(SUM(AIMAG(Aip)**2)),'c',SQRT(SUM(Cip*Cip))
+        
         AIint = AIint + s * SUM(Aip*Cip) 
         Volume = Volume + s
       END DO

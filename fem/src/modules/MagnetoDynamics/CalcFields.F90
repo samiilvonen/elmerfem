@@ -712,13 +712,14 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    TYPE(Variable_t), POINTER :: FieldVariable
    LOGICAL :: EigenAnalysis, VtuStyle, OldLossKeywords
    INTEGER :: Field, FieldsToCompute, NOFEigen, MaxFields, NoSlices
+   CHARACTER(*), PARAMETER :: Caller = 'MagnetoDynamicsCalcFields'
 
 !-------------------------------------------------------------------------------------------
 
    IF ( .NOT. ASSOCIATED( Solver % Matrix ) ) RETURN
    
-   CALL Info('MagnetoDynamicsCalcFields','------------------------------',Level=6)
-   CALL Info('MagnetoDynamicsCalcFields','Computing postprocessed fields',Level=5)
+   CALL Info(Caller,'------------------------------',Level=6)
+   CALL Info(Caller,'Computing postprocessed fields',Level=5)
    
    SolverParams => GetSolverParams()
 
@@ -745,14 +746,14 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    pSolver => Model % Solvers(pIndex) 
    pname = getVarName(pSolver % Variable)
 
-   CALL Info('MagnetoDynamicsCalcFields','Using potential variable: '//TRIM(Pname),Level=7)
+   CALL Info(Caller,'Using potential variable: '//TRIM(Pname),Level=7)
 
    ! Inherit the solution basis from the primary solver
    vDOFs = pSolver % Variable % DOFs
    
    CALL EdgeElementStyle(pSolver % Values, PiolaVersion, BasisDegree = EdgeBasisDegree ) 
    IF (PiolaVersion) &
-       CALL Info('MagnetoDynamicsCalcFields', &
+       CALL Info(Caller, &
        'Using Piola transformed finite elements',Level=7)
       
    ElectricPotName = GetString(SolverParams, 'Precomputed Electric Potential', PrecomputedElectricPot)
@@ -772,7 +773,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
    IF( ListCheckPresentAnyMaterial(Model,'Reluctivity Function') ) THEN
      IF(.NOT. RealField ) THEN
-       CALL Fatal('MagnetoDynamicsCalcFields','Reluctivity Function not implemented in complex cases!')
+       CALL Fatal(Caller,'Reluctivity Function not implemented in complex cases!')
      END IF
      CALL ListInitElementKeyword( mu_h,'Material','Reluctivity Function',&
          EvaluateAtIp=.TRUE.,DummyCount=3)
@@ -790,7 +791,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    LagrangeVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE.)
 
    IF(ASSOCIATED(LagrangeVar) ) THEN
-     CALL Info('MagnetoDynamicsCalcFields','Using Lagrange multiplier: '//TRIM(LagrangeVar % Name),Level=20)
+     CALL Info(Caller,'Using Lagrange multiplier: '//TRIM(LagrangeVar % Name),Level=20)
    END IF
    
    MFD => VariableGet( Mesh % Variables, 'Magnetic Flux Density' )
@@ -895,7 +896,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    IF ( ASSOCIATED(NF) .OR. ASSOCIATED(EL_NF) ) DOFs=DOFs+fdim
 
 
-   CALL Info('MagnetoDynamicsCalcFields',&
+   CALL Info(Caller,&
        'Number of components to compute: '//I2S(DOFs),Level=8)
 
    MaxFields = 15  !  
@@ -979,16 +980,16 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
      IF( OldLossKeywords ) THEN
        IF(.NOT. ListCheckPresentAnyMaterial( Model,'Harmonic Loss Linear Coefficient') ) THEN
-         CALL Warn('MagnetoDynamicsCalcFields',&
+         CALL Warn(Caller,&
              'Harmonic loss requires > Harmonic Loss Linear Coefficient < in material section!')
        END IF
 
        IF(.NOT. ListCheckPresentAnyMaterial( Model,'Harmonic Loss Quadratic Coefficient') ) THEN
-         CALL Warn('MagnetoDynamicsCalcFields',&
+         CALL Warn(Caller,&
              'Harmonic loss requires > Harmonic Loss Quadratic Coefficient < in material section!')
        END IF       
 
-       CALL Info('MagnetoDynamicsCalcFields','Consider using more generic keywords for loss computation!')
+       CALL Info(Caller,'Consider using more generic keywords for loss computation!')
      END IF
      
      ComponentLoss = 0.0_dp
@@ -1004,7 +1005,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    cdofs = 1
    EigenAnalysis = GetLogical( pSolver % Values, 'Eigen Analysis', Found )
    IF(EigenAnalysis) THEN
-     CALL Info('MagnetoDynamicsCalcFields','Ensure space for eigen analysis',Level=10)
+     CALL Info(Caller,'Ensure space for eigen analysis',Level=10)
      VtuStyle = ListGetLogical( SolverParams,'Vtu Style', Found )
      IF(VtuStyle) cdofs=2     
      NOFeigen = SIZE(pSolver % Variable % EigenValues)
@@ -1101,7 +1102,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        IF(ItoJCoeffFound) THEN 
          CALL GetLocalSolution(Wbase,CurrPathPotName)
          IvarId = GetInteger(GetBodyParams(Element), 'Circuit Current Variable Id', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Current Variable Id not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Current Variable Id not found!')
          CircuitCurrent = LagrangeVar % Values(IvarId)
        END IF  
      END IF
@@ -1125,7 +1126,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
      Omega = GetAngularFrequency(pSOlver % Values,Found,Element)
      IF( .NOT. ( RealField .OR. Found ) ) THEN
-!      CALL Fatal('MagnetoDynamicsCalcFields',&
+!      CALL Fatal(Caller,&
 !          '(Angular) Frequency must be given for complex fields!')
      END IF
      Freq = Omega / (2*PI)
@@ -1205,10 +1206,10 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        SELECT CASE (CoilType)
        CASE ('stranded')
          IvarId = GetInteger (CompParams, 'Circuit Current Variable Id', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Current Variable Id not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Current Variable Id not found!')
 
          N_j = GetConstReal (CompParams, 'Stranded Coil N_j', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Stranded Coil N_j not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Stranded Coil N_j not found!')
 
 
          HomogenizationModel = GetLogical(CompParams, 'Homogenization Model', Found)
@@ -1259,10 +1260,10 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
            END BLOCK
          END IF
          !nofturns = GetConstReal(CompParams, 'Number of Turns', Found)
-         !IF (.NOT. Found) CALL Fatal('MagnetoDynamicsCalcFields','Stranded Coil: Number of Turns not found!')
+         !IF (.NOT. Found) CALL Fatal(Caller,'Stranded Coil: Number of Turns not found!')
        CASE ('massive')
          VvarId = GetInteger (CompParams, 'Circuit Voltage Variable Id', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Voltage Variable Id not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Voltage Variable Id not found!')
 
        CASE ('foil winding')
          CALL GetLocalSolution(alpha,'Alpha')
@@ -1270,16 +1271,16 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
          IF (dim == 3) CALL GetElementRotM(Element, RotM, n)
 
          VvarId = GetInteger (CompParams, 'Circuit Voltage Variable Id', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Voltage Variable Id not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Voltage Variable Id not found!')
 
          coilthickness = GetConstReal(CompParams, 'Coil Thickness', Found)
-         IF (.NOT. Found) CALL Fatal('MagnetoDynamicsCalcFields','Foil Winding: Coil Thickness not found!')
+         IF (.NOT. Found) CALL Fatal(Caller,'Foil Winding: Coil Thickness not found!')
 
          !nofturns = GetConstReal(CompParams, 'Number of Turns', Found)
-         !IF (.NOT. Found) CALL Fatal('MagnetoDynamicsCalcFields','Foil Winding: Number of Turns not found!')
+         !IF (.NOT. Found) CALL Fatal(Caller,'Foil Winding: Number of Turns not found!')
 
          VvarDofs = GetInteger (CompParams, 'Circuit Voltage Variable dofs', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Voltage Variable dofs not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Voltage Variable dofs not found!')
          ! in case of a foil winding, transform the conductivity tensor:
          ! -------------------------------------------------------------
         
@@ -1289,7 +1290,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
              END DO
          END IF
        CASE DEFAULT
-         CALL Fatal ('MagnetoDynamicsCalcFields', 'Non existent Coil Type Chosen!')
+         CALL Fatal (Caller, 'Non existent Coil Type Chosen!')
        END SELECT
      END IF
 
@@ -1842,7 +1843,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
                  CC_J(1,l) = ItoJCoeff*wvec(l)*CircuitCurrent
                END DO
              ELSE
-               CALL Fatal('MagnetoDynamicsCalcFields','Complex circuit current imposing is not implemented')
+               CALL Fatal(Caller,'Complex circuit current imposing is not implemented')
              END IF
            ELSE 
              CC_J(1,:) = 0.0_dp
@@ -1895,7 +1896,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          IF ( ASSOCIATED(JXB).OR.ASSOCIATED(EL_JXB)) THEN
            IF (.NOT. ASSOCIATED(CD) .AND. .NOT. ASSOCIATED(EL_CD)) THEN
-             CALL Warn('MagnetoDynamicsCalcFields', 'Cannot Calculate JxB since Current Density is not calculated!')
+             CALL Warn(Caller, 'Cannot Calculate JxB since Current Density is not calculated!')
            ELSE
              IF (Vdofs == 1) THEN
                JXBatIP(1,:) = crossproduct(JatIP(1,:),B(1,:))
@@ -2153,7 +2154,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
        IF( ElementalMode /= 2 .AND. ElementalMode /= 4) THEN
          CALL LUdecomp(MASS,eq_n,pivot,Erroneous)
-         IF (Erroneous) CALL Fatal('MagnetoDynamicsCalcFields', 'LU-decomposition fails')
+         IF (Erroneous) CALL Fatal(Caller, 'LU-decomposition fails')
        END IF
 
        CALL LocalSol(EL_MFD,  fdim*vdofs, n, eq_n, MASS, FORCE, pivot, Dofs)
@@ -2231,7 +2232,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        IF (CircuitDrivenBC) THEN
          CompParams => GetComponentParams( Element )
          VvarId = GetInteger (CompParams, 'Circuit Voltage Variable Id', Found)
-         IF (.NOT. Found) CALL Fatal ('MagnetoDynamicsCalcFields', 'Circuit Voltage Variable Id not found!')
+         IF (.NOT. Found) CALL Fatal (Caller, 'Circuit Voltage Variable Id not found!')
        END IF
 
        DO j=1,IP % n
@@ -2385,18 +2386,52 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        CompParams => Model % Components(j) % Values       
        IF ( ListGetLogical( CompParams,'Flux linkage', Found ) ) THEN         
          s = ComponentStokesTheorem(Model, Mesh, CompParams, pSolver % Variable,.FALSE. )
-         PRINT *,'Flux linkage:',j,s
-         IF( ASSOCIATED(VP) ) THEN
-           s = ComponentStokesTheorem(Model, Mesh, CompParams, VP,.FALSE. )
-           PRINT *,'Flux linkage nodal:',j,s
-         END IF
+         WRITE(Message,'(A,ES12.3)') 'FluxLinkage '//I2S(j)//' line:',s
+         CALL Info(Caller,Message,Level=5)
+
+         !IF( ASSOCIATED(VP) ) THEN
+         !  s = ComponentStokesTheorem(Model, Mesh, CompParams, VP,.FALSE. )
+         !  PRINT *,'Flux linkage line nodal:',j,s
+         !END IF
          s = ComponentStokesTheorem(Model, Mesh, CompParams, pSolver % Variable,.TRUE. )
-         PRINT *,'Flux linkage averaged:',j,s
-         IF( ASSOCIATED(VP) ) THEN
-           s = ComponentStokesTheorem(Model, Mesh, CompParams, VP,.TRUE. )
-           PRINT *,'Flux linkage nodal avereaged:',j,s
-         END IF
-       END IF       
+         WRITE(Message,'(A,ES12.3)') 'FluxLinkage '//I2S(j)//' area:',s
+         CALL Info(Caller,Message,Level=5)
+
+         !IF( ASSOCIATED(VP) ) THEN
+         !  s = ComponentStokesTheorem(Model, Mesh, CompParams, VP,.TRUE. )
+         !  PRINT *,'Flux linkage area nodal:',j,s
+         !END IF
+
+         
+         BLOCK 
+           TYPE(Variable_t), POINTER :: CoilCurr
+           INTEGER, POINTER :: MasterEntities(:)
+           COMPLEX(KIND=dp) :: Curr
+           REAL(KIND=dp) :: Area
+           
+           MasterEntities => ListGetIntegerArray( CompParams,'Master Bodies',Found )
+           IF(ASSOCIATED(MasterEntities)) THEN
+             str = ListGetString( CompParams,'W Vector Variable Name',Found )
+             IF(Found) THEN
+               CoilCurr => VariableGet( Mesh % Variables,str,ThisOnly=.TRUE.)
+             ELSE
+               CoilCurr => VariableGet( Mesh % Variables,'CoilCurrent e',ThisOnly=.TRUE.)
+               IF(.NOT. ASSOCIATED(CoilCurr)) THEN
+                 CoilCurr => VariableGet( Mesh % Variables,'CoilCurrent',ThisOnly=.TRUE.)
+               END IF
+             END IF
+             s = ComponentCoilEnergy(Model, Mesh, MasterEntities, pSolver % Variable, CoilCurr )            
+           END IF
+
+           Curr = GetComponentCurrent(j,Found) 
+           Area = GetComponentArea(j,Found)
+           s = s / (Area * Curr)
+           
+           WRITE(Message,'(A,ES12.3)') 'FluxLinkage '//I2S(j)//' volume:',s
+           CALL Info(Caller,Message,Level=5)
+         END BLOCK
+           
+       END IF
      END DO
    END IF
 
@@ -2439,7 +2474,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    
     
    IF( UseElementalNF ) THEN
-      CALL Info('MagnetoDynamicsCalcFields','Doing elemental nodal force stuff!',Level=20)
+      CALL Info(Caller,'Doing elemental nodal force stuff!',Level=20)
             
      ! Collect nodal forces from airgaps
      CALL CalcBoundaryModels()
@@ -2447,7 +2482,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      ! Create a minimal discontinuous set such that discontinuity is only created
      ! when body has an air gap boundary condition. Only do the reduction for the 1st time.
      IF( .NOT. ASSOCIATED( SetPerm ) ) THEN
-       CALL Info('MagnetoDynamicsCalcFields','Creating minimal elemental set',Level=10)
+       CALL Info(Caller,'Creating minimal elemental set',Level=10)
        SetPerm => MinimalElementalSet( Mesh,'db', Solver % Variable % Perm, &
          BcFlag = 'Air Gap Length', &
          NonGreedy = ListGetLogical( Solver % Values,'Nongreedy Jump',Found) ) 
@@ -2467,7 +2502,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          WRITE( Message,'(A,3ES15.6)') 'Magnetic force reduced: > '&
            //TRIM(ListGetString(CompParams,'Name'))//' < :', LumpedForce
-         CALL Info('MagnetoDynamicsCalcFields',Message,Level=6)           
+         CALL Info(Caller,Message,Level=6)           
 
          DO i=1,fdim
            CALL ListAddConstReal( CompParams,'res: magnetic force '//I2S(i), LumpedForce(i) )
@@ -2481,13 +2516,13 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          WRITE( Message,'(A,ES15.6)') 'Magnetic torque reduced: > '&
            //TRIM(ListGetString(CompParams,'Name'))//' < :', val
-         CALL Info('MagnetoDynamicsCalcFields',Message,Level=6)           
+         CALL Info(Caller,Message,Level=6)           
 
          CALL ListAddConstReal( CompParams,'res: magnetic torque', val )
        END IF
      END DO
   ELSE
-      CALL Info('MagnetoDynamicsCalcFields','Doing nodal nodal force stuff!',Level=20)
+      CALL Info(Caller,'Doing nodal nodal force stuff!',Level=20)
      
      DO j=1,Model % NumberOfComponents
        CompParams => Model % Components(j) % Values
@@ -2498,7 +2533,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          WRITE( Message,'(A,3ES15.6)') 'Magnetic force reduced: > '&
            //TRIM(ListGetString(CompParams,'Name'))//' < :', LumpedForce
-         CALL Info('MagnetoDynamicsCalcFields',Message,Level=6)           
+         CALL Info(Caller,Message,Level=6)           
 
          DO i=1,fdim
            CALL ListAddConstReal( CompParams,'res: magnetic force '//I2S(i), LumpedForce(i) )
@@ -2510,7 +2545,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          ! Warn if user has air gaps and no "nodal force e" is available
          IF ( HaveAirGap ) THEN
-           CALL Warn('MagnetoDynamicsCalcFields', 'Cannot calculate air gap &
+           CALL Warn(Caller, 'Cannot calculate air gap &
              &forces correctly because elemental field "Nodal Force e" is not &
              &present.')
          END IF
@@ -2519,7 +2554,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          WRITE( Message,'(A,ES15.6)') 'Magnetic torque reduced: > '&
            //TRIM(ListGetString(CompParams,'Name'))//' < :', val
-         CALL Info('MagnetoDynamicsCalcFields',Message,Level=6)           
+         CALL Info(Caller,Message,Level=6)           
 
          CALL ListAddConstReal( CompParams,'res: magnetic torque', val )
        END IF
@@ -2554,32 +2589,32 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    END IF
 
    IF( HbIntegProblem ) THEN
-     CALL Warn('MagnetoDynamicsCalcFields','Could not integrate over H-B curve for magnetic energy!')
+     CALL Warn(Caller,'Could not integrate over H-B curve for magnetic energy!')
    END IF
    
    WRITE(Message,'(A,ES15.6)') 'Eddy current power: ', Power
-   CALL Info( 'MagnetoDynamicsCalcFields', Message )
+   CALL Info( Caller, Message )
    CALL ListAddConstReal( Model % Simulation, 'res: Eddy current power', Power )
 
    IF( LayerBC ) THEN
      WRITE(Message,*) 'Surface current power (the Joule effect): ', SurfPower
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      CALL ListAddConstReal(Model % Simulation, 'res: Surface current power', SurfPower)
    END IF
    
    IF ( ListGetLogical( SolverParams,'Separate Magnetic Energy',Found ) ) THEN
      WRITE(Message,'(A,ES15.6)') 'Electric Field Energy: ', Energy(1)
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      WRITE(Message,'(A,ES15.6)') 'Magnetic Field Energy: ', Energy(2)
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      WRITE(Message,'(A,ES15.6)') 'Magnetic Coenergy: ', Energy(3)
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      CALL ListAddConstReal(Model % Simulation,'res: Electric Field Energy',Energy(1))
      CALL ListAddConstReal(Model % Simulation,'res: Magnetic Field Energy',Energy(2))
      CALL ListAddConstReal(Model % Simulation,'res: Magnetic Coenergy',Energy(3))
    ELSE
      WRITE(Message,'(A,ES15.6)') 'ElectroMagnetic Field Energy: ',SUM(Energy(1:2))
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      CALL ListAddConstReal(Model % Simulation,'res: ElectroMagnetic Field Energy',SUM(Energy(1:2)))
    END IF
    
@@ -2591,32 +2626,32 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
      DO k=1,2
        IF( k == 1 ) THEN
-         CALL Info('MagnetoDynamicsCalcFields','Harmonic Loss Linear by components',Level=6)
+         CALL Info(Caller,'Harmonic Loss Linear by components',Level=6)
        ELSE
-         CALL Info('MagnetoDynamicsCalcFields','Harmonic Loss Quadratic by components',Level=6)
+         CALL Info(Caller,'Harmonic Loss Quadratic by components',Level=6)
        END IF
        WRITE( Message,'(A,ES15.6)') 'Loss for cos mode: ', ComponentLoss(k,1)
-       CALL Info('MagnetoDynamicsCalcFields', Message, Level=6 )
+       CALL Info(Caller, Message, Level=6 )
        WRITE( Message,'(A,ES15.6)') 'Loss for sin mode: ', ComponentLoss(k,2)
-       CALL Info('MagnetoDynamicsCalcFields', Message, Level=6 )
+       CALL Info(Caller, Message, Level=6 )
        WRITE( Message,'(A,ES15.6)') 'Total loss: ',TotalLoss(k)
-       CALL Info('MagnetoDynamicsCalcFields',Message, Level=5 )
+       CALL Info(Caller,Message, Level=5 )
      END DO
 
      DO k=1,3
        IF( TotalLoss(k) < TINY( TotalLoss(k) ) ) CYCLE
        IF( k == 1 ) THEN
-         CALL Info('MagnetoDynamicsCalcFields','Harmonic Loss Linear by bodies',Level=6)
+         CALL Info(Caller,'Harmonic Loss Linear by bodies',Level=6)
        ELSE IF( k == 2 ) THEN
-         CALL Info('MagnetoDynamicsCalcFields','Harmonic Loss Quadratic by bodies',Level=6)
+         CALL Info(Caller,'Harmonic Loss Quadratic by bodies',Level=6)
        ELSE
-         CALL Info('MagnetoDynamicsCalcFields','Joule Loss by bodies',Level=6)
+         CALL Info(Caller,'Joule Loss by bodies',Level=6)
        END IF
 
        DO j=1,Model % NumberOfBodies
          IF( BodyLoss(k,j) < TINY( TotalLoss(k) ) ) CYCLE
          WRITE( Message,'(A,I0,A,ES15.6)') 'Body ',j,' : ',BodyLoss(k,j)
-         CALL Info('MagnetoDynamicsCalcFields', Message, Level=6 )
+         CALL Info(Caller, Message, Level=6 )
        END DO
 
        ! Save losses to components if requested. 
@@ -2658,7 +2693,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
    IF (GetLogical(SolverParams,'Show Angular Frequency',Found)) THEN
      WRITE(Message,*) 'Angular Frequency: ', Omega
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      CALL ListAddConstReal(Model % Simulation,'res: Angular Frequency', Omega)
    END IF
    
@@ -2669,11 +2704,11 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        WRITE (Message,'(A)') 'res: Group '//I2S(j)//' torque'
        CALL ListAddConstReal(Model % Simulation, TRIM(Message), Torque(i))
        WRITE (Message,'(A,F0.8)') 'Torque Group '//I2S(j)//' torque:', Torque(i)
-       CALL Info( 'MagnetoDynamicsCalcFields', Message)
+       CALL Info( Caller, Message)
      END DO
 
      IF( ListGetLogicalAnyBody( Model,'Calculate Torque over body') ) THEN
-       CALL Fatal( 'MagnetoDynamicsCalcFields', &
+       CALL Fatal( Caller, &
            'Keyword "Calculate Torque over body" is deprecated, use Component with torque instead')
      END IF
    END IF
@@ -2689,7 +2724,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
   IF (ListGetLogicalAnyBC( Model,'Magnetic Flux Average')) THEN
     IF (PiolaVersion) THEN
-      CALL Warn('MagnetoDynamicsCalcFields', &
+      CALL Warn(Caller, &
           'Magnetic Flux Average: The feature is not yet available for Piola transformed basis functions')
     ELSE
       DO i=1,GetNOFBoundaryElements()
@@ -2712,7 +2747,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
         ELSE IF (ASSOCIATED(Element % BoundaryInfo % Left)) THEN
           BodyId = Element % BoundaryInfo % Left % BodyID
         ELSE 
-          CALL Fatal ('MagnetoDynamicsCalcFields', 'Magnetic Flux Average: Boundary Element has not got a parent element.')
+          CALL Fatal (Caller, 'Magnetic Flux Average: Boundary Element has not got a parent element.')
         END IF
 
         n = GetElementNOFNodes()
@@ -2731,36 +2766,36 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
       END IF
 
       IF( Area < EPSILON( Area ) ) THEN
-        CALL WARN('MagnetoDynamicsCalcFields', 'Magnetic Flux Average Computation: Area < Epsilon(Area)')
+        CALL WARN(Caller, 'Magnetic Flux Average Computation: Area < Epsilon(Area)')
         RETURN
       END IF
 
       AverageFluxDensity = Flux / Area
  
     WRITE(Message,*) 'Magnetic Flux Average: ', Flux(1)
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     CALL ListAddConstReal( Model % Simulation, 'res: Magnetic Flux Average', Flux(1) )
  
     IF (vDOFs == 2) THEN 
       WRITE(Message,*) 'Magnetic Flux im Average: ', Flux(2)
-      CALL Info( 'MagnetoDynamicsCalcFields', Message )
+      CALL Info( Caller, Message )
       CALL ListAddConstReal( Model % Simulation, 'res: Magnetic Flux im Average', Flux(2) )
     END IF
 
     WRITE(Message,*) 'Magnetic Flux Density Average: ', AverageFluxDensity(1)
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     CALL ListAddConstReal( Model % Simulation,'res: Magnetic Flux Density Average', &
                           AverageFluxDensity(1))
 
     IF (vDOFs == 2) THEN 
      WRITE(Message,*) 'Magnetic Flux Density im Average: ', AverageFluxDensity(2)
-     CALL Info( 'MagnetoDynamicsCalcFields', Message )
+     CALL Info( Caller, Message )
      CALL ListAddConstReal( Model % Simulation,'res: Magnetic Flux Density im Average', &
                           AverageFluxDensity(2))
     END IF
 
     WRITE(Message,*) 'Magnetic Flux Area: ', Area
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     CALL ListAddConstReal( Model % Simulation,'res: Magnetic Flux Area', Area )
     END IF
   END IF
@@ -2874,7 +2909,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
       ThinLinePower  = ParallelReduction(ThinLinePower) / NoSlices
     END IF
     WRITE(Message,*) 'Total thin line power (the Joule effect): ', ThinLinePower
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     CALL ListAddConstReal(Model % Simulation, 'res: thin line power', ThinLinePower)
 
     DEALLOCATE(ThinLineCrossect, ThinLineCond)
@@ -2977,7 +3012,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
     END IF
       
     WRITE(Message,*) 'Thin sheet current power (the Joule effect): ', Power
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     CALL ListAddConstReal(Model % Simulation, 'res: Thin sheet current power', Power)
 
   END IF
@@ -3010,7 +3045,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
   
   IF( NormIndex > 0 ) THEN
     WRITE(Message,*) 'Reverting norm to: ', SaveNorm
-    CALL Info( 'MagnetoDynamicsCalcFields', Message )
+    CALL Info( Caller, Message )
     Solver % Variable % Norm = SaveNorm
   END IF
 
@@ -3151,12 +3186,12 @@ CONTAINS
       HasLeft = ASSOCIATED(BElement % BoundaryInfo % Left)
       HasRight = ASSOCIATED(BElement % BoundaryInfo % Right)
       IF( .NOT. (HasLeft .OR. HasRight)) THEN
-        CALL Warn('MagnetoDynamicsCalcFields', 'Airgap Length given on orphan boundary')
+        CALL Warn(Caller, 'Airgap Length given on orphan boundary')
         CYCLE
       END IF
 
       IF(.NOT. (HasLeft .AND. HasRight)) &
-        CALL Warn('MagnetoDynamicsCalcFields', 'Onesided airgap force calculation is untested.')
+        CALL Warn(Caller, 'Onesided airgap force calculation is untested.')
 
       BElement => Mesh % Faces(GetBoundaryFaceIndex(BElement))
       IF(.NOT. ActiveBoundaryElement(BElement, uSolver=pSolver)) CYCLE
@@ -3164,7 +3199,7 @@ CONTAINS
       LeftBodyID = BElement % BoundaryInfo % Left % BodyID
       RightBodyID = BElement % BoundaryInfo % Right % BodyID
       IF(LeftBodyID == RightBodyID) THEN
-        CALL Warn('MagnetoDynamicsCalcFields', 'Airgap in the middle of single body Id')
+        CALL Warn(Caller, 'Airgap in the middle of single body Id')
         CYCLE
       END IF
 
@@ -3398,7 +3433,7 @@ CONTAINS
      DO k = 1, num_axes
        nrm = sqrt(sum(axes(k,:)*axes(k,:))) 
        IF (nrm == 0._dp) THEN
-         CALL Warn('MagnetoDynamicsCalcFields',&
+         CALL Warn(Caller,&
              'Axis for the torque group '//I2S(k)//' is a zero vector')
          CYCLE
        END IF
@@ -3480,7 +3515,7 @@ CONTAINS
      IF(ASSOCIATED(El_Var)) THEN
        El_Var % DgAveraged = .FALSE.
        IF( DoAve ) THEN
-         CALL Info('MagnetoDynamicsCalcFields','Averaging for field: '//TRIM(El_Var % Name),Level=10)
+         CALL Info(Caller,'Averaging for field: '//TRIM(El_Var % Name),Level=10)
          CALL CalculateBodyAverage(Mesh, El_Var, .FALSE.)              
        END IF
        IF(.NOT. (ASSOCIATED(var) .AND. NodalFields) ) THEN
@@ -3494,7 +3529,7 @@ CONTAINS
 
    IF(VtuStyle) EigVec => Var % EigenVectors(Field,:)
         
-   CALL Info('MagnetoDynamicsCalcFields','Solving for field: '//TRIM(Var % Name),Level=6)   
+   CALL Info(Caller,'Solving for field: '//TRIM(Var % Name),Level=6)   
    DO i=1,m
      dofs = dofs+1
 

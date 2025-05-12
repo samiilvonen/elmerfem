@@ -213,7 +213,8 @@ SUBROUTINE CircuitsAndDynamics( Model,Solver,dt,TransientSimulation )
       CALL ReadPermutationVector(p)
       CALL ReadCircuitSources(p)
       CALL WriteCoeffVectorsForCircVariables(p)
-    
+
+      Circuits(p) % Asolver => ASolver
     END DO
 
     CALL CheckComponentVariables()
@@ -1403,6 +1404,7 @@ SUBROUTINE CircuitsAndDynamicsHarmonic( Model,Solver,dt,TransientSimulation )
       CALL ReadCircuitSources(p)
       CALL WriteCoeffVectorsForCircVariables(p)
     
+      Circuits(p) % Asolver => ASolver
     END DO
 
     ! Create CRS matrix structures for the circuit equations:
