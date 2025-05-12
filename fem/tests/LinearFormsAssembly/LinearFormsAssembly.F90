@@ -454,7 +454,7 @@ CONTAINS
       DO i=1,nbasis
         IF (ABS(STIFF1(i,j)-STIFF2(i,j)) >= tol) THEN
           nerror = nerror + 1
-          WRITE (*,*) 'STIFF:', i,j,STIFF1(i,j), STIFF2(i,j)
+          !WRITE (*,*) 'STIFF:', i,j,STIFF1(i,j), STIFF2(i,j)
         END IF
       END DO
     END DO
