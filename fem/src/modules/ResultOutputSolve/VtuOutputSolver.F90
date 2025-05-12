@@ -287,7 +287,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
   INTEGER, POINTER :: ActiveModes(:), ActiveModes2(:)
   LOGICAL :: GotActiveModes, GotActiveModes2, EigenAnalysis, &
       WriteIds, SaveLinear, SaveMetainfo, &
-      NoPermutation, SaveElemental, SaveNodal, NoInterp
+      NoPermutation, SaveElemental, SaveNodal, NoInterp, DiscontNaming 
   LOGICAL, ALLOCATABLE :: ActiveElem(:)
   INTEGER, ALLOCATABLE :: GeometryBodyMap(:),GeometryBCMap(:)
 
@@ -397,9 +397,14 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
 
   SaveLinear = GetLogical( Params,'Save Linear Elements',GotIt)
 
+  ! This is an old practice to name the discontinuous mesh differently so that
+  ! results will not be overwritten over the standard mesh results. 
+  DiscontNaming = GetLogical( Params,'Discont Mesh Naming', GotIt )
+  IF(.NOT. GotIt) DiscontNaming = .TRUE.
+  
   FilePrefix = GetString( Params,'Output File Name',GotIt )
   IF ( .NOT.GotIt ) FilePrefix = "Output"
-  IF ( Mesh % DiscontMesh ) THEN
+  IF ( Mesh % DiscontMesh .AND. DiscontNaming ) THEN
     FilePrefix = 'discont_'//TRIM(FilePrefix)    
   ELSE IF( OutputMeshes > 1 ) THEN
     i = INDEX( Mesh % Name,'/',.TRUE.)
