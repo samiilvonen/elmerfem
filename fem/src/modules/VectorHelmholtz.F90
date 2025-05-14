@@ -78,7 +78,7 @@ SUBROUTINE VectorHelmholtzSolver_Init0(Model,Solver,dt,Transient)
   LOGICAL :: Transient
 !------------------------------------------------------------------------------
   TYPE(ValueList_t), POINTER :: SolverParams
-  LOGICAL :: Found, SecondOrder, PiolaVersion, SecondFamily, WithNDOFs
+  LOGICAL :: Found, SecondOrder, PiolaVersion, SecondFamily, WithNDOFs, EigenProblem
 
   SolverParams => GetSolverParams()  
 
@@ -121,6 +121,9 @@ SUBROUTINE VectorHelmholtzSolver_Init0(Model,Solver,dt,Transient)
 
   !CALL ListAddNewLogical( SolverParams,'Hcurl Basis',.TRUE.)
   IF (WithNDOFs) THEN
+    EigenProblem = GetLogical(SolverParams, 'Eigen Analysis', Found)
+    IF (EigenProblem) CALL Fatal('VectorHelmholtzSolver_Init0', &
+        'Eigenvalue problem does not support the scalar unknown')
     CALL ListAddNewLogical(SolverParams,'Variable Output',.TRUE.)
     CALL ListAddNewString(SolverParams,'Variable','AV[AV re:1 AV im:1]')
   ELSE
@@ -242,6 +245,7 @@ SUBROUTINE VectorHelmholtzSolver( Model,Solver,dt,Transient )
   LOGICAL :: PiolaVersion, EdgeBasis, LowFrequencyModel, LorenzCondition
   LOGICAL :: UseGaussLaw, ChargeConservation
   LOGICAL :: EigenfunctionSource
+  LOGICAL :: EigenProblem
   TYPE(ValueList_t), POINTER :: SolverParams
   TYPE(Solver_t), POINTER :: pSolver
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzSolver'
@@ -269,11 +273,6 @@ SUBROUTINE VectorHelmholtzSolver( Model,Solver,dt,Transient )
         Use: Variable = E[E re:1 E im:1]')
   ENDIF
 
-  Omega = GetAngularFrequency(Found=Found)
-  IF(.NOT. Found ) THEN
-    CALL Fatal(Caller,'Harmonic wave equation requires angular frequency!')
-  END IF
-  
   PrecDampCoeff = GetCReal(SolverParams, 'Linear System Preconditioning Damp Coefficient', HasPrecDampCoeff )
   PrecDampCoeff = CMPLX(REAL(PrecDampCoeff), &
       GetCReal(SolverParams, 'Linear System Preconditioning Damp Coefficient im', Found ) )
@@ -310,7 +309,16 @@ SUBROUTINE VectorHelmholtzSolver( Model,Solver,dt,Transient )
   END IF
   IF(.NOT. Found ) eps0 = 8.854187817d-12
 
-  rob0 = Omega * SQRT( eps0 / mu0inv )
+  EigenProblem = GetLogical(SolverParams, 'Eigen Analysis', Found)
+  IF (.NOT. EigenProblem) THEN
+    Omega = GetAngularFrequency(Found=Found)
+    IF(.NOT. Found ) THEN
+      CALL Fatal(Caller,'Harmonic wave equation requires angular frequency!')
+    END IF
+    rob0 = Omega * SQRT( eps0 / mu0inv )
+  ELSE
+    rob0 = 0.0_dp
+  END IF
   
   LowFrequencyModel = GetLogical(SolverParams, 'Low Frequency Model', Found)
   LorenzCondition = GetLogical(SolverParams, 'Lorenz Condition', Found)
@@ -396,9 +404,15 @@ CONTAINS
     ! Robin type of BC in terms of E:
     !--------------------------------
     CALL Info(Caller,'Starting boundary assembly',Level=12)
-  
-    Active = GetNOFBoundaryElements()
-    InitHandles = .TRUE. 
+
+    IF (EigenProblem) THEN
+      ! Currently the eigenvalue problem is implemented for a combination of Dirichlet
+      ! and homogeneous Neumann BCs
+      Active = 0
+    ELSE
+      Active = GetNOFBoundaryElements()
+      InitHandles = .TRUE.
+    END IF
 
     DO t=1,Active
        Element => GetBoundaryElement(t)
@@ -443,7 +457,7 @@ CONTAINS
       Solver % Matrix % Values => SavedValues
     END IF
 
-    CALL SingleDipoleLoad() 
+    IF (.NOT. EigenProblem) CALL SingleDipoleLoad() 
     
     ! Linear system solution:
     ! -----------------------
@@ -649,6 +663,7 @@ CONTAINS
       Cond = ListGetElementComplex( CondCoeff_h, Basis, Element, Found, GaussPoint = t )
       ConductorBody = Found .AND. ABS(Cond) > AEPS
       IF( ConductorBody ) THEN
+        IF (EigenProblem) CALL Fatal(Caller, 'Eigenvalue problem does not support electric conductivity')
         DO p = 1,nd-np
           i = p+np
           DO q = 1,nd-np
@@ -682,7 +697,7 @@ CONTAINS
           DO q = 1,nd-np
             j = q+np
             ! the term \omega^2 \epsilon E.v
-            MASS(i,j) = MASS(i,j) - Omega**2 * Eps * &
+            MASS(i,j) = MASS(i,j) + Eps * &
                 SUM(WBasis(q,:) * WBasis(p,:)) * weight
           END DO
         END DO
@@ -690,7 +705,7 @@ CONTAINS
 
       ! Potential current source 
       L = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found, GaussPoint = t )      
-      IF( Found ) THEN
+      IF( Found .AND. .NOT. EigenProblem) THEN
         DO p = 1,nd-np
           i = p+np
           FORCE(i) = FORCE(i) + im * Omega * (SUM(L*WBasis(p,:))) * weight
@@ -795,6 +810,10 @@ CONTAINS
       END IF
     END DO
 
+    IF (.NOT. EigenProblem) THEN
+      MASS(1:nd,1:nd) = -Omega**2 * MASS(1:nd,1:nd)
+    END IF
+    
     IF( PrecMatrix ) THEN
       IF (CurlCurlPrec) THEN
         PREC = STIFF(1:nd,1:nd) + CurlMat(1:nd,1:nd)
@@ -808,7 +827,11 @@ CONTAINS
       END IF
     END IF
 
-    STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + CurlMat(1:nd,1:nd) + MASS(1:nd, 1:nd)
+    IF (EigenProblem) THEN
+      STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + CurlMat(1:nd,1:nd)
+    ELSE
+      STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + CurlMat(1:nd,1:nd) + MASS(1:nd, 1:nd)
+    END IF
     IF (WithNDOFs) THEN 
       STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + Gauge(1:nd,1:nd)
     END IF
@@ -825,7 +848,7 @@ CONTAINS
     !---------------------------------------------------------------    
     IF (nb > 0) CALL CondensateP(nd-nb, nb, STIFF, FORCE)
     CALL DefaultUpdateEquations( STIFF, FORCE, Element )
-
+    IF (EigenProblem) CALL DefaultUpdateMass(MASS)
 !------------------------------------------------------------------------------
   END SUBROUTINE LocalMatrix
 !------------------------------------------------------------------------------
