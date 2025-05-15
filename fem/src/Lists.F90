@@ -3511,7 +3511,7 @@ CONTAINS
         ptr % CValue = TRIM(Cvalue)
       END IF
 
-      ptr % TYPE   = LIST_TYPE_STRING
+      ptr % TYPE = LIST_TYPE_STRING
       n = LEN_TRIM(Name)
       IF(ALLOCATED(ptr % Name)) DEALLOCATE(ptr % Name)
       ALLOCATE(CHARACTER(n)::ptr % Name)
@@ -9656,7 +9656,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     INTEGER :: i,j,k,l,LoopDim, VarDim,FullDim,DOFs,dim,Comp
     TYPE(Variable_t), POINTER :: Variables, Var, Var1
-    CHARACTER(LEN=MAX_NAME_LEN) :: VarName, VarStr, VarStrComp, VarStrExt, str
+    CHARACTER(LEN=2*MAX_NAME_LEN) :: VarName, VarStr, str
     LOGICAL :: IsVector, Set, GotIt, ComponentVector, ThisOnly, IsIndex, &
         EnforceVectors, UseGeneric, DisplacementV
     INTEGER :: Nvector, Nscalar
@@ -9840,8 +9840,8 @@ CONTAINS
             Var1 => Var1 % Next
           END DO
           IF ( ASSOCIATED( Var1 ) ) THEN
-            WRITE(VarStrComp,'(A,I0,A)') 'Vector Field ',Nvector+1,' Complement'
-            CALL ListAddString( List ,TRIM(VarStrComp),'mesh update')
+            WRITE(VarStr,'(A,I0,A)') 'Vector Field ',Nvector+1,' Complement'
+            CALL ListAddString( List ,TRIM(VarStr),'mesh update')
           END IF
         END IF
 
