@@ -1491,10 +1491,12 @@ CONTAINS
             dBasisdx1(:,:,:), dBasisdx2(:,:,:)
     REAL(kind=dp), INTENT(IN) :: tol
     REAL(KIND=dp) :: maxerr, thiserr
-    INTEGER :: nerror
+    INTEGER :: nerror, ntot=0
 
     INTEGER :: i, j, dim
 
+    SAVE ntot
+    
     WRITE (*,'(A)') 'TestBasis: Testing basis functions versus reference implementation.'
     WRITE (*,'(3(A,I0))') 'TestBasis: ngp=', ngp, ', nbasis=', nbasis, &
             ', ndim=', ndim
@@ -1509,7 +1511,8 @@ CONTAINS
         maxerr = MAX(maxerr,thiserr)
         IF( thiserr >= tol ) THEN
           nerror = nerror + 1
-          WRITE (*,*) 'Basis:', i,j,Basis1(i,j), Basis2(i,j), thiserr
+          ntot = ntot + 1
+          IF(ntot <= 100 ) WRITE (*,*) 'Basis:', i,j,Basis1(i,j), Basis2(i,j), thiserr
         END IF
       END DO
     END DO
@@ -1521,7 +1524,8 @@ CONTAINS
           maxerr = MAX(maxerr, thiserr )
           IF( thiserr >= tol) THEN
             nerror = nerror + 1
-            WRITE (*,*) 'dBasisdx:', i,j,dim, dBasisdx1(i,j,dim), dBasisdx2(i,j,dim), thiserr
+            ntot = ntot + 1
+            IF(ntot <= 100) WRITE (*,*) 'dBasisdx:', i,j,dim, dBasisdx1(i,j,dim), dBasisdx2(i,j,dim), thiserr
           END IF
         END DO
       END DO
