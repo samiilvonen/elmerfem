@@ -406,9 +406,9 @@ CONTAINS
 
    REAL(KIND=dp) :: torq,TorqArea,IMoment,IA, &
        rinner,router,rmean,rdiff,ctorq,detJ,Weight,&
-       Bp,Br,Bx,By,x,y,r,rho
+       Bp,Br,Bx,By,x,y,r,rho,wtorq,Bp0,Br0,Bx0,By0
    REAL(KIND=dp), ALLOCATABLE :: a(:),u(:),POT(:),dPOT(:), &
-       pPot(:),Density(:)
+       pPot(:),Density(:),TorqSens(:)
    REAL(KIND=dp), POINTER :: Basis(:), dBasisdx(:,:)
    LOGICAL, ALLOCATABLE :: TorqueElem(:)
    INTEGER :: i,bfid,n,nd,nbf,PrevComm,NoSlices,NoTimes
@@ -416,11 +416,12 @@ CONTAINS
    TYPE(ValueList_t),POINTER::Params
    TYPE(GaussIntegrationPoints_t) :: IP
    TYPE(Nodes_t) :: Nodes
-   LOGICAL :: CalcTorque, CalcPot, CalcInert
+   LOGICAL :: CalcTorque, CalcPot, CalcInert, AdjointTorque 
    LOGICAL :: ThisTorque, ThisPot, ThisInert, Parallel, HaveRange
    LOGICAL :: Visited = .FALSE.
    
-   SAVE Visited, Nodes, Basis, dBasisdx, a, u, POT, dPOT, pPot, Density, Ctorq, TorqueElem
+   SAVE Visited, Nodes, Basis, dBasisdx, a, u, POT, dPOT, pPot, Density, Ctorq, &
+       TorqueElem, TorqSens
    
 !------------------------------------------------------------------------------
 
@@ -456,13 +457,15 @@ CONTAINS
         
    IF(.NOT. (CalcTorque .OR. CalcPot .OR. CalcInert) ) RETURN
 
+   AdjointTorque = ListGetLogical( Solver % Values,'Solve Adjoint Equation', Found )
+   
    Parallel = ( ParEnv % PEs > 1 )
    
    nbf = Model % NumberOfBodyForces
    IF(.NOT. Visited ) THEN
      n = Model % Mesh % MaxElementDofs
      ALLOCATE( a(nbf), u(nbf), POT(n), dPOT(n), pPot(n), Density(n), &
-         Basis(n), dBasisdx(n,3) )
+         Basis(n), dBasisdx(n,3), TorqSens(n) )
    END IF
 
    IF( CalcTorque ) THEN
@@ -610,14 +613,33 @@ CONTAINS
          U(bfid) = U(bfid) + Weight * SUM(dPot(1:nd)*Basis(1:nd))
        END IF
        
-       IF( ThisTorque ) THEN                      
+       IF( ThisTorque ) THEN
+         wtorq = weight * r / (PI*4.0d-7*rdiff) 
+         
          Bx =  SUM(POT(1:nd)*dBasisdx(1:nd,2))
          By = -SUM(POT(1:nd)*dBasisdx(1:nd,1))
          Br =  x/r*Bx + y/r*By
          Bp = -y/r*Bx + x/r*By
-         Torq = Torq + Weight * r*Br*Bp / (PI*4.0d-7*rdiff)
+
+         Torq = Torq + wtorq * Br*Bp 
          TorqArea = TorqArea + Weight
+
+         ! This is tentative addition for solving the adjoint equation. 
+         IF( AdjointTorque ) THEN
+           DO j=1,nd
+             Bx0 =  dBasisdx(j,2)
+             By0 = -dBasisdx(j,1)
+             Br0 =  x/r*Bx0 + y/r*By0
+             Bp0 = -y/r*Bx0 + x/r*By0             
+             TorqSens(j) = 2 * wtorq * (Br0*Bp+Br*Bp0)              
+           END DO
+
+           CALL UpdateGlobalForce( Solver % Matrix % RhsAdjoint, &
+               TorqSens(1:nd), nd, Solver % Variable % DOFs, &
+               Solver % Variable % Perm(Element % NodeIndexes(1:nd)) )
+         END IF
        END IF
+
        
        IF( ThisInert ) THEN
          IF( r < rmean ) THEN

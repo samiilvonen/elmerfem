@@ -220,6 +220,8 @@ MODULE Types
     REAL(KIND=dp), POINTER CONTIG :: RHS(:)=>NULL(),BulkRHS(:)=>NULL(),RHS_im(:)=>NULL(),Force(:,:)=>NULL()
     REAL(KIND=dp), POINTER CONTIG :: BulkResidual(:)=>NULL()
 
+    REAL(KIND=dp), POINTER CONTIG :: RhsAdjoint(:)=>NULL()
+    
     REAL(KIND=dp),  POINTER CONTIG :: Values(:)=>NULL(), ILUValues(:)=>NULL(), &
                DiagScaling(:) => NULL(), TValues(:) => NULL(), Values_im(:) => NULL()
 

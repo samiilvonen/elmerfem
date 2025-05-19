@@ -700,10 +700,11 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    REAL, ALLOCATABLE :: SurfWeight(:)
    TYPE(ValueHandle_t), SAVE :: mu_h
    REAL(KIND=dp), POINTER :: muTensor(:,:)
-   LOGICAL :: HasReluctivityFunction, HBIntegProblem, MaterialExponents
-   REAL(KIND=dp) :: rdummy
+   LOGICAL :: HasReluctivityFunction, HBIntegProblem, MaterialExponents, TopoOptNu
+   REAL(KIND=dp) :: rdummy, Cto
    INTEGER :: mudim, ElementalMode, cdofs, LossN
-
+   TYPE(Variable_t), POINTER :: TopoOptMult
+   
    TYPE VariableArray_t
      TYPE(Variable_t), POINTER :: Field => Null()
    END TYPE VariableArray_t
@@ -780,7 +781,6 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    END IF
    HbIntegProblem = .FALSE.
 
-   
    LorentzConductivity = ListCheckPrefixAnyBodyForce(Model, "Angular Velocity") .or. &
        ListCheckPrefixAnyBodyForce(Model, "Lorentz Velocity")
 
@@ -793,6 +793,14 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    IF(ASSOCIATED(LagrangeVar) ) THEN
      CALL Info(Caller,'Using Lagrange multiplier: '//TRIM(LagrangeVar % Name),Level=20)
    END IF
+
+   ! If we have topology optimization then multiply the "nu" with the parameter.
+   str = ListGetString( pSolver % Values,'Matrix Multiplier Name',TopoOptNu )
+   IF( TopoOptNu ) THEN
+     TopoOptMult => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE. )
+     CALL Info('MagnetoDynamicsCalcFields','Using multiplier field for reluctivity: '//TRIM(str),Level=7)
+   END IF
+   
    
    MFD => VariableGet( Mesh % Variables, 'Magnetic Flux Density' )
    EL_MFD => VariableGet( Mesh % Variables, 'Magnetic Flux Density E' )
@@ -1659,6 +1667,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
          END SELECT
        END IF
+
        
        Nu = CMPLX(0.0d0, 0.0d0, kind=dp)
        w_dens = 0._dp
@@ -1730,6 +1739,18 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        END IF
        PR_ip = SUM( Basis(1:n)*PR(1:n) )
 
+
+       IF(TopoOptNu) THEN
+         ! This is for topology optimization where the reluctivity is multiplier by a factor [0,1].
+         k = TopoOptMult % Perm(Element % ElementIndex)
+         IF(k>0) THEN
+           Cto = TopoOptMult % Values(k)
+           R_ip = Cto * R_ip
+           Nu = Cto * Nu
+           w_dens = Cto * w_dens 
+         END IF
+       END IF
+       
        IF ( ASSOCIATED(MFS).OR.ASSOCIATED(EL_MFS) ) THEN
          DO l=1,3
            MG_ip(l) = SUM( Magnetization(l,1:n)*Basis(1:n) )

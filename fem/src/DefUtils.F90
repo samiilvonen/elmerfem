@@ -3539,6 +3539,10 @@ CONTAINS
      
      CALL InitializeToZero( Solver % Matrix, Solver % Matrix % RHS )
 
+     IF(ASSOCIATED(Solver % Matrix % RhsAdjoint) ) THEN
+       Solver % Matrix % RhsAdjoint = 0.0_dp
+     END IF
+     
      IF( ALLOCATED(Solver % Matrix % ConstrainedDOF) ) THEN
        Solver % Matrix % ConstrainedDOF = .FALSE.
      END IF
@@ -3652,6 +3656,13 @@ CONTAINS
        
        Solver % LocalSystemMode = 1
      END IF
+
+     IF(ListGetLogical( Params,'Solve Adjoint Equation',Found ) ) THEN
+       IF(.NOT. ASSOCIATED( Solver % Matrix % RhsAdjoint ) ) THEN
+         ALLOCATE( Solver % Matrix % RhsAdjoint(SIZE(Solver % Matrix % Rhs)))
+       END IF     
+       CALL ListAddLogical( Params,'Constraint Modes Analysis Frozen',.TRUE.)
+     END IF      
      
 !------------------------------------------------------------------------------
    END SUBROUTINE DefaultStart
@@ -3668,7 +3679,7 @@ CONTAINS
      TYPE(ValueList_t), POINTER :: Params
      TYPE(Mesh_t), POINTER :: Mesh
      CHARACTER(:), ALLOCATABLE :: str
-     LOGICAL :: Found
+     LOGICAL :: Found, SolveAdjoint
      
      IF ( PRESENT( USolver ) ) THEN
        Solver => USolver
@@ -3693,6 +3704,50 @@ CONTAINS
        CALL ApplyExplicitControl( Solver )
      END IF
 
+
+     SolveAdjoint = ListGetLogical(Params,'Solve Adjoint Equation', Found )
+
+     IF( SolveAdjoint ) THEN
+       BLOCK
+         INTEGER :: n
+         REAL(KIND=dp) :: Norm
+         REAL(KIND=dp), ALLOCATABLE :: xtmp(:), btmp(:)
+         REAL(KIND=dp), POINTER :: AdjSol(:)
+         TYPE(Variable_t), POINTER :: aVar
+         TYPE(Mesh_t), POINTER :: Mesh
+         
+         n = SIZE(Solver % Matrix % rhs)
+         CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.TRUE.)
+
+
+         Mesh => Solver % Mesh
+         aVar => VariableGet( Mesh % Variables,TRIM(Solver % Variable % Name)//' adjoint')
+         IF(.NOT. ASSOCIATED(aVar)) THEN
+           ALLOCATE(AdjSol(n))
+           AdjSol = 0.0_dp
+           CALL VariableAddVector( Mesh % Variables,Mesh,Solver,&
+                 TRIM(Solver % Variable % Name)//' adjoint',Solver % Variable % Dofs,&
+                 AdjSol, Solver % Variable % Perm, Output = .TRUE., Secondary = .TRUE.)
+           aVar => VariableGet( Mesh % Variables,TRIM(Solver % Variable % Name)//' adjoint')
+
+           CALL VariableAddVector( Mesh % Variables,Mesh,Solver,&
+                 TRIM(Solver % Variable % Name)//' adjoint rhs',Solver % Variable % Dofs,&
+                 Solver % Matrix % rhsAdjoint, Solver % Variable % Perm, &
+                 Output = .TRUE., Secondary = .TRUE.)
+         END IF
+         AdjSol => avar % Values
+
+         
+         CALL SolveSystem( Solver % Matrix, ParMatrix, Solver % Matrix % rhsAdjoint, &
+             AdjSol, Norm, Solver % Variable % DOFs,Solver )
+
+             
+         CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.FALSE.)
+       END BLOCK
+     END IF
+       
+     
+     
      IF( Solver % NumberOfConstraintModes > 0 ) THEN
        ! If we have a frozen stat then the nonlinear system loop is used to find that frozen state
        ! and we perform the linearized constraint modes analysis at the end. 
@@ -3701,26 +3756,47 @@ CONTAINS
            INTEGER :: n
            REAL(KIND=dp) :: Norm
            REAL(KIND=dp), ALLOCATABLE :: xtmp(:), btmp(:)
-
-           CALL ListAddLogical(Params,'Constraint Modes Analysis Frozen',.FALSE.)
-           CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.TRUE.)
+           REAL(KIND=dp), POINTER :: AdjSol(:)
            
            n = SIZE(Solver % Matrix % rhs)
-           ALLOCATE(xtmp(n),btmp(n))
+           CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.TRUE.)
 
-           btmp = Solver % Matrix % rhs
-           xtmp = Solver % Variable % Values 
+           IF( SolveAdjoint ) THEN
+             
+             CALL SolveSystem( Solver % Matrix, ParMatrix, Solver % Matrix % rhsAdjoint, &
+                 Solver % Variable % ConstraintModes(1,:), Norm, Solver % Variable % DOFs,Solver )
 
-           Solver % Matrix % rhs = 0.0_dp
-           CALL SolveSystem( Solver % Matrix, ParMatrix, Solver % Matrix % rhs, &
-               Solver % Variable % Values, Norm, Solver % Variable % DOFs,Solver )
-           
-           CALL ListAddLogical(Params,'Constraint Modes Analysis Frozen',.TRUE.)
+             AdjSol => Solver % Variable % ConstraintModes(1,:)
+             CALL VariableAddVector( Solver % Mesh % Variables,Solver % Mesh,Solver,&
+                 TRIM(Solver % Variable % Name)//' adjoint',Solver % Variable % Dofs,&
+                 AdjSol, Solver % Variable % Perm, &
+                 Output = .TRUE., Secondary = .TRUE.)
+
+             CALL VariableAddVector( Solver % Mesh % Variables,Solver % Mesh,Solver,&
+                 TRIM(Solver % Variable % Name)//' adjoint rhs',Solver % Variable % Dofs,&
+                 Solver % Matrix % rhsAdjoint, Solver % Variable % Perm, &
+                 Output = .TRUE., Secondary = .TRUE.)
+             
+           ELSE           
+             ALLOCATE(xtmp(n),btmp(n))
+             btmp = Solver % Matrix % rhs
+             xtmp = Solver % Variable % Values 
+             
+             Solver % Matrix % rhs = 0.0_dp
+             
+             CALL ListAddLogical(Params,'Constraint Modes Analysis Frozen',.FALSE.)
+             
+             CALL SolveSystem( Solver % Matrix, ParMatrix, Solver % Matrix % rhs, &
+                 Solver % Variable % Values, Norm, Solver % Variable % DOFs,Solver )
+             
+             CALL ListAddLogical(Params,'Constraint Modes Analysis Frozen',.TRUE.)
+             
+             Solver % Matrix % rhs = btmp 
+             Solver % Variable % Values = xtmp
+             DEALLOCATE(xtmp,btmp)
+           END IF
+             
            CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.FALSE.)
-
-           Solver % Matrix % rhs = btmp 
-           Solver % Variable % Values = xtmp
-           DEALLOCATE(xtmp,btmp)
          END BLOCK
        END IF
          
@@ -4616,6 +4692,7 @@ CONTAINS
   END SUBROUTINE DefaultUpdateForceR
 !------------------------------------------------------------------------------
 
+  
 
 !> Adds the elementwise contribution the right-hand-side of the complex valued matrix equation 
 !------------------------------------------------------------------------------
@@ -4809,6 +4886,8 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+
+  
 
 !------------------------------------------------------------------------------
   SUBROUTINE DefaultUpdatePrecR( M, UElement, USolver ) 

@@ -29125,6 +29125,149 @@ CONTAINS
   END SUBROUTINE CalculateBodyAverage
 
 
+  ! Create a permutation vector that maps elements (or nodes) to a smaller set
+  ! of elements (or nodes) assuming periodicity in rotational angle.
+  !----------------------------------------------------------------------------------
+  SUBROUTINE RotationalPeriodicSumPerm(Solver, Mesh, angle, Perm, SumPerm, ElemField, IsSymmetric )
+    TYPE(Solver_t) :: Solver
+    TYPE(Mesh_t) :: Mesh
+    REAL(KIND=dp) :: angle
+    INTEGER :: Perm(:), SumPerm(:)
+    LOGICAL :: ElemField, IsSymmetric
+    
+    INTEGER :: i,j,k,n,m,hits,nsym
+    REAL(KIND=dp) :: x0,y0,r0,x1,y1,r1,phi0,phi1,dphi,phieps,reps,smax,maxdphi,phimin
+    TYPE(Element_t), POINTER :: Element0, Element1
+    INTEGER, POINTER :: Inds0(:), Inds1(:)
+        
+    phieps = 1.0e-3*angle
+    reps = 1.0e-3
+    maxdphi = 0.0_dp
+    hits = 0    
+    nsym = 0
+    SumPerm = 0
+    
+    IF( ElemField ) THEN
+      phimin = HUGE(phimin)
+      n = 0
+
+      DO j=1,Mesh % NumberOfBulkElements          
+        Element1 => Mesh % Elements(j)
+        Inds1 => Element1 % NodeIndexes
+        IF(ANY(Perm(Inds1)==0)) CYCLE
+
+        n = n+1        
+        DO i=1,Element1 % TYPE % NumberOfNodes
+          x1 = Mesh % Nodes % x(Inds1(i))
+          y1 = Mesh % Nodes % y(Inds1(i))
+          r1 = SQRT(x1*x1+y1*y1)
+
+          phi1 = 180.0_dp*ATAN2(y1,x1)/PI
+          IF(phi1 > 90.0) phi1 = phi1 - 180.0_dp
+          phimin = MIN(phimin,phi1)
+        END DO
+      END DO
+      CALL Info('CreatePeriodicSumPerm','Number of element in rotational piece: '//I2S(n),Level=15)
+      WRITE(Message,'(A,ES12.5)') 'Offset of rotational piece: ',phimin
+      CALL Info('CreatePeriodicSumPerm',Message,Level=10)
+      
+      DO i=1,Mesh % NumberOfBulkElements        
+        Element0 => Mesh % Elements(i)
+        Inds0 => Element0 % NodeIndexes
+
+        n = Element0 % TYPE % NumberOfNodes
+        x0 = SUM(Mesh % Nodes % x(Inds0)) / n
+        y0 = SUM(Mesh % Nodes % y(Inds0)) / n
+        r0 = SQRT(x0*x0+y0*y0)
+        phi0 = 180.0_dp*ATAN2(y0,x0)/PI - phimin
+
+        IF( IsSymmetric ) THEN
+          phi0 = MODULO(phi0,2*angle)
+        ELSE
+          phi0 = MODULO(phi0,angle)
+        END IF
+        
+        smax = MAXVAL(Mesh % Nodes % x(Inds0)) - MINVAL(Mesh % Nodes % x(Inds0)) &
+            + MAXVAL(Mesh % Nodes % y(Inds0)) - MINVAL(Mesh % Nodes % y(Inds0))
+        reps = 1.0e-3 * smax
+        
+        DO j=1,Mesh % NumberOfBulkElements          
+          Element1 => Mesh % Elements(j)
+          Inds1 => Element1 % NodeIndexes
+
+          IF(Element1 % TYPE % NumberOfNodes /= n) CYCLE          
+          IF(ANY(Perm(Inds1)==0)) CYCLE
+
+          x1 = SUM(Mesh % Nodes % x(Inds1)) / n
+          y1 = SUM(Mesh % Nodes % y(Inds1)) / n
+          r1 = SQRT(x1*x1+y1*y1)
+          IF(ABS(r1-r0) > reps ) CYCLE
+
+          phi1 = 180.0_dp*ATAN2(y1,x1)/PI - phimin
+
+          IF( IsSymmetric ) THEN
+            phi1 = MODULO(phi1,2*angle)
+
+            ! Periodic 2*angle ? 
+            dphi = phi0-phi1                       
+            IF(ABS(dphi) < phieps ) THEN
+              SumPerm(i) = j            
+              hits = hits+1
+              EXIT
+            END IF
+
+            ! Test for symmetric hit
+            dphi = 2*angle - (phi0+phi1)
+            IF(ABS(dphi) < phieps ) THEN
+              SumPerm(i) = -j            
+              nsym = nsym+1
+              hits = hits+1
+              EXIT
+            END IF
+          ELSE
+            phi1 = MODULO(phi1,angle)
+            dphi = phi0-phi1            
+            IF(ABS(dphi) < phieps ) THEN
+              SumPerm(i) = j            
+              hits = hits+1
+              EXIT
+            END IF
+          END IF
+            
+          maxdphi = MAX(maxdphi,dphi)
+        END DO
+      END DO
+
+      m = COUNT(SumPerm==0)
+      CALL Info('CreatePeriodicSumPerm','Number of misses in rotational piece: '//I2S(m),Level=15)
+      CALL Info('CreatePeriodicSumPerm','Elemental periodic perm with '//I2S(hits)//' hits',Level=10)            
+    ELSE      
+      DO i=1,Mesh % NumberOfNodes
+        k = Perm(i)
+        IF(k==0) CYCLE
+        x0 = Mesh % Nodes % x(i)
+        y0 = Mesh % Nodes % y(i)
+        r0 = SQRT(x0*x0+y0*y0)
+        phi0 = 180.0_dp*ATAN2(y0,x0)/PI
+        DO j=1,Mesh % NumberOfNodes
+          x1 = Mesh % Nodes % x(j)
+          y1 = Mesh % Nodes % y(j)
+          r1 = SQRT(x1*x1+y1*y1)
+          phi1 = 180*ATAN2(y1,x1)/PI
+          IF(ABS(r1-r0) < reps ) THEN
+            IF(ABS(MODULO(phi0-phi1,dphi)) < phieps ) THEN
+              SumPerm(j) = k            
+              hits = hits+1
+            END IF
+          END IF
+        END DO
+      END DO
+      CALL Info('CreatePeriodicSumPerm','Generated periodic sum perm with '//I2S(hits)//' hits')            
+    END IF
+      
+  END SUBROUTINE RotationalPeriodicSumPerm
+    
+  
 
   !> Given an elemental DG field create a minimal reduced set of it that maintains
   !> the necessary continuities. The continuities may be requested between bodies

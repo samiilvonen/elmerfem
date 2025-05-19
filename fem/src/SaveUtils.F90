@@ -958,6 +958,11 @@ CONTAINS
       VisitedTimes = VisitedTimes + 1
     END IF
 
+    IF( VisitedTimes > 1 ) THEN
+      IF(ListGetLogical(Params,'Gmsh Save Mesh Only', Found ) ) RETURN    
+    END IF
+
+    
     Numbering = ListGetLogical( Params,'Filename Numbering',Found ) 
     IF(.NOT. Found) Numbering = .TRUE.
     
@@ -1065,19 +1070,21 @@ CONTAINS
 
 10  CONTINUE
 
-    CALL Info(Caller,'Writing the nodal data')
-    CALL WriteGmshData()
+    IF(.NOT. ListGetLogical(Params,'Gmsh Save Mesh Only', Found ) ) THEN    
+      CALL Info(Caller,'Writing the nodal data')
+      CALL WriteGmshData()
 
-    IF(.FALSE.) THEN
-      WRITE(GmshUnit,'(A)') '$ElementData'
-      WRITE(GmshUnit,'(A)') '$EndElementData'
+      IF(.FALSE.) THEN
+        WRITE(GmshUnit,'(A)') '$ElementData'
+        WRITE(GmshUnit,'(A)') '$EndElementData'
+      END IF
+
+      IF(.FALSE.) THEN
+        WRITE(GmshUnit,'(A)') '$ElementNodeData'
+        WRITE(GmshUnit,'(A)') '$EndElementNodeData'
+      END IF
     END IF
-
-    IF(.FALSE.) THEN
-      WRITE(GmshUnit,'(A)') '$ElementNodeData'
-      WRITE(GmshUnit,'(A)') '$EndElementNodeData'
-    END IF
-
+      
     CLOSE(GmshUnit)
 
     IF(ALLOCATED(DgPerm)) DEALLOCATE(DgPerm)

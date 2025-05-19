@@ -399,9 +399,9 @@ CONTAINS
      INTEGER :: prevSolverId = -1
      INTEGER :: eind, vind
      LOGICAL :: Found
-     LOGICAL :: DoMultiply = .FALSE., DoMultiplyRhs = .FALSE.
+     LOGICAL :: DoMultiply = .FALSE., DoMultiplyRhs = .FALSE., DoInvert = .FALSE.
      
-     SAVE cVar, DoMultiply, DoMultiplyRhs, prevSolverId
+     SAVE cVar, DoMultiply, DoMultiplyRhs, DoInvert, prevSolverId
      
      IF( PRESENT(activeind) ) THEN
        eind = activeind
@@ -457,6 +457,8 @@ CONTAINS
          END IF
          DoMultiply = .TRUE.
 
+         DoInvert = ListGetLogical( Solver % Values,'Matrix Multiplier Invert',Found )
+         
          ! We may multiply the r.h.s. with a different multiplier. 
          multname = ListGetString( Solver % Values,'Rhs Multiplier Name',Found )
          IF(Found ) THEN
@@ -477,7 +479,11 @@ CONTAINS
      IF( DoMultiply ) THEN
        vind = cvar % Perm(eind)
        IF(vind > 0 ) THEN
-         cmult = cvar % Values(vind)       
+         IF( DoInvert ) THEN
+           cmult = 1.0_dp / cvar % Values(vind)
+         ELSE
+           cmult = cvar % Values(vind)
+         END IF
          K(1:n,1:n) = cmult * K(1:n,1:n)
        END IF
        IF( DoMultiplyRhs ) THEN

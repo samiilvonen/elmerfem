@@ -7245,7 +7245,9 @@ CONTAINS
     INTEGER, ALLOCATABLE :: BCPerm(:)
     INTEGER :: NoModes, NoEntities
     LOGICAL :: ExternalLoop, BFMode, BCMode, LumpedMode, CompMode, &
-        EmWaveMode, RhsMode, CoilMode, ComplexMode, Stat
+        EmWaveMode, RhsMode, CoilMode, ComplexMode, SingleMode, Stat, GotDir
+    REAL(KIND=dp) :: ModeDir(NDofs)
+    REAL(KIND=dp), POINTER :: HelperArray(:,:)
     TYPE(Nodes_t), SAVE :: Nodes
     TYPE(GaussIntegrationPoints_t) :: IP
     CHARACTER(*), PARAMETER :: Caller = 'SetConstraintModesBoundaries'
@@ -7386,9 +7388,21 @@ CONTAINS
       Ncomplex = 1
       CALL Info(Caller,'Assuming real valued system for constraint modes',Level=12)
     END IF
+
+    SingleMode = ListGetLogical( Solver % Values,'Constraint Modes Single',Found ) 
+    IF(.NOT. Found ) THEN
+      SingleMode = ListCheckPresentAnyBC( Model,'Constraint Mode Direction' )            
+    END IF
+    IF(SingleMode) THEN
+      CALL Info(Caller,'Setting constraint modes for all components at once!',Level=12)
+    END IF
     
-    NoModes = NDOFS * j  / Ncomplex
-    
+    IF( SingleMode ) THEN
+      NoModes = j
+    ELSE      
+      NoModes = NDOFS * j  / Ncomplex
+    END IF
+      
     IF( BcMode ) THEN
       t1 = Mesh % NumberOfBulkElements+1
       t2 = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
@@ -7400,14 +7414,19 @@ CONTAINS
     DO t = t1, t2
       Element => Mesh % Elements(t)      
       
+      ModeDir = 1.0_dp
       IF( BCMode ) THEN
         DO ent_id = 1,Model % NumberOfBCs
           IF ( Element % BoundaryInfo % Constraint == Model % BCs(ent_id) % Tag ) EXIT
         END DO
         IF( ent_id > Model % NumberOfBCs ) CYCLE        
+        HelperArray => ListGetConstRealArray( Model % BCs(ent_id) % Values,'Constraint Mode Direction',Found)
+        IF(Found) ModeDir(1:ndofs) = HelperArray(1:ndofs,1)
       ELSE IF( BFMode ) THEN
         ent_id = ListGetInteger( Model % Bodies( Element % BodyId ) % Values,'Body Force',Found)
         IF( ent_id == 0) CYCLE
+        HelperArray => ListGetConstRealArray( Model % BodyForces(ent_id) % Values,'Constraint Mode Direction',Found)
+        IF(Found) ModeDir(1:ndofs) = HelperArray(1:ndofs,1)
       ELSE        
         DO ent_id=1,Model % NumberOfComponents
           IF(BCPerm(ent_id) == 0) CYCLE
@@ -7425,18 +7444,21 @@ CONTAINS
 
       ! This is used in standard setting of Dirichlet BCs
       nb = mGetElementDOFs( Indexes, Element, Solver )
-
+            
       IF( RhsMode ) THEN
         BLOCK 
-          REAL(KIND=dp) :: Basis(n), detJ, s          
+          REAL(KIND=dp) :: Basis(n), Weight(n), detJ, s          
           IP = GaussPoints( Element )
           CALL CopyElementNodesFromMesh( Nodes, Solver % Mesh, n, Element % NodeIndexes)
+                    
           DO i=1,IP % n 
             stat = ElementInfo( Element, Nodes, IP % U(i), IP % V(i), &
               IP % W(i), detJ, Basis )          
             s = IP % s(i) * DetJ
-            Var % ConstraintModesWeights(Perm(Indexes(1:n))) = &
-                Var % ConstraintModesWeights(Perm(Indexes(1:n))) + s * Basis(1:n)
+            DO k=1,NDOFS                            
+              Var % ConstraintModesWeights(NDOfs*(Perm(Indexes(1:n))-1)+k) = &
+                  Var % ConstraintModesWeights(NDOfs*(Perm(Indexes(1:n))-1)+k) + ModeDir(k) * s * Basis(1:n)
+            END DO
           END DO
         END BLOCK
       END IF
@@ -7444,9 +7466,15 @@ CONTAINS
       ! If for some reason we do not want to set the P dofs to zero
       IF(IgnoreP) nb = n
 
+      !PRINT *,'BCPerm:',MINVAL(BCPerm), MAXVAL(BCPerm), COUNT(BCPerm>0)
+      
       ! For vector valued problems treat each component as separate dof
       DO k=1,NDOFs       
-        j = NDOFS*(BCPerm(ent_id)-1)+k
+        IF( SingleMode ) THEN
+          j = BCPerm(ent_id)
+        ELSE
+          j = NDOFS*(BCPerm(ent_id)-1)+k
+        END IF
         DO l=1,nb
           ! The index to constrain
           IF( Perm(Indexes(l)) == 0 ) CYCLE
@@ -7454,6 +7482,7 @@ CONTAINS
           Var % ConstraintModesIndeces(l2) = j
         END DO
       END DO
+      !PRINT *,'Single range:',SingleMode,MAXVAL(Var % ConstraintModesIndeces), COUNT(Var % ConstraintModesIndeces > 0)
     END DO
     DEALLOCATE(BCPerm)
 
