@@ -1205,7 +1205,7 @@ CONTAINS
 
     REAL(KIND=dp), POINTER :: x(:),b(:)
 
-    CALL Info('Itermetod_gcr','Starting GCR iteration',Level=25)
+    CALL Info('Itermethod_gcr','Starting GCR iteration',Level=25)
 
     
     ndim = HUTI_NDIM
@@ -1948,7 +1948,7 @@ CONTAINS
     REAL(KIND=dp) :: MinTol, MaxTol, Residual
     LOGICAL :: Converged, Diverged, UseStopCFun
 
-    CALL Info('Itermetod_z_gcr','Starting GCR iteration',Level=25)
+    CALL Info('Itermethod_z_gcr','Starting GCR iteration',Level=25)
     
     ndim = HUTI_NDIM
     Rounds = HUTI_MAXIT

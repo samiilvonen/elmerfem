@@ -3340,10 +3340,6 @@ CONTAINS
 !------------------------------------------------------------------------------
      FUNCTION InterpolateF2C( Fmat, CF, DOFs) RESULT (Projector)
 !------------------------------------------------------------------------------
-       USE Interpolation
-       USE CRSMatrix
-       USE CoordinateSystems
-!-------------------------------------------------------------------------------
        TYPE(Matrix_t), TARGET  :: Fmat
        INTEGER, POINTER :: CF(:)
        INTEGER :: DOFs
@@ -3859,10 +3855,6 @@ CONTAINS
 !------------------------------------------------------------------------------
      FUNCTION InterpolateF2CDistance( Fmat, CF, DOFs) RESULT (Projector)
 !------------------------------------------------------------------------------
-       USE Interpolation
-       USE CRSMatrix
-       USE CoordinateSystems
-!-------------------------------------------------------------------------------
        TYPE(Matrix_t), TARGET  :: Fmat
        INTEGER, POINTER :: CF(:)
        INTEGER :: DOFs
@@ -4111,10 +4103,6 @@ CONTAINS
 !------------------------------------------------------------------------------
      FUNCTION ComplexInterpolateF2C( Fmat, CF ) RESULT (Projector)
 !------------------------------------------------------------------------------
-       USE Interpolation
-       USE CRSMatrix
-       USE CoordinateSystems
-!-------------------------------------------------------------------------------
        TYPE(Matrix_t), TARGET  :: Fmat
        INTEGER, POINTER :: CF(:)
        TYPE(Matrix_t), POINTER :: Projector

@@ -224,7 +224,7 @@ CONTAINS
      TYPE(Solver_t), OPTIONAL, TARGET :: USolver
 
      IF ( PRESENT( USolver ) ) THEN
-        Mesh => USolver % MEsh
+        Mesh => USolver % Mesh
      ELSE
         Mesh => CurrentModel % Solver % Mesh
      END IF

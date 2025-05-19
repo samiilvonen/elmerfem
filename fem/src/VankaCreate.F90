@@ -1063,7 +1063,7 @@
 
 !-------------------------------------------------------------------------------
 !> Assumes another solver being used for the preconditioning.
-!> Given residual "v" solver Au=v in an approximatite manner.
+!> Given residual "v" solves Au=v in an approximate manner.
 !-------------------------------------------------------------------------------
   SUBROUTINE SlavePrec(u,v,ipar)
 !-------------------------------------------------------------------------------

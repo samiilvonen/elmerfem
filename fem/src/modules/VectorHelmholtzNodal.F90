@@ -359,8 +359,237 @@ CONTAINS
     
   END SUBROUTINE InitStuff
 
+    
+!------------------------------------------------------------------------------
+! Assembly of the matrix entries arising from the bulk elements. Not vectorized.
+!------------------------------------------------------------------------------
+  SUBROUTINE LocalMatrix( Element, n, nd, nb, InitHandles )
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+    INTEGER, INTENT(IN) :: n, nd, nb
+    TYPE(Element_t), POINTER :: Element
+    LOGICAL, INTENT(INOUT) :: InitHandles
+!------------------------------------------------------------------------------
+    REAL(KIND=dp), ALLOCATABLE, SAVE :: Basis(:),dBasisdx(:,:)
+    COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
+    REAL(KIND=dp) :: weight, DetJ, CondAtIp
+    COMPLEX(KIND=dp) :: muinvAtIp, EpsAtIp, CurrAtIp(3)
+    LOGICAL :: Stat,Found
+    INTEGER :: i,j,k,t,p,q,m,allocstat
+    TYPE(GaussIntegrationPoints_t) :: IP
+    TYPE(Nodes_t), SAVE :: Nodes
+    TYPE(ValueHandle_t), SAVE :: CondCoeff_h, EpsCoeff_h, MuCoeff_h, CurrDens_h
+!------------------------------------------------------------------------------
 
-  
+    ! This InitHandles flag might be false on threaded 1st call
+    IF( InitHandles ) THEN
+      CALL ListInitElementKeyword( CondCoeff_h,'Material','Electric Conductivity')
+      CALL ListInitElementKeyword( EpsCoeff_h,'Material','Relative Permittivity',InitIm=.TRUE.)
+      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)
+      CALL ListInitElementKeyword( CurrDens_h,'Body Force','Current Density',InitIm=.TRUE.,InitVec3D=.TRUE.)
+      InitHandles = .FALSE.
+    END IF
+    
+    IF( RelOrder /= 0 ) THEN
+      IP = GaussPoints( Element, RelOrder = RelOrder)
+    ELSE
+      IP = GaussPoints( Element )
+    END IF
+      
+    ! Allocate storage if needed
+    IF (.NOT. ALLOCATED(Basis)) THEN
+      m = Mesh % MaxElementDofs
+      ALLOCATE(Basis(m), dBasisdx(m,3), STIFF(m,m,3), FORCE(m,3), STAT=allocstat)      
+      IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
+    END IF
+
+    CALL GetElementNodes( Nodes, UElement=Element )
+
+    ! Initialize
+    STIFF = 0._dp
+    FORCE = 0._dp
+    
+    DO t=1,IP % n
+      ! Basis function values & derivatives at the integration point:
+      !--------------------------------------------------------------
+      stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
+          IP % W(t), detJ, Basis, dBasisdx )
+      Weight = IP % s(t) * DetJ
+
+      ! diffusion term (D*grad(u),grad(v)):
+      ! -----------------------------------      
+      muinvAtIp = ListGetElementComplex( MuCoeff_h, Basis, Element, Found, GaussPoint = t )      
+      IF( Found ) THEN
+        muinvAtIp = muinvAtIp * mu0inv
+      ELSE
+        muinvAtIp = mu0inv
+      END IF
+      STIFF(1:nd,1:nd,1) = STIFF(1:nd,1:nd,1) + Weight * &
+          MuinvAtIp * MATMUL( dBasisdx(1:nd,:), TRANSPOSE( dBasisdx(1:nd,:) ) )
+
+      CondAtIp = ListGetElementReal( CondCoeff_h, Basis, Element, Found, GaussPoint = t )      
+      IF( Found ) THEN
+        DO p=1,nd
+          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - im * Weight * Omega * CondAtIP * Basis(p) * Basis(1:nd)
+        END DO
+      END IF
+              
+      EpsAtIp = ListGetElementComplex( EpsCoeff_h, Basis, Element, Found, GaussPoint = t )      
+      IF( Found ) THEN
+        EpsAtIp = EpsAtIp * eps0
+      ELSE
+        epsAtIp = eps0
+      END IF        
+
+      ! This is the same for each component with isotropic materials!
+      DO p=1,nd
+        STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
+      END DO
+
+      IF(.NOT. UseEdgeResidual ) THEN
+        CurrAtIP = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found )                 
+        IF( Found ) THEN
+          IF( Monolithic ) THEN
+            DO i=1,dofs
+              FORCE(1:nd,i) = FORCE(1:nd,i) + Weight * CurrAtIp(i) * Basis(1:nd)
+            END DO
+          ELSE
+            FORCE(1:nd,1) = FORCE(1:nd,1) + Weight * CurrAtIP(compi) * Basis(1:nd)
+          END IF
+        END IF
+      END IF
+    END DO
+    
+    IF( Monolithic ) THEN
+      DO i=2,dofs
+        STIFF(1:nd,1:nd,i) = STIFF(1:nd,1:nd,1)
+      END DO
+      ! Note that we use diagonal form for this!
+      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+    ELSE
+      CALL DefaultUpdateEquations(STIFF(:,:,1),FORCE(:,1),UElement=Element)
+    END IF
+!------------------------------------------------------------------------------
+  END SUBROUTINE LocalMatrix
+!------------------------------------------------------------------------------
+
+
+! Assembly of the matrix entries arising from the Neumann and Robin conditions.
+!------------------------------------------------------------------------------
+  SUBROUTINE LocalMatrixBC( Element, n, nd, nb, InitHandles )
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+    INTEGER :: n, nd, nb
+    TYPE(Element_t), POINTER :: Element
+    LOGICAL, INTENT(INOUT) :: InitHandles
+!------------------------------------------------------------------------------
+    REAL(KIND=dp) :: F,C,Ext, Weight, coeff
+    REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3), DetJ,Coord(3),Normal(3)
+    COMPLEX(KIND=dp) :: STIFF(nd,nd,3), FORCE(nd,3)
+    COMPLEX(KIND=dp) :: muInvAtIp, TemGrad(3), L(3), B 
+    LOGICAL :: Stat,Found,RobinBC,NT
+    INTEGER :: i,t,p,q
+    TYPE(GaussIntegrationPoints_t) :: IP
+    TYPE(ValueList_t), POINTER :: BC       
+    TYPE(Nodes_t), SAVE :: Nodes
+    TYPE(Element_t), POINTER :: Parent
+    TYPE(ValueHandle_t), SAVE :: ElRobin_h, MagLoad_h, Absorb_h, TemRe_h, TemIm_h, MuCoeff_h
+    
+    BC => GetBC(Element)
+    IF (.NOT.ASSOCIATED(BC) ) RETURN
+
+    IF( InitHandles ) THEN
+      CALL ListInitElementKeyword( ElRobin_h,'Boundary Condition','Electric Robin Coefficient',InitIm=.TRUE.)
+      CALL ListInitElementKeyword( MagLoad_h,'Boundary Condition','Magnetic Boundary Load', InitIm=.TRUE.,InitVec3D=.TRUE.)
+      CALL ListInitElementKeyword( Absorb_h,'Boundary Condition','Absorbing BC')
+      CALL ListInitElementKeyword( TemRe_h,'Boundary Condition','TEM Potential')
+      CALL ListInitElementKeyword( TemIm_h,'Boundary Condition','TEM Potential Im')
+      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)      
+      InitHandles = .FALSE.
+    END IF
+    
+    CALL GetElementNodes( Nodes, UElement=Element )
+    STIFF = 0._dp
+    FORCE = 0._dp
+
+    Normal = NormalVector( Element, Nodes )
+    NT = ListGetLogical( BC,'Normal-Tangential '//GetVarName(Solver % Variable), Found )
+    IF(NT .AND. .NOT. Monolithic) THEN
+      CALL Fatal(Caller,'Normal-tangential conditions require monolithic solver!')
+    END IF
+    
+    ! Numerical integration:
+    !-----------------------
+    IP = GaussPoints( Element )
+    
+    Parent => GetBulkElementAtBoundary(Element)
+    
+    DO t=1,IP % n
+      ! Basis function values & derivatives at the integration point:
+      !--------------------------------------------------------------
+      stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
+              IP % W(t), detJ, Basis, dBasisdx )
+      Weight = IP % s(t) * DetJ
+
+      Found = .FALSE.
+      IF( ASSOCIATED( Parent ) ) THEN        
+        muinvAtIp = ListGetElementComplex( MuCoeff_h, Basis, Parent, Found, GaussPoint = t )      
+      END IF
+      IF( Found ) THEN
+        muinvAtIp = muinvAtIp * mu0inv
+      ELSE
+        muinvAtIp = mu0inv
+      END IF
+
+      IF( .NOT. UseEdgeResidual ) THEN
+        L = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
+        TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
+            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+        L = L + TemGrad
+        DO i=1,dim
+          FORCE(1:nd,i) = FORCE(1:nd,i) - muinvAtIp * L(i) * Basis(1:nd) * Weight
+        END DO
+      END IF
+        
+      IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
+        B = CMPLX(0.0_dp, rob0 ) 
+      ELSE
+        B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
+      END IF
+
+      IF( Found ) THEN
+        DO i=1,dim
+          IF( NT ) THEN
+            IF(i==1) CYCLE
+            coeff = 1.0_dp
+          ELSE          
+            coeff = 1.0_dp - Normal(i)**2
+            IF(coeff <= 0.0_dp ) THEN
+              coeff = 0.0_dp
+            ELSE
+              coeff = SQRT(coeff)
+            END IF
+          END IF          
+          DO p = 1,nd
+            STIFF(p,1:nd,i) = STIFF(p,1:nd,i) - coeff * muinvAtIp * B * &
+                Basis(p) * Basis(1:nd) * detJ * IP % s(t)
+          END DO
+        END DO
+      END IF
+    END DO
+    
+    IF( Monolithic ) THEN
+      ! For normal-tangential coordinate system the slip 
+      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+    ELSE
+      CALL DefaultUpdateEquations(STIFF(:,:,compi),FORCE(:,compi),UElement=Element)
+    END IF
+      
+!------------------------------------------------------------------------------
+  END SUBROUTINE LocalMatrixBC
+!------------------------------------------------------------------------------
+
+
 !------------------------------------------------------------------------------
 !> Apply the Nedelec interpolation to a vector field represented in terms of
 !> the Lagrange (nodal) basis functions. The result of the interpolation is
@@ -529,7 +758,6 @@ CONTAINS
 !------------------------------------------------------------------------------
   END SUBROUTINE NedelecToNodalResidual
 !------------------------------------------------------------------------------
-    
 
   
   ! Project nodal field to be an edge field.
@@ -698,246 +926,11 @@ CONTAINS
       NormLoop = .FALSE.
       GOTO 1 
     END IF
-
        
 !------------------------------------------------------------------------------
   END SUBROUTINE EdgeToNodeProject
 !------------------------------------------------------------------------------
-
-    
-!------------------------------------------------------------------------------
-! Assembly of the matrix entries arising from the bulk elements. Not vectorized.
-!------------------------------------------------------------------------------
-  SUBROUTINE LocalMatrix( Element, n, nd, nb, InitHandles )
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    INTEGER, INTENT(IN) :: n, nd, nb
-    TYPE(Element_t), POINTER :: Element
-    LOGICAL, INTENT(INOUT) :: InitHandles
-!------------------------------------------------------------------------------
-    REAL(KIND=dp), ALLOCATABLE, SAVE :: Basis(:),dBasisdx(:,:)
-    COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
-    REAL(KIND=dp) :: weight, DetJ, CondAtIp
-    COMPLEX(KIND=dp) :: muinvAtIp, EpsAtIp, CurrAtIp(3)
-    LOGICAL :: Stat,Found
-    INTEGER :: i,j,k,t,p,q,m,allocstat
-    TYPE(GaussIntegrationPoints_t) :: IP
-    TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(ValueHandle_t), SAVE :: CondCoeff_h, EpsCoeff_h, MuCoeff_h, CurrDens_h
-!------------------------------------------------------------------------------
-
-    ! This InitHandles flag might be false on threaded 1st call
-    IF( InitHandles ) THEN
-      CALL ListInitElementKeyword( CondCoeff_h,'Material','Electric Conductivity')
-      CALL ListInitElementKeyword( EpsCoeff_h,'Material','Relative Permittivity',InitIm=.TRUE.)
-      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)
-      CALL ListInitElementKeyword( CurrDens_h,'Body Force','Current Density',InitIm=.TRUE.,InitVec3D=.TRUE.)
-      InitHandles = .FALSE.
-    END IF
-    
-    IF( RelOrder /= 0 ) THEN
-      IP = GaussPoints( Element, RelOrder = RelOrder)
-    ELSE
-      IP = GaussPoints( Element )
-    END IF
-      
-    ! Allocate storage if needed
-    IF (.NOT. ALLOCATED(Basis)) THEN
-      m = Mesh % MaxElementDofs
-      ALLOCATE(Basis(m), dBasisdx(m,3), STIFF(m,m,3), FORCE(m,3), STAT=allocstat)      
-      IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
-    END IF
-
-    CALL GetElementNodes( Nodes, UElement=Element )
-
-    ! Initialize
-    STIFF = 0._dp
-    FORCE = 0._dp
-    
-    DO t=1,IP % n
-      ! Basis function values & derivatives at the integration point:
-      !--------------------------------------------------------------
-      stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
-          IP % W(t), detJ, Basis, dBasisdx )
-      Weight = IP % s(t) * DetJ
-
-      ! diffusion term (D*grad(u),grad(v)):
-      ! -----------------------------------      
-      muinvAtIp = ListGetElementComplex( MuCoeff_h, Basis, Element, Found, GaussPoint = t )      
-      IF( Found ) THEN
-        muinvAtIp = muinvAtIp * mu0inv
-      ELSE
-        muinvAtIp = mu0inv
-      END IF
-      STIFF(1:nd,1:nd,1) = STIFF(1:nd,1:nd,1) + Weight * &
-          MuinvAtIp * MATMUL( dBasisdx(1:nd,:), TRANSPOSE( dBasisdx(1:nd,:) ) )
-
-      CondAtIp = ListGetElementReal( CondCoeff_h, Basis, Element, Found, GaussPoint = t )      
-      IF( Found ) THEN
-        DO p=1,nd
-          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - im * Weight * Omega * CondAtIP * Basis(p) * Basis(1:nd)
-        END DO
-      END IF
-              
-      EpsAtIp = ListGetElementComplex( EpsCoeff_h, Basis, Element, Found, GaussPoint = t )      
-      IF( Found ) THEN
-        EpsAtIp = EpsAtIp * eps0
-      ELSE
-        epsAtIp = eps0
-      END IF        
-
-      ! This is the same for each component with isotropic materials!
-      DO p=1,nd
-        STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
-      END DO
-
-      IF(.NOT. UseEdgeResidual ) THEN
-        CurrAtIP = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found )                 
-        IF( Found ) THEN
-          IF( Monolithic ) THEN
-            DO i=1,dofs
-              FORCE(1:nd,i) = FORCE(1:nd,i) + Weight * CurrAtIp(i) * Basis(1:nd)
-            END DO
-          ELSE
-            FORCE(1:nd,1) = FORCE(1:nd,1) + Weight * CurrAtIP(compi) * Basis(1:nd)
-          END IF
-        END IF
-      END IF
-    END DO
-    
-    IF( Monolithic ) THEN
-      DO i=2,dofs
-        STIFF(1:nd,1:nd,i) = STIFF(1:nd,1:nd,1)
-      END DO
-      ! Note that we use diagonal form for this!
-      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
-    ELSE
-      CALL DefaultUpdateEquations(STIFF(:,:,1),FORCE(:,1),UElement=Element)
-    END IF
-
-      
-!------------------------------------------------------------------------------
-  END SUBROUTINE LocalMatrix
-!------------------------------------------------------------------------------
-
-
-
-! Assembly of the matrix entries arising from the Neumann and Robin conditions.
-!------------------------------------------------------------------------------
-  SUBROUTINE LocalMatrixBC( Element, n, nd, nb, InitHandles )
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    INTEGER :: n, nd, nb
-    TYPE(Element_t), POINTER :: Element
-    LOGICAL, INTENT(INOUT) :: InitHandles
-!------------------------------------------------------------------------------
-    REAL(KIND=dp) :: F,C,Ext, Weight, coeff
-    REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3), DetJ,Coord(3),Normal(3)
-    COMPLEX(KIND=dp) :: STIFF(nd,nd,3), FORCE(nd,3)
-    COMPLEX(KIND=dp) :: muInvAtIp, TemGrad(3), L(3), B 
-    LOGICAL :: Stat,Found,RobinBC,NT
-    INTEGER :: i,t,p,q
-    TYPE(GaussIntegrationPoints_t) :: IP
-    TYPE(ValueList_t), POINTER :: BC       
-    TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(Element_t), POINTER :: Parent
-    TYPE(ValueHandle_t), SAVE :: ElRobin_h, MagLoad_h, Absorb_h, TemRe_h, TemIm_h, MuCoeff_h
-    
-    BC => GetBC(Element)
-    IF (.NOT.ASSOCIATED(BC) ) RETURN
-
-    IF( InitHandles ) THEN
-      CALL ListInitElementKeyword( ElRobin_h,'Boundary Condition','Electric Robin Coefficient',InitIm=.TRUE.)
-      CALL ListInitElementKeyword( MagLoad_h,'Boundary Condition','Magnetic Boundary Load', InitIm=.TRUE.,InitVec3D=.TRUE.)
-      CALL ListInitElementKeyword( Absorb_h,'Boundary Condition','Absorbing BC')
-      CALL ListInitElementKeyword( TemRe_h,'Boundary Condition','TEM Potential')
-      CALL ListInitElementKeyword( TemIm_h,'Boundary Condition','TEM Potential Im')
-      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)      
-      InitHandles = .FALSE.
-    END IF
-    
-    CALL GetElementNodes( Nodes, UElement=Element )
-    STIFF = 0._dp
-    FORCE = 0._dp
-
-    Normal = NormalVector( Element, Nodes )
-    NT = ListGetLogical( BC,'Normal-Tangential '//GetVarName(Solver % Variable), Found )
-    IF(NT .AND. .NOT. Monolithic) THEN
-      CALL Fatal(Caller,'Normal-tangential conditions require monolithic solver!')
-    END IF
-    
-    ! Numerical integration:
-    !-----------------------
-    IP = GaussPoints( Element )
-    
-    Parent => GetBulkElementAtBoundary(Element)
-    
-    DO t=1,IP % n
-      ! Basis function values & derivatives at the integration point:
-      !--------------------------------------------------------------
-      stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
-              IP % W(t), detJ, Basis, dBasisdx )
-      Weight = IP % s(t) * DetJ
-
-      Found = .FALSE.
-      IF( ASSOCIATED( Parent ) ) THEN        
-        muinvAtIp = ListGetElementComplex( MuCoeff_h, Basis, Parent, Found, GaussPoint = t )      
-      END IF
-      IF( Found ) THEN
-        muinvAtIp = muinvAtIp * mu0inv
-      ELSE
-        muinvAtIp = mu0inv
-      END IF
-
-      IF( .NOT. UseEdgeResidual ) THEN
-        L = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
-        TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
-            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
-        L = L + TemGrad
-        DO i=1,dim
-          FORCE(1:nd,i) = FORCE(1:nd,i) - muinvAtIp * L(i) * Basis(1:nd) * Weight
-        END DO
-      END IF
-        
-      IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
-        B = CMPLX(0.0_dp, rob0 ) 
-      ELSE
-        B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
-      END IF
-
-      IF( Found ) THEN
-        DO i=1,dim
-          IF( NT ) THEN
-            IF(i==1) CYCLE
-            coeff = 1.0_dp
-          ELSE          
-            coeff = 1.0_dp - Normal(i)**2
-            IF(coeff <= 0.0_dp ) THEN
-              coeff = 0.0_dp
-            ELSE
-              coeff = SQRT(coeff)
-            END IF
-          END IF          
-          DO p = 1,nd
-            STIFF(p,1:nd,i) = STIFF(p,1:nd,i) - coeff * muinvAtIp * B * &
-                Basis(p) * Basis(1:nd) * detJ * IP % s(t)
-          END DO
-        END DO
-      END IF
-    END DO
-    
-    IF( Monolithic ) THEN
-      ! For normal-tangential coordinate system the slip 
-      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
-    ELSE
-      CALL DefaultUpdateEquations(STIFF(:,:,compi),FORCE(:,compi),UElement=Element)
-    END IF
-      
-!------------------------------------------------------------------------------
-  END SUBROUTINE LocalMatrixBC
-!------------------------------------------------------------------------------
-
+  
 !------------------------------------------------------------------------------
 END SUBROUTINE VectorHelmholtzNodal
 !------------------------------------------------------------------------------
-
