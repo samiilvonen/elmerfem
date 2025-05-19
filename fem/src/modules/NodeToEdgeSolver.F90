@@ -66,7 +66,7 @@ END SUBROUTINE ExtrudedRestart_Init0
 
 
 !------------------------------------------------------------------------------
-!> Interpolates fields from one mesh toanother. 
+!> Interpolates fields from one mesh to another. 
 !------------------------------------------------------------------------------
 SUBROUTINE ExtrudedRestart( Model,Solver,dt,Transient)
 !------------------------------------------------------------------------------
