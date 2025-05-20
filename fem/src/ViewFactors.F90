@@ -716,34 +716,29 @@
 
        CALL NormalizeFactors( Model )
 
-!$omp parallel do private(s,i,j)
-       DO i=1,N
-         s = 0.0D0
-         DO j=1,N
-           s = s + Factors((i-1)*N+j)
+       Fmin = 1000; Fmax = 0
+       DO i=1,n
+         s = 0.0_dp
+         DO j=1,n
+           s = s + Factors((i-1)*n+j)
          END DO
-         IF(i == 1) THEN
-           Fmin = s; Fmax = s
-         ELSE
-           FMin = MIN(FMin,s)
-           FMax = MAX(FMax,s)
-         END IF
+         Fmin = MIN(Fmin,s)
+         Fmax = MAX(Fmax,s)
        END DO
-!$omp end parallel do
        
        WRITE (Message,'(A,F8.2,F8.2)') 'View factors manipulated in time (s):',CPUTime()-at0, realtime()-rt0
        CALL Info( Caller,Message, Level=3 )
        
        CALL Info( Caller, ' ', Level=3 )
        CALL info( Caller, 'Viewfactors after manipulation: ')
-       WRITE( Message,'(A,ES12.3)') 'Minimum row sum: ',FMin
+       WRITE( Message,'(A,ES12.3)') 'Minimum row sum: ',Fmin
        CALL Info( Caller, Message )
        WRITE( Message,'(A,ES12.3)') 'Maximum row sum: ',Fmax
        CALL Info( Caller, Message )
-       IF( FMax > 1.001 ) THEN
+       IF( Fmax > 1.001 ) THEN
          CALL Warn(Caller,'Rowsum of view factors should not be larger than one!')
        END IF
-       IF( FMin < 0.999 ) THEN
+       IF( Fmin < 0.999 ) THEN
          ! For open BCs the view factor sum may be much less than one, otherwise not.
          IF(.NOT. ListCheckPresentAnyBC( Model,'Radiation Boundary Open') ) THEN          
            CALL Warn(Caller,'Rowsum of view factors should not be smaller than one!')
@@ -935,8 +930,8 @@
         LOGICAL :: li,lj
         REAL(KIND=dp), ALLOCATABLE :: RHS(:),SOL(:),Areas(:),PSOL(:)
         REAL(KIND=dp) :: cum,s,si,sj
-        REAL(KIND=dp), PARAMETER :: eps=1.0D-20
         REAL(KIND=dp) :: at1
+        REAL(KIND=dp), PARAMETER :: eps=EPSILON(1._dp)
 
         itmax = 20
         it = 0
@@ -957,7 +952,7 @@
         END DO
 !$omp end parallel do
         
-!$omp parallel do private(s,si,sj,i,j)
+!$omp parallel do private(s,si,sj,li,lj,i,j)
         DO i=1,n
           DO j=i,n
             si = Areas(i) * Factors((i-1)*n+j)
@@ -1012,8 +1007,8 @@
             cum = SUM( RHS*RHS/Areas ) / n
             
             WRITE (Message,'(A,ES12.3)') &
-                'Normalization iteration '//I2S(it)//': ',cum
-            CALL Info( Caller,Message, Level=3 )
+                'Normalization iteration '//I2S(it)//': ',cum;
+            CALL Info( Caller,Message, Level=3 );
             
             IF ( cum <= eps ) EXIT
             
