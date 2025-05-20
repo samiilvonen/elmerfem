@@ -943,7 +943,8 @@ CONTAINS
         iterProc = AddrFunc( itermethod_z_bicgstabl )
       CASE (ITER_IDRS)
         iterProc = AddrFunc( itermethod_z_idrs )
-
+      CASE DEFAULT
+        CALL Fatal('IterSolver', 'Complex arithmetic version of the given linear solver is not available')
       END SELECT
       
       IF( Internal ) THEN
