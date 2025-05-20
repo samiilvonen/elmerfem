@@ -43,8 +43,8 @@
 #include "../config.h"
 
 MODULE H1Basis
-  USE Types, ONLY : dp, VECTOR_BLOCK_LENGTH
   USE Messages
+  USE Types, ONLY : dp, VECTOR_BLOCK_LENGTH
   
   ! Module contains vectorized version of FE basis
   ! functions for selected elements

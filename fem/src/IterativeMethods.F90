@@ -72,7 +72,6 @@
 
 MODULE IterativeMethods
   
-  USE Types
   USE CRSMatrix  
   USE SParIterComm
   

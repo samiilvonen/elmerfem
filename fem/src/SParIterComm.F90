@@ -46,7 +46,6 @@
 
 MODULE SParIterComm
 
-  USE Types
   USE LoadMod, ONLY : RealTime
   USE SParIterGlobals
 
@@ -278,14 +277,19 @@ CONTAINS
 !-----------------------------------------------------------------------
 !> Initialize parallel execution environment
 !-----------------------------------------------------------------------
-  SUBROUTINE ParEnvInit( SPMatrix, ParallelInfo, SourceMatrix )
+  SUBROUTINE ParEnvInit( SPMatrix, ParallelInfo, SourceMatrix, NeighboursOnly)
 !-----------------------------------------------------------------------
 
     TYPE(SparIterSolverGlobalD_t) :: SPMatrix
     TYPE (ParallelInfo_t) :: ParallelInfo
     TYPE(Matrix_t) :: SourceMatrix
+    LOGICAL, OPTIONAL :: NeighboursOnly
 !-----------------------------------------------------------------------
-    CALL FindActivePEs( ParallelInfo, SourceMatrix )
+    IF(PRESENT(NeighboursOnly)) THEN
+      CALL FindActivePEs( ParallelInfo, SourceMatrix, NeighboursOnly )
+    ELSE
+      CALL FindActivePEs( ParallelInfo, SourceMatrix )
+    END IF
 !-----------------------------------------------------------------------
   END SUBROUTINE ParEnvInit
 !-----------------------------------------------------------------------
@@ -553,6 +557,7 @@ CONTAINS
         END IF
       END DO
 
+#if 1
       DO ii=1,SourceMatrix % NumberOfRows
         IF ( ParallelInfo % GInterface(ii) ) THEN
           sz = SIZE(ParallelInfo % NeighbourList(ii) % Neighbours)
@@ -566,6 +571,7 @@ CONTAINS
           END IF
         END IF
       END DO
+#endif
 !   END IF
 
 
@@ -4322,7 +4328,6 @@ END SUBROUTINE BuildRevVecIndices
 !----------------------------------------------------------------------
 SUBROUTINE Send_LocIf_Old( SplittedMatrix )
 
-  USE types
   IMPLICIT NONE
 
   TYPE (SplittedMatrixT) :: SplittedMatrix
@@ -4404,7 +4409,6 @@ END SUBROUTINE Send_LocIf_Old
 !----------------------------------------------------------------------
 SUBROUTINE Recv_LocIf_Old( SplittedMatrix, ndim, v )
 
-  USE types
   IMPLICIT NONE
 
   TYPE (SplittedMatrixT) :: SplittedMatrix
@@ -4462,7 +4466,6 @@ END SUBROUTINE Recv_LocIf_Old
 !----------------------------------------------------------------------
 SUBROUTINE Send_LocIf_size( SplittedMatrix, n, neigh )
 
-  USE types
   IMPLICIT NONE
 
   INTEGER :: n, neigh(:)
@@ -4506,7 +4509,6 @@ END SUBROUTINE Send_LocIf_size
 !
 SUBROUTINE Send_LocIf( SplittedMatrix,n,neigh )
 
-  USE types
   IMPLICIT NONE
 
   INTEGER :: n,neigh(:)
@@ -4582,7 +4584,6 @@ END SUBROUTINE Send_LocIf
 !> Receive interface block contributions to vector from neighbours
 !
 SUBROUTINE Recv_LocIf_size( n, neigh, sizes )
-  USE Types
   IMPLICIT NONE
 
   INTEGER :: sizes(:), neigh(:), n
@@ -4651,7 +4652,6 @@ END SUBROUTINE Recv_LocIf
 !
 SUBROUTINE Recv_LocIf_Wait( SplittedMatrix, ndim, v, n, neigh, &
                sizes, requests, buffer )
-  USE Types
   IMPLICIT NONE
 
   TYPE (SplittedMatrixT) :: SplittedMatrix
@@ -5000,7 +5000,6 @@ END SUBROUTINE ParEnvFinalize
 !
 FUNCTION SearchNode( ParallelInfo, QueriedNode, First, Last,Order ) RESULT ( Indx )
 
-  USE Types
   IMPLICIT NONE
 
   TYPE (ParallelInfo_t) :: ParallelInfo
@@ -5095,7 +5094,6 @@ END FUNCTION SearchNode
 !
 FUNCTION SearchIAItem( N, IArray, Item, SortOrder, sIndx ) RESULT ( Indx )
 
-  USE types
   IMPLICIT NONE
 
   INTEGER :: Item, Indx, i
@@ -5157,7 +5155,6 @@ END FUNCTION SearchIAItem
 !
 FUNCTION SearchIAItemLinear( N, IArray, Item ) RESULT ( Indx )
 
-  USE types
   IMPLICIT NONE
 
   INTEGER :: N

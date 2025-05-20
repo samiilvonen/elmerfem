@@ -130,7 +130,8 @@
      INTEGER, POINTER :: Timesteps(:)
      INTEGER :: TimeIntervals,interval,timestep,combineInt
      
-     LOGICAL :: CylindricSymmetry,GotIt, Found, Radiation, LeftEmis, RightEmis
+     LOGICAL :: CylindricSymmetry,GotIt, Found, Radiation, & 
+                LeftRad, RightRad
 
      CHARACTER(:), ALLOCATABLE :: eq, RadiationFlag, ViewFactorsFile, OutputName, &
                   LMessage, TempString
@@ -382,7 +383,8 @@
          
          LeftBody = 0
          LeftNode = -1
-	 LeftEmis = .FALSE.
+         LeftRad  = .FALSE.
+
          LParent => Element % BoundaryInfo % Left
          IF ( ASSOCIATED(LParent) ) THEN
            LeftBody  = LParent % BodyId
@@ -405,20 +407,28 @@
              CALL Fatal(Caller,'Boundary element '//I2S(Element % ElementIndex - Mesh % NumberOfBulkElements)//&
                  ' not included in left parent '//I2S(LParent % ElementIndex)//'!')               
            END IF
-	   IF( LeftBody > 0 ) THEN 
-             MatId = GetInteger( Model % Bodies(LeftBody) % Values,'Material', GotIt)
-	     IF( MatId == 0 ) THEN
-               CALL Warn(Caller,'Invalid material index in body, perhaps none')
-             END IF 
+
+           IF( LeftBody > 0 ) THEN 
+             LeftRad  = ListGetLogical(Model % Bodies(LeftBody) % Values,'Radiative Body', GotIt )
+             IF ( .NOT. GotIt ) THEN
+               MatId = GetInteger( Model % Bodies(LeftBody) % Values,'Material', GotIt)
+               IF( MatId == 0 ) THEN
+                 CALL Fatal(Caller,'Invalid material index in body, perhaps none')
+               END IF 
+               LeftRad = ListGetLogical(Model % Materials(MatId) % Values,'Radiative Body', GotIt) 
+               IF ( .NOT. GotIt ) THEN
+                 LeftRad = ListCheckPresent(Model % Materials(MatId) % Values,'Emissivity') 
+               END IF
+             END IF
            ELSE
              CALL Warn(Caller,'LeftBody not associated')
            END IF
-           LeftEmis = ListCheckPresent(Model % Materials(MatId) % Values,'Emissivity') 
          END IF
          
          RightBody = 0
          RightNode=-1
-         RightEmis = .FALSE.
+         RightRad = .FALSE.
+
          RParent => Element % BoundaryInfo % Right
          IF ( ASSOCIATED(RParent) ) THEN
            RightBody = RParent % BodyId
@@ -440,37 +450,41 @@
              CALL Fatal(Caller,'Boundary element '//I2S(Element % ElementIndex - Mesh % NumberOfBulkElements)//&
                  ' not included in right parent '//I2S(RParent % ElementIndex)//'!')               
            END IF
-           MatId = GetInteger( Model % Bodies(RightBody) % Values,'Material', GotIt)
-           RightEmis=ListCheckPresent(Model % Materials(MatId) % Values,'Emissivity') 
+
+           RightRad = ListGetLogical(Model % Bodies(RightBody) % Values,'Radiative Body', GotIt )
+           IF(.NOT.GotIt ) THEN
+             MatId = GetInteger( Model % Bodies(RightBody) % Values,'Material', GotIt)
+             RightRad  = ListGetLogical(Model % Materials(MatId) % Values,'Radiative Body', GotIt )
+             IF (.NOT. GotIt ) THEN
+               RightRad = ListCheckPresent(Model % Materials(MatId) % Values,'Emissivity') 
+             END IF
+           END IF
          END IF
 
 
          BC => GetBC()
+
          RadBody = GetInteger( BC, 'Radiation Target Body',GotIt )
          IF ( .NOT. GotIt ) RadBody = GetInteger( BC, 'Normal Target Body',GotIt )
 
          IF ( .NOT. Gotit ) THEN
-	   ! If emissivity given in either side then make the radiation target body to be the other.
-           !----------------------------------------------------------------------------------------
-           IF( RightEmis .AND. LeftEmis ) THEN
-             CALL Warn(Caller,'Emissivity defined on both sides!')
+           IF ( LeftRad .AND. RightRad ) THEN
              WRITE(Message,'(A,I3,I3,A,I3,A,I5)') 'Bodies:',RightBody,LeftBody,' BC:', &
-                            GetBCId( Element ),' Ind:',t
+                              GetBCId( Element ),' Ind:',t
              CALL Info(Caller,Message)
-             IF( ASSOCIATED(Element % BoundaryInfo % Left, Element % BoundaryInfo % Right)) THEN
-               CALL Warn(Caller,'Parents of the boundary element are the same')
-               RadBody = LeftBody
-             END IF
-             CALL Fatal(Caller,'Cannot continue!')
-           ELSE IF( RightEmis ) THEN
-             RadBody = LeftBody
-           ELSE IF( LeftEmis ) THEN
+             CALL Fatal(Caller,'"Radiative Body" defined on both sides!')
+           ELSE IF (LeftRad ) THEN
              RadBody = RightBody
+           ELSE IF ( RightRad ) THEN
+             RadBody = LeftBody
+           ELSE
+             RadBody = 0
+             CALL Info( Caller,"Radiation flux target on a boundary should be defined. " &
+                  // "Taking a meshed body as a default.", Level = 20)
            END IF
          END IF
 
          IF ( RadBody < 0 ) RadBody = 0
-         
          IF ( RadBody>0 .AND. (RadBody /= RightBody .AND. RadBody /= LeftBody) ) THEN
            CALL Error( Caller, 'Inconsistent direction information (Radiation Target Body)' )
            LMessage = 'Radiation Target: '//I2S(RadBody)//' Left, Right: '//&
@@ -560,7 +574,7 @@
              Factors, AreaEPS, FactEPS, RayEPS, Nrays, 4, 3, CombineInt )
        END IF
        
-       WRITE (Message,'(A,F8.2,F8.2)') 'View factors computed in time (s):',CPUTime()-at0, RealTime()-rt0
+       WRITE (Message,'(A,F8.2,F8.2,F8.2)') 'View factors computed in time (s):',CPUTime()-at0,Realtime()-rt0
        CALL Info( Caller,Message, Level=3 )
 
        IF(SYMMETRY_NOW) THEN
@@ -689,6 +703,7 @@
 
        
        at0 = CPUTime()
+       rt0 = realTime()
 
        IF( RadiationOpen ) THEN
          CALL Info( Caller,'Symmetrizing Factors... ')
@@ -701,6 +716,7 @@
 
        CALL NormalizeFactors( Model )
 
+!$omp parallel do private(s,i,j)
        DO i=1,N
          s = 0.0D0
          DO j=1,N
@@ -713,8 +729,9 @@
            FMax = MAX(FMax,s)
          END IF
        END DO
+!$omp end parallel do
        
-       WRITE (Message,'(A,F8.2)') 'View factors manipulated in time (s):',CPUTime()-at0
+       WRITE (Message,'(A,F8.2,F8.2)') 'View factors manipulated in time (s):',CPUTime()-at0, realtime()-rt0
        CALL Info( Caller,Message, Level=3 )
        
        CALL Info( Caller, ' ', Level=3 )
@@ -785,6 +802,13 @@
            CALL Info(Caller,'Saving view factors in ascii mode',Level=5)
 
            OPEN( UNIT=VFUnit, FILE=TRIM(OutputName), STATUS='unknown' )
+
+           BLOCK
+                   INTEGER :: MinIndex
+          MinIndex = HUGE(MinIndex)
+          DO i=1,n
+            MinIndex = MIN(RadElements(i) % ElementIndex, MinIndex)
+          END DO
            
            DO i=1,N
              k = COUNT( SaveMask((i-1)*N+1:i*N) )
@@ -795,6 +819,7 @@
                END IF
              END DO
            END DO
+   END BLOCK
          END IF
            
          CLOSE(VFUnit)
@@ -925,11 +950,14 @@
 !------------------------------------------------------------------------------
 !       First force the matrix (before dividing by area) to be symmetric
 !------------------------------------------------------------------------------
+!$omp parallel do private(Element,i,j)
         DO i=1,n
           Element => RadElements(i)
           Areas(i) = ElementArea( Mesh, Element, Element % Type % NumberOfNodes)
         END DO
+!$omp end parallel do
         
+!$omp parallel do private(s,si,sj,i,j)
         DO i=1,n
           DO j=i,n
             si = Areas(i) * Factors((i-1)*n+j)
@@ -952,6 +980,7 @@
             Factors((j-1)*n+i) = s
           END DO
         END DO
+!$omp end parallel do
 
 !------------------------------------------------------------------------------
 !       Next we solve the equation DFD = A by Newton iteration (this is a very
@@ -969,6 +998,7 @@
           cum = 1.0_dp
           
           DO it=1,itmax
+!$omp parallel do private(cum,i,j)
             DO i=1,n
               cum = 0.0_dp
               DO j=1,n
@@ -977,7 +1007,8 @@
               cum = cum * SOL(i)
               RHS(i) = Areas(i) - cum
             END DO
-            
+!$omp end parallel do
+
             cum = SUM( RHS*RHS/Areas ) / n
             
             WRITE (Message,'(A,ES12.3)') &
@@ -986,6 +1017,7 @@
             
             IF ( cum <= eps ) EXIT
             
+!$omp parallel do private(i,j)
             DO i=1,n
               DO j=1,n
                 Jacobian(i,j) = Factors((i-1)*n+j) * SOL(i)
@@ -995,6 +1027,7 @@
               END DO
               Jdiag(i) = 1._dp / Jacobian(i,i)
             END DO
+!$omp end parallel do
 
             PSOL = SOL
             CALL IterSolv( n,SOL,RHS )
@@ -1004,19 +1037,23 @@
 !------------------------------------------------------------------------------
 !       Normalize the factors and (re)divide by areas
 !------------------------------------------------------------------------------
+!$omp parallel do private(i,j)
           DO i=1,N
             DO j=1,N
               Factors((i-1)*N+j) = Factors((i-1)*N+j)*SOL(i)*SOL(j)/Areas(i)
             END DO
           END DO
+!$omp end parallel do
           DEALLOCATE( SOL,RHS,PSOL,Jdiag,Jacobian )
 
         ELSE
+!$omp parallel do private(i,j)
          DO i=1,N
            DO j=1,N
              Factors((i-1)*N+j) = Factors((i-1)*N+j)/Areas(i)
            END DO
          END DO
+!$omp end parallel do
        END IF
 
        DEALLOCATE( Areas )
@@ -1190,15 +1227,28 @@
 
   SUBROUTINE MatvecViewFact( u,v,ipar )
     USE ViewFactorGlobals
+    USE LoadMod
     IMPLICIT NONE
 
     INTEGER :: ipar(*)
-    REAL(KIND=dp) :: u(*),v(*)
+    REAL(KIND=dp) :: u(*),v(*), ct, rsum, cumt=0
 
-    INTEGER :: n
+    INTEGER :: i,j,n
 
     n = HUTI_NDIM
-    CALL DGEMV('N',n,n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+#if 1
+    CALL DSYMV('U',n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+!   CALL DGEMV('N',n,n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+#else
+    v(1:n) = 0
+!$omp parallel do private(i,j)
+    DO j=1,n
+       DO i=1,n
+         v(i) = v(i) + Jacobian(i,j) * u(j)
+       END DO
+    END DO
+!$omp end parallel do
+#endif
   END SUBROUTINE MatvecViewFact
 
   

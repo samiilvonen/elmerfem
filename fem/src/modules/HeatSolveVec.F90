@@ -1003,6 +1003,7 @@ CONTAINS
     ! Is this a radiator BC? 
     TorBC = ListGetElementLogical( TorBC_h, Element, Found = Found ) 
     TorBC = TorBC .AND. .NOT. DiffuseGray
+    TorBC = TorBC .AND. Element % PartIndex == ParEnv % myPE
 
         
     DO t=1,IP % n
@@ -1146,8 +1147,9 @@ CONTAINS
      NoActive = 0
      
      DO j=1,nb
-       bindex = j + Mesh % NumberOfBulkElements
-       Element => Mesh % Elements(bindex)
+!      bindex = j + Mesh % NumberOfBulkElements
+!      Element => Mesh % Elements(bindex)
+       Element => GetBoundaryElement(j)
 
        BC => GetBC(Element)
        IF(.NOT. ASSOCIATED( BC ) ) CYCLE
@@ -1243,6 +1245,7 @@ CONTAINS
 
 !$OMP THREADPRIVATE(Nodes)
 !------------------------------------------------------------------------------
+    IF(Element % PartIndex /= ParEnv % myPE ) RETURN
     
     BC => GetBC(Element)
     IF (.NOT.ASSOCIATED(BC) ) RETURN

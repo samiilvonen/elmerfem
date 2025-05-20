@@ -46,14 +46,14 @@ MODULE ElementUtils
 
 
     USE DirectSolve
-    USE Integration
-    USE ListMatrix
     USE ListMatrixArray
-    USE BandMatrix
+    USE Integration
     USE Lists
-    USE CRSMatrix
     USE Interpolation
     USE BandwidthOptimize
+    USE ElementDescription, ONLY : getEdgeDOFs,GetBubbleDOFs,getFaceDOFs, &
+      CrossProduct, NormalVector, InterpolateInElement
+            
     IMPLICIT NONE
 
 CONTAINS

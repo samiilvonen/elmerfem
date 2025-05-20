@@ -50,9 +50,7 @@ MODULE SolverUtils
 #include "../config.h"
 
    USE LoadMod
-   USE DirectSolve
    USE Multigrid
-   USE IterSolve
    USE ElementUtils
    USE LumpingUtils
    USE TimeIntegrate
@@ -62,8 +60,6 @@ MODULE SolverUtils
        IntegralProjector, PeriodicProjector, SaveProjector, MakePermUsingMask
    USE ParallelUtils
    USE ParallelEigenSolve
-   USE ListMatrix
-   USE CRSMatrix
    USE MatrixAssembly
    
    IMPLICIT NONE

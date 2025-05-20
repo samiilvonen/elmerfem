@@ -4,6 +4,8 @@ PROJECT(ElmerTests Fortran C)
 #ADD_EXECUTABLE(findnorm findnorm_cmake.c)
 
 SET(ELMERGRID_BIN "${CMAKE_BINARY_DIR}/elmergrid/src/ElmerGrid")
+SET(VIEWFACTORS_BIN "${CMAKE_BINARY_DIR}/fem/src/ViewFactors")
+SET(RADIATORS_BIN "${CMAKE_BINARY_DIR}/fem/src/Radiators")
 IF(WITH_MPI)
   SET(ELMERSOLVER_BIN "${CMAKE_BINARY_DIR}/fem/src/ElmerSolver_mpi")
 ELSE()

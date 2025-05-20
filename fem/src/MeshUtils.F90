@@ -43,11 +43,12 @@
 
 MODULE MeshUtils
 
-    USE BandwidthOptimize
     USE ElementDescription
+    USE BandwidthOptimize
     USE Interpolation
     USE ParallelUtils
-    USE Types
+    USE Lists
+    USe ListMatrix
     USE ElementUtils, ONLY : mGetBoundaryIndexesFromParent, mGetElementDofs, &
         NormalDirection, CreateMatrix, CopyElementNodesFromMesh, TangentDirections, &
         FreeMatrix
@@ -1864,7 +1865,7 @@ CONTAINS
      LOGICAL :: halo
 
 
-     CALL AllocateVector( ElementTags, Mesh % NumberOfBulkElements+1, 'ReadElementsFile')   
+     CALL AllocateVector( ElementTags, Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements, 'ReadElementsFile')   
      ElementTags = 0
      ElementPermutation = .FALSE.
 
@@ -2005,6 +2006,7 @@ CONTAINS
        nread = read_ints(str,ivals,halo)
        
        tag = ivals(1)
+       ElementTags(j) = tag
 
        IF( halo ) THEN
          partn = ivals(2)
@@ -2146,7 +2148,7 @@ CONTAINS
 
 
      ! This also for serial runs ...
-     DO i=1,Mesh % NumberOfBulkElements
+     DO i=1,Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements
        Mesh % Elements(i) % GElementIndex = ElementTags(i)
      END DO
 
@@ -2276,8 +2278,6 @@ CONTAINS
    
  END SUBROUTINE ElmerAsciiMesh
 
-
-
  !> An interface over potential mesh loading strategies. 
  !----------------------------------------------------------------- 
  SUBROUTINE LoadMeshStep( Step, PMesh, MeshNamePar, ThisPe, NumPEs,IsParallel ) 
@@ -2301,6 +2301,372 @@ CONTAINS
  END SUBROUTINE LoadMeshStep
 
  !------------------------------------------------------------------------------
+ SUBROUTINE RadiationParallelMeshDistribute(Mesh)
+ !------------------------------------------------------------------------------
+   IMPLICIT NONE
+
+ !------------------------------------------------------------------------------
+   TYPE(Mesh_t) :: Mesh
+
+   INTEGER :: RadiationSurfaces, n_New, n_Coord, n_Coord0, n_Curr, n_NodeInd, max_Coord
+   LOGICAL :: Found
+   INTEGER :: i,j,k,l,n,ierr, status(MPI_STATUS_SIZE), narr(ParEnv % PEs)
+
+   REAL(KIND=dp), ALLOCATABLE :: Send_Coord(:), Recv_Coords(:)
+   INTEGER, ALLOCATABLE :: ElementNumbers(:), cPerm(:), &
+      Send_Info(:), Send_Ind(:), Recv_Size(:), Recv_Info(:), Recv_NodeInd(:), &
+          Send_Nbr(:), Recv_Nbr(:)
+   LOGICAL, ALLOCATABLE :: CoordsFlag(:)
+
+   TYPE(BoundaryInfo_t), POINTER :: Bi
+   TYPE(Element_t), POINTER :: Element, newElements(:)
+
+ !------------------------------------------------------------------------------
+
+   IF(ParEnv % PEs <= 1) RETURN
+
+   ! Get surface elements participating in radiative heat transfer
+   ! -------------------------------------------------------------
+   ALLOCATE(ElementNumbers(Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements))
+   ALLOCATE(CoordsFlag(Mesh % NumberOfNodes))
+   CoordsFlag = .FALSE.
+   ElementNumbers = 0
+   RadiationSurfaces = 0
+   CALL GetMeshRadiationSurfaceInfoA( Mesh, RadiationSurfaces, ElementNumbers, CoordsFlag )
+
+   IF ( RadiationSurfaces <= 0 ) RETURN
+
+   ALLOCATE(Send_Coord(3*COUNT(CoordsFlag)), Send_Nbr(COUNT(CoordsFlag)), &
+       cPerm(Mesh % NumberOfNodes+4*ParEnv % PEs*Mesh % NumberOfBoundaryElements))
+   cPerm = 0
+
+   ! Extract coordinates of the "owned" radiation elements
+   ! -----------------------------------------------------
+   n_Coord = 0
+   DO i=1,Mesh % NumberOfNodes
+     IF ( CoordsFlag(i) ) THEN
+       n_Coord = n_Coord + 1
+       cPerm(i) = n_Coord
+       Send_Coord(3*(n_Coord-1)+1) = Mesh % Nodes % x(i)
+       Send_Coord(3*(n_Coord-1)+2) = Mesh % Nodes % y(i)
+       Send_Coord(3*(n_Coord-1)+3) = Mesh % Nodes % z(i)
+       Send_Nbr(n_Coord) = Mesh % ParallelInfo % GlobalDOFs(i)
+
+       Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
+
+       IF ( ASSOCIATED(Mesh % ParallelInfO % NeighbourList(i) % Neighbours)) THEN
+         DEALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours)
+       END IF
+
+       ALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours(ParEnv % PEs))
+       Mesh % ParallelInfo % NeighbourList(i) % Neighbours(1) = ParEnv % myPE
+       k = 1
+       DO j=0,ParEnv % PEs-1
+         IF ( j==ParEnv % Mype) CYCLE
+         k = k + 1 
+         Mesh % ParallelInfo % NeighbourList(i) % Neighbours(k) = j
+       END DO
+     END IF
+   END DO
+
+   ! Extract topolgy of the "owned" radiation elements
+   ! --------------------------------------------------
+   ALLOCATE(Send_Info(3*RadiationSurfaces), Send_ind(4*RadiationSurfaces))
+   n_NodeInd  = 0
+   DO i=1,RadiationSurfaces
+     j = ElementNumbers(i)
+     Element  => Mesh % Elements(j)
+     n = ElemenT % Type % NumberOfNodes
+     Element % PartIndex = ParEnv % myPE
+
+     Send_Info(3*(i-1)+1) = Element % Type % ElementCode
+     Send_Info(3*(i-1)+2) = Element % BoundaryInfo % Constraint
+     Send_Info(3*(i-1)+3) = Element % GElementIndex
+     Send_Ind(n_NodeInd+1:n_NodeInd+n) = cPerm(Element % NodeIndexes)
+     n_NodeInd = n_NodeInd + n
+   END DO
+
+   ! Distribute the extracted information
+   ! ------------------------------------
+   CALL CheckBuffer(ParEnv % PEs*(3*RadiationSurfaces+n_NodeInd+8*n_Coord+MPI_BSEND_OVERHEAD))
+
+   DO i=0,ParEnv % PEs-1
+     IF (i==ParEnv % myPE) CYCLE
+     CALL MPI_BSEND( RadiationSurfaces,1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,ierr )
+     IF ( RadiationSurfaces>0 ) THEN
+       CALL MPI_BSEND( Send_Info,3*RadiationSurfaces,MPI_INTEGER,i,12001,ELMER_COMM_WORLD,ierr )
+       CALL MPI_BSEND( Send_Ind, n_NodeInd,MPI_INTEGER,i,12002,ELMER_COMM_WORLD,ierr )
+       CALL MPI_BSEND( Send_Nbr,n_Coord,MPI_INTEGER,i,12003,ELMER_COMM_WORLD,ierr )
+       CALL MPI_BSEND( Send_Coord,3*n_Coord,MPI_DOUBLE_PRECISION,i,12004,ELMER_COMM_WORLD,ierr )
+     END IF
+   END DO
+
+   ! Receive element count from around
+   ! ---------------------------------
+   ALLOCATE(Recv_Size(0:ParEnv % PEs-1))
+   Recv_Size = 0
+   DO i=0,ParEnv % PEs-1
+     IF (i==ParEnv % myPE) CYCLE
+     CALL MPI_RECV( RadiationSurfaces,1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,status,ierr )
+     Recv_Size(i) = RadiationSurfaces
+   END DO
+
+   ! Receive surface elements
+   ! ------------------------
+   n_Curr  = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+   n_New   = SUM(Recv_Size) + n_Curr
+   IF ( n_new > n_Curr ) THEN
+     n_Coord = Mesh % NumberOfNodes
+
+     ! Re-allocate mesh structures to contain the received surface elements 
+     ! --------------------------------------------------------------------
+     BLOCK
+       TYPE(NeighbourList_t), POINTER :: x(:)
+       LOGICAL, POINTER :: y(:)
+       INTEGER, POINTER :: z(:)
+       REAL(KIND=dp), POINTER :: xc(:),yc(:),zc(:)
+
+       ALLOCATE( x(n_Coord + 4*SUM(Recv_Size)) )
+       x(1:n_Coord) = Mesh % ParallelInfo % NeighbourList
+       DO i=n_Coord+1, n_Coord + SUM(Recv_Size)
+         x(i) % Neighbours=> Null()
+       END DO
+       DEALLOCATE(Mesh % ParallelInfo % NeighbourList)
+       Mesh % ParallelInfo % NeighbourList => x
+
+       ALLOCATE( y(n_Coord + 4*SUM(Recv_Size)) )
+       y(1:n_Coord) = Mesh % ParallelInfo % Ginterface
+       DEALLOCATE( Mesh % ParallelInfo % Ginterface )
+       Mesh % ParallelInfo % Ginterface => y
+
+       ALLOCATE( z(n_Coord + 4*SUM(Recv_Size)) )
+       z(1:n_Coord) = Mesh % ParallelInfo % GlobalDofs
+       DEALLOCATE( Mesh % ParallelInfo % GlobalDofs )
+       Mesh % ParallelInfo % GlobalDofs => z
+
+       ALLOCATE( xc(n_Coord + SUM(Recv_Size)), &
+                 yc(n_Coord + SUM(Recv_Size)), &
+                 zc(n_Coord + SUM(Recv_Size)) )
+
+       xc(1:n_Coord) = Mesh % Nodes % x
+       yc(1:n_Coord) = Mesh % Nodes % y
+       zc(1:n_Coord) = Mesh % Nodes % z
+       DEALLOCATE( Mesh % Nodes % x, Mesh % Nodes % y, Mesh % Nodes % z)
+       Mesh % Nodes % x => xc
+       Mesh % Nodes % y => yc
+       Mesh % Nodes % z => zc
+     END BLOCK
+
+     ALLOCATE( newElements(n_New) )
+     newElements(1:n_Curr) = Mesh % Elements
+     DO i=1,Mesh % NumberOfBoundaryElements
+       Element => NewElements(i+Mesh % NumberOfBulkElements)
+       Bi => Element % BoundaryInfo
+       IF ( ASSOCIATED(Bi) ) THEN
+         IF(ASSOCIATED(Bi % Left))  BI % Left  => NewElements(Bi % Left % ElementIndex)
+         IF(ASSOCIATED(Bi % Right)) BI % Right => NewElements(Bi % Right % ElementIndex)
+       END IF
+     END DO
+     DEALLOCATE(Mesh % Elements)
+     Mesh % Elements => newElements
+
+     ! Receive the elements from other partitions
+     ! ------------------------------------------
+     n = MAXVAL(Recv_Size)
+     ALLOCATE(Recv_Info(3*n), Recv_NodeInd(4*n), Recv_Coords(12*n), Recv_Nbr(4*n))
+
+     n_Coord = Mesh % NumberOfNodes
+     DO i=0,ParEnv % PEs-1
+       IF (Recv_Size(i) <= 0) CYCLE
+
+       CALL MPI_RECV( Recv_Info,3*Recv_Size(i),MPI_INTEGER,i,12001,ELMER_COMM_WORLD,status,ierr )
+       CALL MPI_RECV( Recv_NodeInd,4*Recv_Size(i),MPI_INTEGER,i,12002,ELMER_COMM_WORLD,status,ierr )
+
+       CALL MPI_RECV( Recv_Nbr,4*Recv_Size(i),MPI_INTEGER,i,12003,ELMER_COMM_WORLD,status,ierr )
+       CALL MPI_GET_COUNT(status, MPI_INTEGER, n, ierr )
+
+       CALL MPI_RECV( Recv_Coords,12*Recv_Size(i),MPI_DOUBLE_PRECISION,&
+            i,12004,ELMER_COMM_WORLD,status,ierr )
+
+
+       ! Insert the received elements to the (already mostly re-allocated) mesh strucres
+       ! -------------------------------------------------------------------------------
+       n_Coord0 = n_Coord
+
+       BLOCK
+         INTEGER, ALLOCATABLE :: Gdofs(:), Gorder(:)
+
+         Gdofs = Mesh % ParallelInfo % GlobalDOFs
+         Gorder = [(j, j=1,n_Coord0)]
+         CALL Sorti(n_Coord0,Gdofs,Gorder)
+
+         ! Insert nodes
+         ! ------------
+         DO j=1,n
+
+           k = SearchNode(Mesh % ParallelInfo,Recv_Nbr(j),1,n_Coord0,Gorder)
+           IF(k>0) THEN
+             cPerm(j)=k;
+
+             IF(.NOT.ASSOCIATED(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)) STOP 'a'
+
+             l = SIZE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+             narr(1:l) = Mesh % ParallelInfo % NeighbourList(k) % Neighbours
+
+             IF (ALL(narr(1:l) /= i)) THEN
+                l = l +1
+                narr(l) = i
+                DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+                ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
+                Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
+             END IF
+
+             IF (ALL(narr(1:l) /= ParEnv % myPE)) THEN
+                l = l +1
+                narr(l) = ParEnv % myPE
+                DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+                ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
+                Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
+             END IF
+
+             IF ( .NOT. Mesh % ParallelInfo % Ginterface(k)) THEN
+               Mesh % ParallelInfo % Ginterface(k) = .TRUE.
+               Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
+             END IF
+             CYCLE
+           END IF
+
+           n_Coord = n_Coord + 1
+
+           cPerm(j)=n_Coord
+           Mesh % Nodes % x(n_Coord) = Recv_Coords(3*(j-1)+1)
+           Mesh % Nodes % y(n_Coord) = Recv_Coords(3*(j-1)+2)
+           Mesh % Nodes % z(n_Coord) = Recv_Coords(3*(j-1)+3)
+
+           Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
+           Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
+           Mesh % ParallelInfo % GlobalDofs(n_Coord) = Recv_Nbr(j)
+
+           IF(ASSOCIATED(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours)) STOP 'b'
+
+           ALLOCATE(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2))
+           Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(1) = i
+           Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2) = ParEnv % myPE
+         END DO
+       END BLOCK
+
+       ! Insert elements
+       ! ---------------
+       k = 0
+       DO j=1,Recv_Size(i)
+         Element => Mesh % Elements(j+n_Curr)
+
+         Element % Type => GetElementType(Recv_Info(3*(j-1)+1))
+         n = Element % Type % NumberOfNodes
+
+         ALLOCATE(Element % BoundaryInfo)
+         Element % BoundaryInfo % Constraint = Recv_Info(3*(j-1)+2)
+         Element % BoundaryInfo % Left => Null()
+         Element % BoundaryInfo % Right => Null()
+
+         Element % PartIndex = i
+         Element % BodyId = 0
+         Element % ElementIndex  = j+n_Curr
+         Element % GElementIndex = Recv_Info(3*(j-1)+3)
+
+         ALLOCATE(Element % NodeIndexes(n))
+         Element % NodeIndexes = cPerm(Recv_NodeInd(k+1:k+n))
+         k = k + n
+       END DO
+       n_Curr = n_Curr + Recv_Size(i)
+     END DO
+   END IF
+
+   Mesh % NumberOFnodes = n_Coord
+
+ ! Try reset the owner of a node (first entry in the node's Neighbours-array)
+ ! to some commonly knowable task
+ ! ---------------------------------------------------------------------------
+ BLOCK
+   INTEGER, ALLOCATABLE :: gCount(:)
+
+   ALLOCATE( gCount(Mesh % NumberOfNodes) )
+   gCount = 0
+
+   DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
+     Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
+     IF ( .NOT. RadiationCheck(Element)) CYCLE
+     DO j=1,Element % Type % NumberOfNodes
+       n = Element % NodeIndexes(j)
+       gCount(n) = MAX(Element % GElementIndex,gCount(n))
+     END DO
+   END DO
+
+   DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
+
+     Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
+     IF ( .NOT. RadiationCheck(Element)) CYCLE
+
+     DO j=1,Element % Type % NumberOfNodes
+       n = Element % NodeIndexes(j)
+
+       IF ( Element % GElementIndex /= gCount(n)) CYCLE
+
+       DO k=1,SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours)
+         IF(Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) == Element % PartIndex) EXIT
+       END DO
+       if ( k>SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours) ) stop 'fail0'
+
+       l = Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1)
+       Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1) = Element % PartIndex
+       Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) = l
+
+       if ( Element % PartIndex == parenv % mype) then
+          IF ( .NOT.ASSOCIATED(element % boundaryinfo % left ) ) stop 'fail1'
+          IF ( mesh % parallelinfo % neighbourlist(n) % neighbours(1) /= parenv % mype ) stop 'fail2'
+       end if
+     END DO
+   END DO
+ END BLOCK
+
+   Mesh % NumberOfBoundaryElements = Mesh % NumberOfBoundaryElements + SUM(Recv_Size)
+
+CONTAINS
+
+ !------------------------------------------------------------------------------
+ SUBROUTINE GetMeshRadiationSurfaceInfoA( Mesh, RadiationSurfaces, ElementNumbers, CoordsFlag )
+ !------------------------------------------------------------------------------
+   IMPLICIT NONE
+
+   TYPE(ValueList_t), POINTER :: BC
+   LOGICAL ::  CoordsFlag(:)
+   INTEGER ::  ElementNumbers(:)
+   TYPE(Mesh_t) :: Mesh
+   INTEGER :: i,j,t,n, RadiationSurfaces, nbulk
+   LOGICAL :: Found
+   TYPE(Element_t), POINTER :: Element
+
+   nBulk = Mesh % NumberOfBulkElements
+   RadiationSurfaces = 0
+
+   ElementNumbers = 0
+   CoordsFlag = .FALSE.
+   DO i=1,Mesh % NumberOfBoundaryElements
+     Element => Mesh % Elements(nBulk+i)
+     IF (RadiationCheck(Element)) THEN
+       RadiationSurfaces = RadiationSurfaces + 1
+       CoordsFlag(Element % NodeIndexes) = .TRUE.
+       ElementNumbers(RadiationSurfaces) = i + nBulk
+     END IF
+   END DO
+ !------------------------------------------------------------------------------
+ END SUBROUTINE GetMeshRadiationSurfaceInfoA
+ !------------------------------------------------------------------------------
+
+ !------------------------------------------------------------------------------
+ END SUBROUTINE RadiationParallelMeshDistribute
+ !------------------------------------------------------------------------------
+
  ! Set the mesh dimension by studying the coordinate values.
  ! This could be less conservative also...
  !------------------------------------------------------------------------------    
@@ -2504,7 +2870,7 @@ CONTAINS
 
    CALL Info(Caller,'Preparing mesh done',Level=8)
 
-
+   IF( Parallel ) CALL RadiationParallelMeshDistribute(Mesh)
    
  CONTAINS
 
@@ -6485,8 +6851,6 @@ CONTAINS
   !---------------------------------------------------------------------------
    FUNCTION NormalProjector(BMesh2, BMesh1, BC) RESULT ( Projector )
   !---------------------------------------------------------------------------
-    USE Lists
-
     TYPE(Mesh_t), POINTER :: BMesh1, BMesh2
     TYPE(ValueList_t), POINTER :: BC
     TYPE(Matrix_t), POINTER :: Projector
@@ -7778,8 +8142,6 @@ CONTAINS
        UseQuadrantTree, Repeating, AntiRepeating ) &
       RESULT ( Projector )
   !---------------------------------------------------------------------------
-    USE Lists
-
     TYPE(Mesh_t), POINTER :: BMesh1, BMesh2
     LOGICAL :: UseQuadrantTree, Repeating, AntiRepeating
     TYPE(Matrix_t), POINTER :: Projector
@@ -7845,8 +8207,6 @@ CONTAINS
   !---------------------------------------------------------------------------
    FUNCTION NodalProjectorDiscont( Mesh, bc ) RESULT ( Projector )
   !---------------------------------------------------------------------------
-    USE Lists
-
     TYPE(Mesh_t), POINTER :: Mesh
     INTEGER :: bc
     TYPE(Matrix_t), POINTER :: Projector
@@ -8660,10 +9020,6 @@ CONTAINS
       FullCircle, Radius, DoNodes, DoEdges, NodeScale, EdgeScale, BC ) &
       RESULT ( Projector )
     !---------------------------------------------------------------------------
-    USE Lists
-    USE Messages
-    USE Types
-    USE GeneralUtils
     IMPLICIT NONE
 
     TYPE(Mesh_t), POINTER :: BMesh1, BMesh2, Mesh
@@ -13204,9 +13560,6 @@ CONTAINS
 !---------------------------------------------------------------------------
   FUNCTION WeightedProjectorDiscont(Mesh, bc ) RESULT ( Projector )
     !---------------------------------------------------------------------------
-    USE Lists
-    USE ListMatrix
-
     TYPE(Mesh_t), POINTER :: Mesh
     INTEGER :: bc
     TYPE(Matrix_t), POINTER :: Projector
@@ -19345,7 +19698,6 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE WriteMeshToDisk2(Model, NewMesh, Path, Partition )
 !------------------------------------------------------------------------------
-    USE Types
 !------------------------------------------------------------------------------
     TYPE(Model_t) :: Model
     TYPE(Mesh_t), POINTER :: NewMesh
@@ -19577,7 +19929,6 @@ CONTAINS
   SUBROUTINE WriteMeshToDiskPartitioned(Model, Mesh, Path, &
       ElementPart, NeighbourList )
 !------------------------------------------------------------------------------
-    USE Types
 !------------------------------------------------------------------------------
     TYPE(Model_t) :: Model
     TYPE(Mesh_t), POINTER :: Mesh
@@ -27422,8 +27773,6 @@ CONTAINS
 !---------------------------------------------------------------
   SUBROUTINE FindRigidBodyFixingNodes(Solver,FixingDofs,MaskPerm)
 !------------------------------------------------------------------------------
-    USE GeneralUtils
-
     TYPE(Solver_t) :: Solver
     INTEGER, OPTIONAL :: FixingDofs(0:)
     INTEGER, OPTIONAL :: MaskPerm(:)

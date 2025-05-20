@@ -127,6 +127,10 @@ SUBROUTINE mpi_reduce
   RETURN
 END SUBROUTINE mpi_reduce
 
+SUBROUTINE mpi_get_count
+  RETURN
+END SUBROUTINE mpi_get_count
+
 ! Parpack 
 SUBROUTINE pdseupd
   RETURN
@@ -151,3 +155,4 @@ END SUBROUTINE pdnaupd
 SUBROUTINE pznaupd
   RETURN
 END SUBROUTINE pznaupd
+

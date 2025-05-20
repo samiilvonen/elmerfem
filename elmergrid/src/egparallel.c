@@ -3834,7 +3834,8 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
   int *bcnode,*bcnodedummy,*elementhalo,*neededtimes2;
   int partstart,partfin,filesetsize,nofile,nofile2,nobcnodes,hasbcnodes,halomode;
   int halobulkelems,halobcs,savethis,fail=0,cdstat,immersed,halocopies,anyparthalo;
-
+  int totsides;
+  
   FILE *out,*outfiles[MAXPARTITIONS+1];
   int sumelementsinpart,sumownnodes,sumsharednodes,sumsidesinpart,sumindirect;
 
@@ -4452,7 +4453,8 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
       sidetypes[i] = 0;
     
     sumsides = 0;
-
+    totsides = 0;
+    
     /* Loop over boundaries and boundary elements therein. */
     for(j=0;j < MAXBOUNDARIES;j++) {
 
@@ -4469,6 +4471,7 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
 	parent = bound[j].parent[i];
 	parent2 = bound[j].parent2[i];
 
+	totsides++;
 	
 	/* Check whether the side is such that it belongs to the domain.
 	   Then it will be always saved - no matter of the halos. */
@@ -4537,11 +4540,9 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
 	sidetypes[sideelemtype] += 1;
 	    
 	if( part2 ) 
-	  fprintf(out,"%d/%d %d %d %d %d",
-		  sumsides,part2,bctype,parent,parent2,sideelemtype);	    
-	else 
-	  fprintf(out,"%d %d %d %d %d",
-		  sumsides,bctype,parent,parent2,sideelemtype);	  
+	  fprintf(out,"%d/%d %d %d %d %d", totsides,part2,bctype,parent,parent2,sideelemtype);
+	else
+	  fprintf(out,"%d %d %d %d %d", totsides,bctype,parent,parent2,sideelemtype);
 	    
 	if(reorder) {
 	  for(l=0;l<nodesd1;l++)
@@ -4570,6 +4571,7 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
 	GetElementSide(bound[j].parent2[i],bound[j].side2[i],-bound[j].normal[i],
 		       data,sideind,&sideelemtype); 
 	nodesd1 = sideelemtype%100;	
+	totsides++;
 	
 	bcneeded = 0;
 	for(l=0;l<nodesd1;l++) {
@@ -4585,7 +4587,7 @@ int SaveElmerInputPartitioned(struct FemType *data,struct BoundaryType *bound,
 	
 	sumsides++;
 	fprintf(out,"%d %d %d %d ",
-		sumsides,bound[j].types[i],bound[j].parent2[i],bound[j].parent[i]);
+		totsides,bound[j].types[i],bound[j].parent2[i],bound[j].parent[i]);
 	
 	fprintf(out,"%d ",sideelemtype);
 	sidetypes[sideelemtype] += 1;

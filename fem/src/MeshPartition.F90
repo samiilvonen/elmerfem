@@ -45,7 +45,6 @@
 
 MODULE MeshPartition
 
-  USE Types
   USE ParallelUtils
   USE CoordinateSystems
   USE ElementDescription, ONLY : GetElementType

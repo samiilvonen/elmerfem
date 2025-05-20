@@ -49,10 +49,10 @@ MODULE ModelDescription
     USE ElementUtils, ONLY : CreateMatrix, FreeMatrix
     USE MeshUtils, ONLY : AllocateMesh, DetectMortarPairs, Graph_deallocate, &
         Loadmesh2, MeshStabParams, PrepareMesh, ReleaseMesh, SetMeshDimension, &
-        SetMeshMaxDOFs, SetMeshPartitionOffSet, SplitMeshEqual, SplitMeshLevelSet
+        SetMeshMaxDOFs, SetMeshPartitionOffSet, SplitMeshEqual, SplitMeshLevelSet, &
+         RadiationParallelMeshDistribute
     USE LoadMod
     USE BinIO
-    USE Messages
     USE ElementDescription
  
     IMPLICIT NONE
@@ -2943,6 +2943,8 @@ CONTAINS
         ELSE
           NewMesh => SplitMeshEqual(OldMesh)
         END IF
+
+!       CALL RadiationParallelMeshDistribute(NewMesh)
 
 #if 0
         IF(ASSOCIATED(OldMesh % Faces)) THEN

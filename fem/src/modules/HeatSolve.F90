@@ -1403,8 +1403,9 @@ CONTAINS
      NoActive = 0
      
      DO j=1,nb
-       bindex = j + Mesh % NumberOfBulkElements
-       Element => Mesh % Elements(bindex)
+!      bindex = j + Mesh % NumberOfBulkElements
+!      Element => Mesh % Elements(bindex)
+       Element => GetBoundaryElement(j)
 
        BC => GetBC(Element)
        IF(.NOT. ASSOCIATED( BC ) ) CYCLE
@@ -1466,10 +1467,12 @@ CONTAINS
 !------------------------------------------------------------------------------
    SUBROUTINE AddHeatFluxBC()
 !------------------------------------------------------------------------------
+      LOGICAL :: ElementForThisPartition
       CALL GetElementNodes( ElementNodes )
 
-      HeatTransferCoeff = 0.0D0
-      LOAD  = 0.0D0
+      HeatTransferCoeff = 0.0_dp
+      LOAD  = 0.0_dp
+      AText = 0.0_dp
 !------------------------------------------------------------------------------
 !     BC: -k@T/@n = \epsilon\sigma(T^4 - Text^4)
 !------------------------------------------------------------------------------
@@ -1480,10 +1483,13 @@ CONTAINS
 
 !------------------------------------------------------------------------------
         IsRadiosity = .FALSE.
+
+        ElementForThisPartition = Element % PartIndex == ParEnv % myPE
+
         IF (  RadiationFlag == 'idealized' ) THEN
           AText(1:n) = GetReal( BC, 'Radiation External Temperature',Found )
           IF(.NOT. Found) AText(1:n) = GetReal( BC, 'External Temperature' )
-        ELSE
+        ELSE IF (ElementForThisPartition) THEN
           IF( Radiosity ) THEN
             CALL RadiosityRadiation( Model, Solver, Element, & 
                 n, Temperature, TempPerm, ForceVector )
@@ -1510,7 +1516,7 @@ CONTAINS
 !       Add our own contribution to surface temperature (and external
 !       if using linear type iteration or idealized radiation)
 !------------------------------------------------------------------------------
-        IF(.NOT. IsRadiosity ) THEN
+        IF(.NOT.IsRadiosity.AND.(RadiationFlag=='idealized'.OR.ElementForThisPartition)) THEN
           DO j=1,n
             k = TempPerm(Element % NodeIndexes(j))
             Text = AText(j)

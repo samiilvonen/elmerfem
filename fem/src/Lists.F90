@@ -46,8 +46,6 @@
 
 MODULE Lists
 
-   USE Messages
-   USE LoadMod
    USE GeneralUtils
    
    IMPLICIT NONE
@@ -211,6 +209,7 @@ CONTAINS
                    Equation,DGSolver,GlobalBubbles ) RESULT(k)
 !------------------------------------------------------------------------------
      USE PElementMaps
+     USE SParIterGlobals
      TYPE(Model_t)  :: Model
      TYPE(Mesh_t)   :: Mesh
      TYPE(Solver_t), TARGET :: Solver
@@ -222,7 +221,7 @@ CONTAINS
      INTEGER :: NodalIndexOffset, EdgeIndexOffset, FaceIndexOffset, Indexes(128)
      INTEGER, POINTER :: Def_Dofs(:)
      INTEGER, ALLOCATABLE :: EdgeDOFs(:), FaceDOFs(:)
-     LOGICAL :: FoundDG, DG, DB, GB, Bubbles, Found, Radiation
+     LOGICAL :: FoundDG, DG, DB, GB, Bubbles, Found, Radiation, Parallel
      TYPE(Element_t),POINTER :: Element, Edge, Face
      CHARACTER(*), PARAMETER :: Caller = 'InitialPermutation'
 !------------------------------------------------------------------------------
@@ -605,11 +604,12 @@ CONTAINS
 
      Radiation = ListGetLogical( Solver % Values, 'Radiation Solver', Found )
      IF ( Radiation ) THEN
+        Parallel = ParEnv % PEs>1
         t = Mesh % NumberOfBulkElements + 1
         n = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
         DO WHILE( t<= n )
           Element => Mesh % Elements(t)
-          IF ( ASSOCIATED( Element % BoundaryInfo % RadiationFactors) ) THEN
+          IF ( RadiationCheck(Element) ) THEN
              DO i=1,Element % TYPE % NumberOfNodes
                j = Element % NodeIndexes(i)
                IF ( Perm(j) == 0 ) THEN
@@ -707,6 +707,31 @@ CONTAINS
 !------------------------------------------------------------------------------
    END FUNCTION InitialPermutation
 !------------------------------------------------------------------------------
+
+
+!---------------------------------------------------------------------------
+   FUNCTION RadiationCheck(Element) RESULT(L)
+!---------------------------------------------------------------------------
+     LOGICAL :: L, Found
+
+     INTEGER :: t
+
+     TYPE(Element_t), POINTER :: Element
+     TYPE(ValueList_t), POINTER :: BC
+     CHARACTER(:), ALLOCATABLE :: RadiationFlag
+
+     L = .FALSE.
+     IF ( Element % Type % ElementCode<=1 ) RETURN
+
+     t = Element % BoundaryInfo % Constraint
+     IF(t<=0 .OR. t>SIZE(CurrentModel % BCs)) RETURN
+
+     BC => CurrentModel % BCs(t) % Values
+     RadiationFlag = ListGetString( BC, 'Radiation', Found )
+     IF (RadiationFlag=='diffuse gray' .OR. ListGetLogical(BC,'Radiator BC',Found)) L=.TRUE.
+!---------------------------------------------------------------------------
+   END FUNCTION RadiationCheck
+!---------------------------------------------------------------------------
 
 
 !---------------------------------------------------------------------------
@@ -961,7 +986,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE ReleaseVariableList( VariableList )
 !------------------------------------------------------------------------------
-    USE spariterglobals
+    USE SpariterGlobals
     TYPE(Variable_t), POINTER :: VariableList
 !------------------------------------------------------------------------------
     REAL(KIND=dp), POINTER :: Ptr(:)

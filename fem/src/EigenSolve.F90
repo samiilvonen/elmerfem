@@ -66,8 +66,6 @@ CONTAINS
 !------------------------------------------------------------------------------
      SUBROUTINE ArpackEigenSolve( Solver,Matrix,N,NEIG,EigValues,EigVectors )
 !------------------------------------------------------------------------------
-      USE CRSMatrix
-      USE IterSolve
       USE Multigrid
 
       IMPLICIT NONE
@@ -588,8 +586,6 @@ CONTAINS
 !------------------------------------------------------------------------------
     SUBROUTINE ScaleEigenVectors( Matrix, EigVectors, NoEigen, NormalizeToUnity)
 
-      USE CRSMatrix
-      USE IterSolve
       USE Multigrid
 
       IMPLICIT NONE
@@ -771,8 +767,6 @@ END SUBROUTINE CheckResiduals
      SUBROUTINE ArpackStabEigenSolve( Solver, &
           Matrix, N, NEIG, EigValues, EigVectors )
 !------------------------------------------------------------------------------
-      USE CRSMatrix
-      USE IterSolve
       USE Multigrid
 
       IMPLICIT NONE
@@ -1125,8 +1119,6 @@ END SUBROUTINE CheckResiduals
 !------------------------------------------------------------------------------
 !> Solution of Eigen value problems using ARPACK library, complex valued version. 
 !------------------------------------------------------------------------------
-      USE CRSMatrix
-      USE IterSolve
       USE Multigrid
 
       IMPLICIT NONE
@@ -1623,8 +1615,6 @@ END SUBROUTINE CheckResidualsComplex
 !------------------------------------------------------------------------------
 !> Solution of Eigen value problems using ARPACK library, damped version. 
 !------------------------------------------------------------------------------
-      USE CRSMatrix
-      USE IterSolve
       USE Multigrid
       USE ElementUtils
 

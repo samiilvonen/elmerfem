@@ -45,7 +45,6 @@
 
 MODULE ElementDescription
    USE Integration
-   USE GeneralUtils
    USE LinearAlgebra
    USE CoordinateSystems
    ! Use module P element basis functions 

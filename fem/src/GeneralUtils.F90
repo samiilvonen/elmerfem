@@ -44,7 +44,6 @@
 !-----------------------------------------------------------------------------
 MODULE GeneralUtils
 
-USE Types
 USE LoadMod
 
 #ifdef HAVE_LUA

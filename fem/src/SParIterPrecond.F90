@@ -47,8 +47,6 @@
 
 MODULE SParIterPrecond
 
-  USE Types
-  USE SParIterGlobals
   USE SParIterComm
 
   IMPLICIT NONE

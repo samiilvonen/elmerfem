@@ -50,6 +50,8 @@ MODULE FreeSurface
    USE DirectSolve
    USE IterSolve
    USE ElementUtils
+   USE ElementDescription, ONLY : FirstDerivativeInU2D, FirstDerivativeInV2D, &
+            NormalVector, CheckNormalDirection
 
    IMPLICIT NONE
 

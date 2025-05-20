@@ -43,7 +43,6 @@
  
 MODULE Smoothers
 
-  USE Types
   USE CRSMatrix
   USE Lists
   USE ParallelUtils  

@@ -477,13 +477,31 @@
 
      SUBROUTINE GetMeshRadiationSurfaceInfo
        TYPE(ValueList_t), POINTER :: BC
-       INTEGER :: i,j,t,n
-       LOGICAL :: Found
+       INTEGER :: i,j,k,n,t,gmax
+       LOGICAL :: Found, Parallel
        TYPE(Element_t), POINTER :: Element
        CHARACTER(:), ALLOCATABLE :: RadiationFlag
+       INTEGER, ALLOCATABLE :: gPerm(:), iPerm(:)
 
+       Parallel = ParEnv % PEs > 1
+       IF (Parallel) THEN
+         ALLOCATE(gPerm(GetNOFBoundaryElements()), iPerm(GetNOFBoundaryElements()))
+         gPerm = 0; iPerm = 0
+         DO i=1,GetNOFBoundaryElements()
+           Element => GetBoundaryElement(i)
+           IF ( GetElementFamily(Element)<=1 ) CYCLE
+           gPerm(i) = Element % GElementIndex
+           iPerm(i) = i
+         END DO
+         CALL Sorti(GetNOFBoundaryElements(),gPerm,iPerm)
+       END IF
+
+
+       ElementNUmbers = 0
        DO i=1,GetNOFBoundaryElements()
-         Element => GetBoundaryElement(i)
+         j = i
+         IF(Parallel) j = iPerm(i)
+         Element => GetBoundaryElement(j)
          IF ( GetElementFamily(Element)<=1 ) CYCLE
          BC => GetBC(Element)
          t = GetBCId(Element)
@@ -492,11 +510,11 @@
          IF (RadiationFlag=='diffuse gray' .OR. GetLogical(BC,'Radiator BC',Found)) THEN
            RadiationSurfaces = RadiationSurfaces + 1
            n = GetElementNOFNodes(Element)
-           ElementNumbers(RadiationSurfaces) = i + nBulk
+           ElementNumbers(RadiationSurfaces) = j + nBulk
            Areas(RadiationSurfaces) = ElementArea(Mesh,Element,n)
 
-           j=MAX(1,GetInteger(BC,'Radiation Boundary',Found) )
-           MaxRadiationBody = MAX(j, MaxRadiationBody)
+           k=MAX(1,GetInteger(BC,'Radiation Boundary',Found) )
+           MaxRadiationBody = MAX(k, MaxRadiationBody)
 
            ActiveNodes(Element % NodeIndexes) = .TRUE.
            IF(GeometryFixedAfter == TimesVisited) THEN
@@ -511,26 +529,42 @@
        INTEGER :: RadiationBody
 
        TYPE(ValueList_t), POINTER :: BC
-       INTEGER :: i,j,t,n
-       LOGICAL :: Found
+       INTEGER :: i,j,k,t,n, gmax
+       LOGICAL :: Found, Parallel
+       INTEGER, ALLOCATABLE :: gPerm(:), iPerm(:)
        TYPE(Element_t), POINTER :: Element
        CHARACTER(:), ALLOCATABLE :: RadiationFlag
+
+       Parallel = ParEnv % PEs > 1
+       IF (Parallel) THEN
+         ALLOCATE(gPerm(GetNOFBoundaryElements()), iPerm(GetNOFBoundaryElements()))
+         gPerm = 0; iPerm = 0
+         DO i=1,GetNOFBoundaryElements()
+           Element => GetBoundaryElement(i)
+           IF ( GetElementFamily(Element)<=1 ) CYCLE
+           gPerm(i) = Element % GElementIndex
+           iPerm(i) = i
+         END DO
+         CALL Sorti(GetNOFBoundaryElements(),gPerm,iPerm)
+       END IF
 
        ElementNumbers    = 0
        RadiationSurfaces = 0
        DO i=1,GetNOFBoundaryElements()
-         Element => GetBoundaryElement(i)
+         j = i
+         IF(Parallel) j = iPerm(i)
+         Element => GetBoundaryElement(j)
          IF ( GetElementFamily(Element)<=1 ) CYCLE
          BC => GetBC(Element)
          IF(.NOT.ASSOCIATED(BC)) CYCLE
 
          RadiationFlag = GetString( BC, 'Radiation',Found )
          IF (RadiationFlag == 'diffuse gray' .OR. GetLogical(BC,'Radiator BC',Found)) THEN
-           j = MAX(1,GetInteger(BC,'Radiation Boundary',Found) )
+           k = MAX(1,GetInteger(BC,'Radiation Boundary',Found) )
 
-           IF(j == RadiationBody) THEN
+           IF(k == RadiationBody) THEN
              RadiationSurfaces = RadiationSurfaces + 1
-             ElementNumbers(RadiationSurfaces) = i + nBulk
+             ElementNumbers(RadiationSurfaces) = j + nBulk
              n = GetElementNOFNodes(Element)
              Areas(RadiationSurfaces) = ElementArea(Mesh,Element,n)
            END IF
@@ -547,6 +581,7 @@
        ! Make the inverse of the list of element numbers of boundaries
        InvElementNumbers = 0
        DO i=1,RadiationSurfaces
+         IF ( ElementNumbers(i) <= 0) CYCLE
          InvElementNumbers(ElementNumbers(i)-nBulk) = i
        END DO
      END SUBROUTINE GetBodyRadiationSurfaceInfo
@@ -842,8 +877,8 @@
            ALLOCATE( ViewFactors(i) % Elements(n), ViewFactors(i) % Factors(n), STAT=istat )
            IF ( istat /= 0 ) CALL Fatal('RadiationFactors','Memory allocation error 6.')
          ELSE 
-	   n2 = SIZE( ViewFactors(i) % Factors) 
-	   IF(n /= n2) THEN
+           n2 = SIZE( ViewFactors(i) % Factors) 
+           IF(n /= n2) THEN
              DEALLOCATE(ViewFactors(i) % Factors, ViewFactors(i) % Elements)
              ALLOCATE( ViewFactors(i) % Factors(n), ViewFactors(i) % Elements(n), STAT=istat )
              IF ( istat /= 0 ) CALL Fatal('RadiationFactors','Memory allocation error 7.')
@@ -854,7 +889,7 @@
          Vals => ViewFactors(i) % Factors
          Cols => ViewFactors(i) % Elements
 
-	 Vals = 0; Cols = 0
+         Vals = 0; Cols = 0
 
          DO j=1,n
            IF( BinaryMode ) THEN
@@ -1264,7 +1299,7 @@
          DO i=1,RadiationSurfaces
            Vals => ViewFactors(i) % Factors
            Cols => ViewFactors(i) % Elements
-
+           
            if ( gSymm ) r = Reflectivity(i)
            DO j=1,ViewFactors(i) % NumberOfFactors
              IF (gSymm) THEN
@@ -1296,6 +1331,10 @@
        RowSums=0
 
        DO t=1,RadiationSurfaces
+           
+         i = ElementNumbers(t)
+         Element => Mesh % Elements(i)
+
          IF ( gTriv ) THEN
 
            Vals => ViewFactors(t) % Factors
@@ -1324,30 +1363,35 @@
            END IF
 
            SOL = SOL/Diag
-           IF(IterSolveFactors) THEN
-             Solver % Matrix => G
-             CALL IterSolver( G, SOL, RHS, Solver )
+
+           IF ( Element % PartIndex==ParEnv % MyPE )THEN
+             IF(IterSolveFactors) THEN
+               Solver % Matrix => G
+               CALL IterSolver( G, SOL, RHS, Solver )
              !------------------------------------------------------------------------------
-           ELSE           
-             IF (t==1) THEN
-               CALL ListAddLogical( Solver % Values, 'Linear System Refactorize', .TRUE. )
-               CALL ListAddLogical( Solver % Values, 'Linear System Free Factorization', .FALSE. )
-             ELSE IF(t==2) THEN
-               CALL ListAddLogical( Solver % Values, 'Linear System Refactorize', .FALSE. )
-             END IF
-
-             IF(.NOT.gSymm) THEN
-               IF(GetString(Solver % Values,'Linear System Direct Method', Found)=='cholmod')THEN
-                 CALL Warn('RadiationFactors', 'Can not use Cholesky solver if any emissivity==1')
-                 CALL ListAddString( Solver % Values, 'Linear System Direct Method', 'UMFpack' )
+             ELSE           
+               IF (t==1) THEN
+                 CALL ListAddLogical( Solver % Values, 'Linear System Refactorize', .TRUE. )
+                 CALL ListAddLogical( Solver % Values, 'Linear System Free Factorization', .FALSE. )
+               ELSE IF(t==2) THEN
+                 CALL ListAddLogical( Solver % Values, 'Linear System Refactorize', .FALSE. )
                END IF
+
+               IF(.NOT.gSymm) THEN
+                 IF(GetString(Solver % Values,'Linear System Direct Method', Found)=='cholmod')THEN
+                   CALL Warn('RadiationFactors', 'Can not use Cholesky solver if any emissivity==1')
+                   CALL ListAddString( Solver % Values, 'Linear System Direct Method', 'UMFpack' )
+                 END IF
+               END IF
+
+               CALL DirectSolver( G, SOL, RHS, Solver )
              END IF
 
-             CALL DirectSolver( G, SOL, RHS, Solver )
+             SOL = SOL*Diag
+             CALL ListRemove(Solver % Values,'Linear System Free Factorization')
+           ELSE
+             SOL = 0
            END IF
-
-           SOL = SOL*Diag
-           CALL ListRemove(Solver % Values,'Linear System Free Factorization')
 
            n = 0
            DO i=1,RadiationSurfaces

@@ -49,7 +49,6 @@
 MODULE IterSolve
 
    USE Lists
-   USE CRSMatrix
    USE BandMatrix
    USE IterativeMethods
    USE huti_sfe

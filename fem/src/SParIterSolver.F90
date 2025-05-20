@@ -46,15 +46,11 @@
 #include "../config.h"
 
 MODULE SParIterSolve
-  USE Types
   USE Lists
   USE ListMatrix
-  USE SParIterGlobals
   USE SParIterComm
   USE SParIterPrecond
   USE IterSolve, ONLY : NumericalError
-
-  USE CRSMatrix
 
   IMPLICIT NONE
 
@@ -84,10 +80,11 @@ CONTAINS
   !
   ! Initialize the Matrix structures for parallel environment
   !
-  FUNCTION ParInitMatrix( SourceMatrix, ParallelInfo ) RESULT ( SParMatrixDesc )
+  FUNCTION ParInitMatrix( SourceMatrix, ParallelInfo, SkipActiveCheck ) RESULT ( SParMatrixDesc )
     TYPE (Matrix_t),TARGET :: SourceMatrix
     TYPE (ParallelInfo_t), TARGET :: ParallelInfo
     TYPE (SParIterSolverGlobalD_t), POINTER :: SParMatrixDesc
+    LOGICAL, OPTIONAL :: SkipActiveCheck
 
     TYPE (ParEnv_t), POINTER :: ParallelEnv
     !******************************************************************
@@ -100,7 +97,8 @@ CONTAINS
     SParMatrixDesc % ParEnv % IsNeighbour => Null()
     ParEnv => SParMatrixDesc % ParEnv
 
-    CALL ParEnvInit(SParMatrixDesc, ParallelInfo, SourceMatrix)
+    CALL ParEnvInit(SParMatrixDesc, ParallelInfo, SourceMatrix, &
+            SkipActiveCheck )
 
     SParMatrixDesc % Matrix => SourceMatrix
     SParMatrixDesc % DOFs = 1
@@ -123,7 +121,6 @@ CONTAINS
   FUNCTION SplitMatrix( SourceMatrix, ParallelInfo ) &
        RESULT ( SplittedMatrix )
 
-    USE Types
     IMPLICIT NONE
 
     TYPE (Matrix_t) :: SourceMatrix       ! Original matrix in this partition
@@ -836,7 +833,6 @@ END FUNCTION SplitMatrix
 !----------------------------------------------------------------------
 SUBROUTINE ZeroSplittedMatrix( SplittedMatrix )
 !----------------------------------------------------------------------
-  USE Types
   IMPLICIT NONE
 !----------------------------------------------------------------------
   TYPE (SplittedMatrixT), POINTER :: SplittedMatrix
@@ -2633,10 +2629,8 @@ SUBROUTINE SolveHutiter( SourceMatrix, SplittedMatrix, ParallelInfo, &
               IF (ParallelInfo % NeighbourList(i) % Neighbours(j)/=ParEnv % MyPE) THEN
                  nbind = ParallelInfo % NeighbourList(i) % Neighbours(j) + 1
                  VecEPerNB(nbind) = VecEPerNB(nbind) + 1
-
                  SplittedMatrix % ResBuf(nbind) % ResVal(VecEPerNB(nbind)) = XVec(i)
-                 SplittedMatrix % ResBuf(nbind) % ResInd(VecEPerNB(nbind)) = &
-                   ParallelInfo % GlobalDOFs(i)
+                 SplittedMatrix % ResBuf(nbind) % ResInd(VecEPerNB(nbind)) = ParallelInfo % GlobalDOFs(i)
               END IF
            END DO
         END IF
@@ -2684,7 +2678,7 @@ END SUBROUTINE SolveHutiter
   REAL(KIND=dp), POINTER CONTIG :: Vals(:)
   INTEGER, POINTER CONTIG :: Cols(:),Rows(:)
   INTEGER, ALLOCATABLE :: neigh(:), recv_size(:), requests(:)
-  REAL(kind=dp) :: s
+  REAL(kind=dp) :: s, scum = 0
   !*******************************************************************
 
   InsideMatrix => GlobalData % SplittedMatrix % InsideMatrix
@@ -2745,8 +2739,9 @@ END SUBROUTINE SolveHutiter
            IF ( Currif % RowOwner(j) /= ParEnv % MyPE ) THEN
              DO k = CurrIf % Rows(j), CurrIf % Rows(j+1) - 1
                Colind = IfL % IfVec(k)
-               IF ( ColInd > 0 ) &
+               IF ( ColInd > 0 ) THEN
                  IfV % IfVec(j)=IfV % IfVec(j)+CurrIf % Values(k)*u(colind)
+               END IF
              END DO
            END IF
         END DO
@@ -2767,7 +2762,6 @@ END SUBROUTINE SolveHutiter
        nneigh, neigh, recv_size, requests, buffer )
 
   DEALLOCATE( neigh, recv_size, requests )
-
   DO i=1,SIZE(buffer)
     DEALLOCATE( buffer(i) % rbuf )
   END DO
@@ -3050,7 +3044,6 @@ END SUBROUTINE SParCMatrixVector
 !--------------------------------------------------------------------------
 SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
 !--------------------------------------------------------------------------
-  USE Types
   IMPLICIT NONE
 
   TYPE (SplittedMatrixT) :: SplittedMatrix
@@ -3082,7 +3075,7 @@ SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
   ResEPerNB = 0; RHSEPerNB = 0
 
   DO i = 1, SourceMatrix % NumberOfRows
-     IF ( ParallelInfo % GInterface(i) ) THEN
+!    IF ( ParallelInfo % GInterface(i) ) THEN
         IF ( ParallelInfo % NeighbourList(i) % Neighbours(1) == ParEnv % MyPE ) THEN
            DO j = 1, SIZE( ParallelInfo % NeighbourList(i) % Neighbours )
                IF ( ParallelInfo % NeighbourList(i) % Neighbours(j)/=ParEnv % MyPE ) THEN
@@ -3094,7 +3087,7 @@ SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
           RHSEPerNB(ParallelInfo % NeighbourList(i) % Neighbours(1)+1) = &
              RHSEPerNB(ParallelInfo % NeighbourList(i) % Neighbours(1)+1) + 1
         END IF
-     END IF
+!    END IF
   END DO
 
   !----------------------------------------------------------------------
@@ -3135,7 +3128,6 @@ END SUBROUTINE CountNeighbourConns
 !-----------------------------------------------------------------------
 SUBROUTINE CombineCRSMatIndices ( SMat1, SMat2, DMat )
 !-----------------------------------------------------------------------
-  USE Types
   IMPLICIT NONE
 
   TYPE (BasicMatrix_t), TARGET :: SMat1, SMat2, DMat
@@ -3346,7 +3338,6 @@ END SUBROUTINE CombineCRSMatIndices
 !> been built.
 !----------------------------------------------------------------------
 SUBROUTINE GlueFinalize( SourceMatrix, SplittedMatrix, ParallelInfo )
-  USE Types
   IMPLICIT NONE
 
   TYPE (ParallelInfo_t) :: ParallelInfo
@@ -3537,7 +3528,6 @@ END SUBROUTINE GlueFinalize
 SUBROUTINE ClearInsideC( SourceMatrix, InsideMatrix, &
             RecvdIfMatrix, ParallelInfo )
 
-  USE Types
   IMPLICIT NONE
 
   ! Parameters
@@ -3630,7 +3620,6 @@ END SUBROUTINE ClearInsideC
 !-----------------------------------------------------------------------
 SUBROUTINE RenumberDOFs( SourceMatrix, SplittedMatrix, ParallelInfo )
 
-  USE Types
 
   IMPLICIT NONE
 

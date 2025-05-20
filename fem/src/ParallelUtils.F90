@@ -208,12 +208,14 @@ CONTAINS
 
               Matrix % ParallelInfo % GlobalDOFs(k) = &
                 DOFs*(Mesh % ParallelInfo % GlobalDOFs(i)-1)+j
+
               Matrix % ParallelInfo % GInterface(k) = &
                 Mesh % ParallelInfo % GInterface(i)
 
               IF( ASSOCIATED( Mesh % ParallelInfo % NeighbourList(i) % Neighbours ) ) THEN
                 ALLOCATE( Matrix % ParallelInfo % NeighbourList(k) % Neighbours(SIZE( &
                     Mesh % ParallelInfo % NeighbourList(i) % Neighbours)) )
+
                 Matrix % ParallelInfo % NeighbourList(k) % Neighbours = &
                     Mesh % ParallelInfo % NeighbourList(i) % Neighbours
               END IF
@@ -714,7 +716,16 @@ CONTAINS
          END IF
        END BLOCK
 
-       Matrix % ParMatrix => ParInitMatrix( Matrix, Matrix % ParallelInfo )
+       BLOCK
+         LOGICAL :: SkipActiveCheck, Found
+
+         SkipActiveCheck = .FALSE.
+         DO i=1,CurrentModel % NumberOfBCs
+           IF (ListGetString(CurrentModel % Bcs(i) % Values, 'Radiation',Found)=='diffuse gray' .OR. &
+                ListGetLogical( CurrentModel % Bcs(i) % Values, 'Radiator BC', Found)) SkipActiveCheck=.TRUE.
+         END DO
+         Matrix % ParMatrix => ParInitMatrix( Matrix, Matrix % ParallelInfo, SkipActiveCheck)
+       END BLOCK
 
 !if(parenv%mype==0) print*,'MATRIX INIT TIME: ', realtime()-tt
 #endif

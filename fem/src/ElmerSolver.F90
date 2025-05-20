@@ -1870,6 +1870,7 @@
              ! This seems to be a more robust marker for DG type
              DG = ( Var % Type == Variable_on_nodes_on_elements ) 
              
+
              IF ( Var % DOFs <= 1 ) THEN
                Work(1:n) = GetReal( BC,Var % Name, gotIt )
                IF ( GotIt ) THEN
@@ -2133,12 +2134,23 @@
            
            Element =>  Mesh % Elements(t)
            
-           i = Element % BodyId 
-           IF( i == 0 ) CYCLE
+           GotIt = .FALSE.
+           IF ( ASSOCIATED(Element % BoundaryInfo) ) THEN
+             i = Element % BoundaryInfo % Constraint
+             IF ( i >= 1 .AND. i <= CurrentModel % NumberOfBCs) THEN
+               j = ListGetInteger(CurrentModel % BCs(i) % Values, &
+                   'Initial Condition',GotIt, 1, CurrentModel % NumberOfBCs )
+             END IF
+           END IF
+
+           IF ( .NOT. GotIt ) THEN
+             i = Element % BodyId 
+             IF( i == 0 ) CYCLE
            
-           j = ListGetInteger(CurrentModel % Bodies(i) % Values, &
-               'Initial Condition',GotIt, 1, CurrentModel % NumberOfICs )           
-           IF ( .NOT. GotIt ) CYCLE
+             j = ListGetInteger(CurrentModel % Bodies(i) % Values, &
+                 'Initial Condition',GotIt, 1, CurrentModel % NumberOfICs )           
+             IF ( .NOT. GotIt ) CYCLE
+           END IF
            
            IC => CurrentModel % ICs(j) % Values
            CurrentModel % CurrentElement => Element

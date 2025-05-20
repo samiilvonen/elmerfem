@@ -47,7 +47,6 @@
 MODULE CRSMatrix
 
   USE Lists
-  USE LoadMod
 
   IMPLICIT NONE
 

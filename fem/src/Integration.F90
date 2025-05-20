@@ -42,7 +42,6 @@
 !>  containing various integration routines.
 !-----------------------------------------------------------------------------
 MODULE Integration
-   USE Types
    USE LoadMod
 
    IMPLICIT NONE

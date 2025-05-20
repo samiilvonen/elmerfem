@@ -49,10 +49,8 @@
 MODULE DirectSolve
 
    USE CRSMatrix
-   USE Lists
    USE BandMatrix
    USE SParIterSolve
-   USE SparIterGlobals
 
    IMPLICIT NONE
 
