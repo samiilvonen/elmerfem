@@ -293,7 +293,7 @@ CONTAINS
       END IF
     END IF
     
-    CALL Info('ReloadInputFile','Realoading input file',Level=7)
+    CALL Info('ReloadInputFile','Reloading input file',Level=7)
     MeshDir  = ' '
     Meshname = ' '
     CALL LoadInputFile( Model, InFileUnit, ' ', &
