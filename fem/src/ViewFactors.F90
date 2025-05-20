@@ -1083,15 +1083,15 @@
       wsize = HUTI_WRKDIM
           
       HUTI_NDIM     = N
-      HUTI_DBUGLVL  = 0
+      HUTI_DBUGLVL  = 10
       HUTI_MAXIT    = 100
  
       ALLOCATE( work(N, wsize), STAT=istat )
       IF ( istat /= 0 ) CALL Fatal(Caller,'Memory allocation error for IterSolv work.')
 
       
-      work = 0D0
-      HUTI_TOLERANCE = 1.0D-12
+      work = 0.0_dp
+      HUTI_TOLERANCE = 1.0d-6
       HUTI_MAXTOLERANCE = 1.0d20
       HUTI_INITIALX = HUTI_USERSUPPLIEDX
       HUTI_STOPC = HUTI_TRESID_SCALED_BYB
@@ -1226,21 +1226,23 @@
     IMPLICIT NONE
 
     INTEGER :: ipar(*)
-    REAL(KIND=dp) :: u(*),v(*), ct, rsum, cumt=0
+    REAL(KIND=dp) :: u(*),v(*), ct, rsum, cumt=0, s, t
 
     INTEGER :: i,j,n
 
     n = HUTI_NDIM
 #if 1
-    CALL DSYMV('U',n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
-!   CALL DGEMV('N',n,n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+!   CALL DSYMV('U',n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+    CALL DGEMV('N',n,n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
 #else
     v(1:n) = 0
-!$omp parallel do private(i,j)
-    DO j=1,n
-       DO i=1,n
-         v(i) = v(i) + Jacobian(i,j) * u(j)
+!$omp parallel do private(i,j,s) shared(u,v,Jacobian)
+    DO i=1,n
+       s = 0._dp
+       DO j=1,n
+         s = s + Jacobian(i,j) * u(j)
        END DO
+       v(i) = s
     END DO
 !$omp end parallel do
 #endif
