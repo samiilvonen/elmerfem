@@ -64,7 +64,7 @@
 
      REAL (KIND=dp), ALLOCATABLE :: Reflectivity(:),Emissivity(:),Absorptivity(:), &
          Areas(:), RelAreas(:)
-     REAL (KIND=dp) :: at, bt,  st
+     REAL (KIND=dp) :: at, bt,  st, rt
      REAL (KIND=dp) :: SteadyChange, Tol, Sigma
 
      INTEGER :: RadiationSurfaces, GeometryFixedAfter, TimesVisited=0, RadiationBody, &
@@ -142,7 +142,7 @@
 !------------------------------------------------------------------------------
 !    Go for it
 !------------------------------------------------------------------------------
-     at = CPUTime()
+     at = CPUTime(); rt = RealTime()
 
      CALL Info('RadiationFactors','----------------------------------------------------',Level=5)
      CALL Info('RadiationFactors','Computing radiation factors for heat transfer',       Level=5)
@@ -303,7 +303,7 @@
 
      FirstTime = .FALSE.
      
-     WRITE (Message,'(A,T35,ES15.4)') 'All done time (s)',CPUTime()-at
+     WRITE (Message,*) 'All done time (s)',CPUTime()-at
      CALL Info('RadiationFactors',Message)
      CALL Info('RadiationFactors','----------------------------------------------------',Level=5)
 

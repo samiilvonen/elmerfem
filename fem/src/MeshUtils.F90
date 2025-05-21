@@ -2310,7 +2310,7 @@ CONTAINS
 
    INTEGER :: RadiationSurfaces, n_New, n_Coord, n_Coord0, n_Curr, n_NodeInd, max_Coord
    LOGICAL :: Found
-   INTEGER :: i,j,k,l,n,ierr, status(MPI_STATUS_SIZE), narr(ParEnv % PEs)
+   INTEGER :: i,j,k,l,n,ntot,ierr, status(MPI_STATUS_SIZE), narr(ParEnv % PEs)
 
    REAL(KIND=dp), ALLOCATABLE :: Send_Coord(:), Recv_Coords(:)
    INTEGER, ALLOCATABLE :: ElementNumbers(:), cPerm(:), &
@@ -2327,64 +2327,63 @@ CONTAINS
 
    ! Get surface elements participating in radiative heat transfer
    ! -------------------------------------------------------------
-   ALLOCATE(ElementNumbers(Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements))
-   ALLOCATE(CoordsFlag(Mesh % NumberOfNodes))
-   CoordsFlag = .FALSE.
+   ntot = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+   ALLOCATE(ElementNumbers(ntot),CoordsFlag(Mesh % NumberOfNodes))
    ElementNumbers = 0
-   RadiationSurfaces = 0
-   CALL GetMeshRadiationSurfaceInfoA( Mesh, RadiationSurfaces, ElementNumbers, CoordsFlag )
+   CoordsFlag = .FALSE.
+   CALL GetMeshRadiationSurfaceInfoA(Mesh,RadiationSurfaces,ElementNumbers,CoordsFlag)
 
-   IF ( RadiationSurfaces <= 0 ) RETURN
+   IF(RadiationSurfaces>0) THEN
+     ALLOCATE(Send_Coord(3*COUNT(CoordsFlag)), Send_Nbr(COUNT(CoordsFlag)), &
+         cPerm(Mesh % NumberOfNodes+4*ParEnv % PEs*Mesh % NumberOfBoundaryElements))
+     cPerm = 0
 
-   ALLOCATE(Send_Coord(3*COUNT(CoordsFlag)), Send_Nbr(COUNT(CoordsFlag)), &
-       cPerm(Mesh % NumberOfNodes+4*ParEnv % PEs*Mesh % NumberOfBoundaryElements))
-   cPerm = 0
+     ! Extract coordinates of the "owned" radiation elements
+     ! -----------------------------------------------------
+     n_Coord = 0
+     DO i=1,Mesh % NumberOfNodes
+       IF ( CoordsFlag(i) ) THEN
+         n_Coord = n_Coord + 1
+         cPerm(i) = n_Coord
+         Send_Coord(3*(n_Coord-1)+1) = Mesh % Nodes % x(i)
+         Send_Coord(3*(n_Coord-1)+2) = Mesh % Nodes % y(i)
+         Send_Coord(3*(n_Coord-1)+3) = Mesh % Nodes % z(i)
+         Send_Nbr(n_Coord) = Mesh % ParallelInfo % GlobalDOFs(i)
 
-   ! Extract coordinates of the "owned" radiation elements
-   ! -----------------------------------------------------
-   n_Coord = 0
-   DO i=1,Mesh % NumberOfNodes
-     IF ( CoordsFlag(i) ) THEN
-       n_Coord = n_Coord + 1
-       cPerm(i) = n_Coord
-       Send_Coord(3*(n_Coord-1)+1) = Mesh % Nodes % x(i)
-       Send_Coord(3*(n_Coord-1)+2) = Mesh % Nodes % y(i)
-       Send_Coord(3*(n_Coord-1)+3) = Mesh % Nodes % z(i)
-       Send_Nbr(n_Coord) = Mesh % ParallelInfo % GlobalDOFs(i)
+           Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
 
-       Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
+         IF ( ASSOCIATED(Mesh % ParallelInfO % NeighbourList(i) % Neighbours)) THEN
+           DEALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours)
+         END IF
 
-       IF ( ASSOCIATED(Mesh % ParallelInfO % NeighbourList(i) % Neighbours)) THEN
-         DEALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours)
+         ALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours(ParEnv % PEs))
+         Mesh % ParallelInfo % NeighbourList(i) % Neighbours(1) = ParEnv % myPE
+         k = 1
+         DO j=0,ParEnv % PEs-1
+           IF ( j==ParEnv % Mype) CYCLE
+           k = k + 1 
+           Mesh % ParallelInfo % NeighbourList(i) % Neighbours(k) = j
+         END DO
        END IF
+     END DO
 
-       ALLOCATE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours(ParEnv % PEs))
-       Mesh % ParallelInfo % NeighbourList(i) % Neighbours(1) = ParEnv % myPE
-       k = 1
-       DO j=0,ParEnv % PEs-1
-         IF ( j==ParEnv % Mype) CYCLE
-         k = k + 1 
-         Mesh % ParallelInfo % NeighbourList(i) % Neighbours(k) = j
-       END DO
-     END IF
-   END DO
+     ! Extract topolgy of the "owned" radiation elements
+     ! --------------------------------------------------
+     ALLOCATE(Send_Info(3*RadiationSurfaces), Send_ind(4*RadiationSurfaces))
+     n_NodeInd  = 0
+     DO i=1,RadiationSurfaces
+       j = ElementNumbers(i)
+       Element  => Mesh % Elements(j)
+       n = ElemenT % Type % NumberOfNodes
+       Element % PartIndex = ParEnv % myPE
 
-   ! Extract topolgy of the "owned" radiation elements
-   ! --------------------------------------------------
-   ALLOCATE(Send_Info(3*RadiationSurfaces), Send_ind(4*RadiationSurfaces))
-   n_NodeInd  = 0
-   DO i=1,RadiationSurfaces
-     j = ElementNumbers(i)
-     Element  => Mesh % Elements(j)
-     n = ElemenT % Type % NumberOfNodes
-     Element % PartIndex = ParEnv % myPE
-
-     Send_Info(3*(i-1)+1) = Element % Type % ElementCode
-     Send_Info(3*(i-1)+2) = Element % BoundaryInfo % Constraint
-     Send_Info(3*(i-1)+3) = Element % GElementIndex
-     Send_Ind(n_NodeInd+1:n_NodeInd+n) = cPerm(Element % NodeIndexes)
-     n_NodeInd = n_NodeInd + n
-   END DO
+       Send_Info(3*(i-1)+1) = Element % Type % ElementCode
+       Send_Info(3*(i-1)+2) = Element % BoundaryInfo % Constraint
+       Send_Info(3*(i-1)+3) = Element % GElementIndex
+       Send_Ind(n_NodeInd+1:n_NodeInd+n) = cPerm(Element % NodeIndexes)
+       n_NodeInd = n_NodeInd + n
+     END DO
+   END IF
 
    ! Distribute the extracted information
    ! ------------------------------------
@@ -2392,6 +2391,7 @@ CONTAINS
 
    DO i=0,ParEnv % PEs-1
      IF (i==ParEnv % myPE) CYCLE
+
      CALL MPI_BSEND( RadiationSurfaces,1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,ierr )
      IF ( RadiationSurfaces>0 ) THEN
        CALL MPI_BSEND( Send_Info,3*RadiationSurfaces,MPI_INTEGER,i,12001,ELMER_COMM_WORLD,ierr )
@@ -2401,233 +2401,233 @@ CONTAINS
      END IF
    END DO
 
-   ! Receive element count from around
-   ! ---------------------------------
+   ! Receive element counts from around (if we don't own any, ignore others too...)
+   ! ------------------------------------------------------------------------------
    ALLOCATE(Recv_Size(0:ParEnv % PEs-1))
    Recv_Size = 0
    DO i=0,ParEnv % PEs-1
      IF (i==ParEnv % myPE) CYCLE
-     CALL MPI_RECV( RadiationSurfaces,1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,status,ierr )
-     Recv_Size(i) = RadiationSurfaces
+     CALL MPI_RECV( Recv_Size(i),1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,status,ierr )
    END DO
+
+   ! If we are not participating in radiation or none else is, skip the rest
+   !-------------------------------------------------------------------------
+   IF (RadiationSurfaces==0 .OR. SUM(Recv_Size)==0 ) RETURN
 
    ! Receive surface elements
    ! ------------------------
-   n_Curr  = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
+   n_Curr  = ntot
    n_New   = SUM(Recv_Size) + n_Curr
-   IF ( n_new > n_Curr ) THEN
-     n_Coord = Mesh % NumberOfNodes
+   n_Coord = Mesh % NumberOfNodes
 
-     ! Re-allocate mesh structures to contain the received surface elements 
-     ! --------------------------------------------------------------------
-     BLOCK
-       TYPE(NeighbourList_t), POINTER :: x(:)
-       LOGICAL, POINTER :: y(:)
-       INTEGER, POINTER :: z(:)
-       REAL(KIND=dp), POINTER :: xc(:),yc(:),zc(:)
+   ! Re-allocate mesh structures to contain the received surface elements 
+   ! --------------------------------------------------------------------
+   BLOCK
+     TYPE(NeighbourList_t), POINTER :: x(:)
+     LOGICAL, POINTER :: y(:)
+     INTEGER, POINTER :: z(:)
+     REAL(KIND=dp), POINTER :: xc(:),yc(:),zc(:)
 
-       ALLOCATE( x(n_Coord + 4*SUM(Recv_Size)) )
-       x(1:n_Coord) = Mesh % ParallelInfo % NeighbourList
-       DO i=n_Coord+1, n_Coord + SUM(Recv_Size)
-         x(i) % Neighbours=> Null()
-       END DO
-       DEALLOCATE(Mesh % ParallelInfo % NeighbourList)
-       Mesh % ParallelInfo % NeighbourList => x
-
-       ALLOCATE( y(n_Coord + 4*SUM(Recv_Size)) )
-       y(1:n_Coord) = Mesh % ParallelInfo % Ginterface
-       DEALLOCATE( Mesh % ParallelInfo % Ginterface )
-       Mesh % ParallelInfo % Ginterface => y
-
-       ALLOCATE( z(n_Coord + 4*SUM(Recv_Size)) )
-       z(1:n_Coord) = Mesh % ParallelInfo % GlobalDofs
-       DEALLOCATE( Mesh % ParallelInfo % GlobalDofs )
-       Mesh % ParallelInfo % GlobalDofs => z
-
-       ALLOCATE( xc(n_Coord + SUM(Recv_Size)), &
-                 yc(n_Coord + SUM(Recv_Size)), &
-                 zc(n_Coord + SUM(Recv_Size)) )
-
-       xc(1:n_Coord) = Mesh % Nodes % x
-       yc(1:n_Coord) = Mesh % Nodes % y
-       zc(1:n_Coord) = Mesh % Nodes % z
-       DEALLOCATE( Mesh % Nodes % x, Mesh % Nodes % y, Mesh % Nodes % z)
-       Mesh % Nodes % x => xc
-       Mesh % Nodes % y => yc
-       Mesh % Nodes % z => zc
-     END BLOCK
-
-     ALLOCATE( newElements(n_New) )
-     newElements(1:n_Curr) = Mesh % Elements
-     DO i=1,Mesh % NumberOfBoundaryElements
-       Element => NewElements(i+Mesh % NumberOfBulkElements)
-       Bi => Element % BoundaryInfo
-       IF ( ASSOCIATED(Bi) ) THEN
-         IF(ASSOCIATED(Bi % Left))  BI % Left  => NewElements(Bi % Left % ElementIndex)
-         IF(ASSOCIATED(Bi % Right)) BI % Right => NewElements(Bi % Right % ElementIndex)
-       END IF
+     ALLOCATE( x(n_Coord + 4*SUM(Recv_Size)) )
+     x(1:n_Coord) = Mesh % ParallelInfo % NeighbourList
+     DO i=n_Coord+1, n_Coord + SUM(Recv_Size)
+       x(i) % Neighbours=> Null()
      END DO
-     DEALLOCATE(Mesh % Elements)
-     Mesh % Elements => newElements
+     DEALLOCATE(Mesh % ParallelInfo % NeighbourList)
+     Mesh % ParallelInfo % NeighbourList => x
 
-     ! Receive the elements from other partitions
-     ! ------------------------------------------
-     n = MAXVAL(Recv_Size)
-     ALLOCATE(Recv_Info(3*n), Recv_NodeInd(4*n), Recv_Coords(12*n), Recv_Nbr(4*n))
+     ALLOCATE( y(n_Coord + 4*SUM(Recv_Size)) )
+     y(1:n_Coord) = Mesh % ParallelInfo % Ginterface
+     DEALLOCATE( Mesh % ParallelInfo % Ginterface )
+     Mesh % ParallelInfo % Ginterface => y
 
-     n_Coord = Mesh % NumberOfNodes
-     DO i=0,ParEnv % PEs-1
-       IF (Recv_Size(i) <= 0) CYCLE
+     ALLOCATE( z(n_Coord + 4*SUM(Recv_Size)) )
+     z(1:n_Coord) = Mesh % ParallelInfo % GlobalDofs
+     DEALLOCATE( Mesh % ParallelInfo % GlobalDofs )
+     Mesh % ParallelInfo % GlobalDofs => z
 
-       CALL MPI_RECV( Recv_Info,3*Recv_Size(i),MPI_INTEGER,i,12001,ELMER_COMM_WORLD,status,ierr )
-       CALL MPI_RECV( Recv_NodeInd,4*Recv_Size(i),MPI_INTEGER,i,12002,ELMER_COMM_WORLD,status,ierr )
+     ALLOCATE( xc(n_Coord + SUM(Recv_Size)), &
+               yc(n_Coord + SUM(Recv_Size)), &
+               zc(n_Coord + SUM(Recv_Size)) )
 
-       CALL MPI_RECV( Recv_Nbr,4*Recv_Size(i),MPI_INTEGER,i,12003,ELMER_COMM_WORLD,status,ierr )
-       CALL MPI_GET_COUNT(status, MPI_INTEGER, n, ierr )
+     xc(1:n_Coord) = Mesh % Nodes % x
+     yc(1:n_Coord) = Mesh % Nodes % y
+     zc(1:n_Coord) = Mesh % Nodes % z
+     DEALLOCATE( Mesh % Nodes % x, Mesh % Nodes % y, Mesh % Nodes % z)
+     Mesh % Nodes % x => xc
+     Mesh % Nodes % y => yc
+     Mesh % Nodes % z => zc
+   END BLOCK
 
-       CALL MPI_RECV( Recv_Coords,12*Recv_Size(i),MPI_DOUBLE_PRECISION,&
-            i,12004,ELMER_COMM_WORLD,status,ierr )
+   ALLOCATE( newElements(n_New) )
+   newElements(1:n_Curr) = Mesh % Elements
+   DO i=1,Mesh % NumberOfBoundaryElements
+     Element => NewElements(i+Mesh % NumberOfBulkElements)
+     Bi => Element % BoundaryInfo
+     IF ( ASSOCIATED(Bi) ) THEN
+       IF(ASSOCIATED(Bi % Left))  BI % Left  => NewElements(Bi % Left % ElementIndex)
+       IF(ASSOCIATED(Bi % Right)) BI % Right => NewElements(Bi % Right % ElementIndex)
+     END IF
+   END DO
+   DEALLOCATE(Mesh % Elements)
+   Mesh % Elements => newElements
 
+   ! Receive the elements from other partitions
+   ! ------------------------------------------
+   n = MAXVAL(Recv_Size)
+   ALLOCATE(Recv_Info(3*n), Recv_NodeInd(4*n), Recv_Coords(12*n), Recv_Nbr(4*n))
 
-       ! Insert the received elements to the (already mostly re-allocated) mesh strucres
-       ! -------------------------------------------------------------------------------
-       n_Coord0 = n_Coord
+   n_Coord = Mesh % NumberOfNodes
+   DO i=0,ParEnv % PEs-1
+     IF (Recv_Size(i) <= 0) CYCLE
 
-       BLOCK
-         INTEGER, ALLOCATABLE :: Gdofs(:), Gorder(:)
+     CALL MPI_RECV( Recv_Info,3*Recv_Size(i),MPI_INTEGER,i,12001,ELMER_COMM_WORLD,status,ierr )
+     CALL MPI_RECV( Recv_NodeInd,4*Recv_Size(i),MPI_INTEGER,i,12002,ELMER_COMM_WORLD,status,ierr )
 
-         Gdofs = Mesh % ParallelInfo % GlobalDOFs
-         Gorder = [(j, j=1,n_Coord0)]
-         CALL Sorti(n_Coord0,Gdofs,Gorder)
+     CALL MPI_RECV( Recv_Nbr,4*Recv_Size(i),MPI_INTEGER,i,12003,ELMER_COMM_WORLD,status,ierr )
+     CALL MPI_GET_COUNT(status, MPI_INTEGER, n, ierr )
 
-         ! Insert nodes
-         ! ------------
-         DO j=1,n
+     CALL MPI_RECV( Recv_Coords,12*Recv_Size(i),MPI_DOUBLE_PRECISION,&
+          i,12004,ELMER_COMM_WORLD,status,ierr )
 
-           k = SearchNode(Mesh % ParallelInfo,Recv_Nbr(j),1,n_Coord0,Gorder)
-           IF(k>0) THEN
-             cPerm(j)=k;
+     ! Insert the received elements to the (already mostly re-allocated) mesh strucres
+     ! -------------------------------------------------------------------------------
+     n_Coord0 = n_Coord
 
-             IF(.NOT.ASSOCIATED(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)) STOP 'a'
+     BLOCK
+       INTEGER, ALLOCATABLE :: Gdofs(:), Gorder(:)
 
-             l = SIZE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
-             narr(1:l) = Mesh % ParallelInfo % NeighbourList(k) % Neighbours
+       Gdofs = Mesh % ParallelInfo % GlobalDOFs
+       Gorder = [(j, j=1,n_Coord0)]
+       CALL Sorti(n_Coord0,Gdofs,Gorder)
 
-             IF (ALL(narr(1:l) /= i)) THEN
-                l = l +1
-                narr(l) = i
-                DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
-                ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
-                Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
-             END IF
+       ! Insert nodes
+       ! ------------
+       DO j=1,n
 
-             IF (ALL(narr(1:l) /= ParEnv % myPE)) THEN
-                l = l +1
-                narr(l) = ParEnv % myPE
-                DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
-                ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
-                Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
-             END IF
+         k = SearchNode(Mesh % ParallelInfo,Recv_Nbr(j),1,n_Coord0,Gorder)
+         IF(k>0) THEN
+           cPerm(j)=k;
 
-             IF ( .NOT. Mesh % ParallelInfo % Ginterface(k)) THEN
-               Mesh % ParallelInfo % Ginterface(k) = .TRUE.
-               Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
-             END IF
-             CYCLE
+           IF(.NOT.ASSOCIATED(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)) STOP 'a'
+
+           l = SIZE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+           narr(1:l) = Mesh % ParallelInfo % NeighbourList(k) % Neighbours
+
+           IF (ALL(narr(1:l) /= i)) THEN
+             l = l +1
+             narr(l) = i
+             DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+             ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
+             Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
            END IF
 
-           n_Coord = n_Coord + 1
+           IF (ALL(narr(1:l) /= ParEnv % myPE)) THEN
+             l = l +1
+             narr(l) = ParEnv % myPE
+             DEALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours)
+             ALLOCATE(Mesh % ParallelInfo % NeighbourList(k) % Neighbours(l))
+             Mesh % ParallelInfo % NeighbourList(k) % Neighbours = narr(1:l)
+           END IF
 
-           cPerm(j)=n_Coord
-           Mesh % Nodes % x(n_Coord) = Recv_Coords(3*(j-1)+1)
-           Mesh % Nodes % y(n_Coord) = Recv_Coords(3*(j-1)+2)
-           Mesh % Nodes % z(n_Coord) = Recv_Coords(3*(j-1)+3)
+           IF ( .NOT. Mesh % ParallelInfo % Ginterface(k)) THEN
+             Mesh % ParallelInfo % Ginterface(k) = .TRUE.
+             Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
+           END IF
+           CYCLE
+         END IF
 
-           Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
-           Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
-           Mesh % ParallelInfo % GlobalDofs(n_Coord) = Recv_Nbr(j)
+         n_Coord = n_Coord + 1
 
-           IF(ASSOCIATED(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours)) STOP 'b'
+         cPerm(j)=n_Coord
+         Mesh % Nodes % x(n_Coord) = Recv_Coords(3*(j-1)+1)
+         Mesh % Nodes % y(n_Coord) = Recv_Coords(3*(j-1)+2)
+         Mesh % Nodes % z(n_Coord) = Recv_Coords(3*(j-1)+3)
 
-           ALLOCATE(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2))
-           Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(1) = i
-           Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2) = ParEnv % myPE
-         END DO
-       END BLOCK
+         Mesh % ParallelInfo % NumberOfIfDOFs = Mesh % ParallelInfo % NumberOfIfDOFs+1
+         Mesh % ParallelInfo % Ginterface(n_Coord) = .TRUE.
+         Mesh % ParallelInfo % GlobalDofs(n_Coord) = Recv_Nbr(j)
 
-       ! Insert elements
-       ! ---------------
-       k = 0
-       DO j=1,Recv_Size(i)
-         Element => Mesh % Elements(j+n_Curr)
+         IF(ASSOCIATED(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours)) STOP 'b'
 
-         Element % Type => GetElementType(Recv_Info(3*(j-1)+1))
-         n = Element % Type % NumberOfNodes
-
-         ALLOCATE(Element % BoundaryInfo)
-         Element % BoundaryInfo % Constraint = Recv_Info(3*(j-1)+2)
-         Element % BoundaryInfo % Left => Null()
-         Element % BoundaryInfo % Right => Null()
-
-         Element % PartIndex = i
-         Element % BodyId = 0
-         Element % ElementIndex  = j+n_Curr
-         Element % GElementIndex = Recv_Info(3*(j-1)+3)
-
-         ALLOCATE(Element % NodeIndexes(n))
-         Element % NodeIndexes = cPerm(Recv_NodeInd(k+1:k+n))
-         k = k + n
+         ALLOCATE(Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2))
+         Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(1) = i
+         Mesh % ParallelInfo % NeighbourList(n_Coord) % Neighbours(2) = ParEnv % myPE
        END DO
-       n_Curr = n_Curr + Recv_Size(i)
+     END BLOCK
+
+     ! Insert elements
+     ! ---------------
+     k = 0
+     DO j=1,Recv_Size(i)
+       Element => Mesh % Elements(j+n_Curr)
+
+       Element % Type => GetElementType(Recv_Info(3*(j-1)+1))
+       n = Element % Type % NumberOfNodes
+
+       ALLOCATE(Element % BoundaryInfo)
+       Element % BoundaryInfo % Constraint = Recv_Info(3*(j-1)+2)
+       Element % BoundaryInfo % Left => Null()
+       Element % BoundaryInfo % Right => Null()
+
+       Element % PartIndex = i
+       Element % BodyId = 0
+       Element % ElementIndex  = j+n_Curr
+       Element % GElementIndex = Recv_Info(3*(j-1)+3)
+
+       ALLOCATE(Element % NodeIndexes(n))
+       Element % NodeIndexes = cPerm(Recv_NodeInd(k+1:k+n))
+       k = k + n
      END DO
-   END IF
+     n_Curr = n_Curr + Recv_Size(i)
+   END DO
 
    Mesh % NumberOFnodes = n_Coord
 
- ! Try reset the owner of a node (first entry in the node's Neighbours-array)
- ! to some commonly knowable task
- ! ---------------------------------------------------------------------------
- BLOCK
-   INTEGER, ALLOCATABLE :: gCount(:)
+   ! Try reset the owner of a node (first entry in the node's Neighbours-array)
+   ! to some commonly knowable task
+   ! ---------------------------------------------------------------------------
+   BLOCK
+     INTEGER, ALLOCATABLE :: gCount(:)
 
-   ALLOCATE( gCount(Mesh % NumberOfNodes) )
-   gCount = 0
+     ALLOCATE( gCount(Mesh % NumberOfNodes) )
+     gCount = 0
 
-   DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
-     Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
-     IF ( .NOT. RadiationCheck(Element)) CYCLE
-     DO j=1,Element % Type % NumberOfNodes
-       n = Element % NodeIndexes(j)
-       gCount(n) = MAX(Element % GElementIndex,gCount(n))
-     END DO
-   END DO
-
-   DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
-
-     Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
-     IF ( .NOT. RadiationCheck(Element)) CYCLE
-
-     DO j=1,Element % Type % NumberOfNodes
-       n = Element % NodeIndexes(j)
-
-       IF ( Element % GElementIndex /= gCount(n)) CYCLE
-
-       DO k=1,SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours)
-         IF(Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) == Element % PartIndex) EXIT
+     DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
+       Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
+       IF ( .NOT. RadiationCheck(Element)) CYCLE
+       DO j=1,Element % Type % NumberOfNodes
+         n = Element % NodeIndexes(j)
+         gCount(n) = MAX(Element % GElementIndex,gCount(n))
        END DO
-       if ( k>SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours) ) stop 'fail0'
-
-       l = Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1)
-       Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1) = Element % PartIndex
-       Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) = l
-
-       if ( Element % PartIndex == parenv % mype) then
-          IF ( .NOT.ASSOCIATED(element % boundaryinfo % left ) ) stop 'fail1'
-          IF ( mesh % parallelinfo % neighbourlist(n) % neighbours(1) /= parenv % mype ) stop 'fail2'
-       end if
      END DO
-   END DO
- END BLOCK
+
+     DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
+
+       Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
+       IF ( .NOT. RadiationCheck(Element)) CYCLE
+
+       DO j=1,Element % Type % NumberOfNodes
+         n = Element % NodeIndexes(j)
+
+         IF ( Element % GElementIndex /= gCount(n)) CYCLE
+
+         DO k=1,SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours)
+           IF(Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) == Element % PartIndex) EXIT
+         END DO
+         if ( k>SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours) ) stop 'fail0'
+
+         l = Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1)
+         Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1) = Element % PartIndex
+         Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) = l
+
+         if ( Element % PartIndex == parenv % mype) then
+            IF ( .NOT.ASSOCIATED(element % boundaryinfo % left ) ) stop 'fail1'
+            IF ( mesh % parallelinfo % neighbourlist(n) % neighbours(1) /= parenv % mype ) stop 'fail2'
+         end if
+       END DO
+     END DO
+   END BLOCK
 
    Mesh % NumberOfBoundaryElements = Mesh % NumberOfBoundaryElements + SUM(Recv_Size)
 
@@ -2648,7 +2648,6 @@ CONTAINS
 
    nBulk = Mesh % NumberOfBulkElements
    RadiationSurfaces = 0
-
    ElementNumbers = 0
    CoordsFlag = .FALSE.
    DO i=1,Mesh % NumberOfBoundaryElements
