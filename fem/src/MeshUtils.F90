@@ -2588,10 +2588,10 @@ CONTAINS
    ! to some commonly knowable task
    ! ---------------------------------------------------------------------------
    BLOCK
+     INTEGER, POINTER :: Neighbours(:)
      INTEGER, ALLOCATABLE :: gCount(:)
 
-     ALLOCATE( gCount(Mesh % NumberOfNodes) )
-     gCount = 0
+     ALLOCATE( gCount(Mesh % NumberOfNodes) ); gCount = 0
 
      DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
        Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
@@ -2603,27 +2603,23 @@ CONTAINS
      END DO
 
      DO i=1,Mesh % NumberOfBoundaryElements+SUM(Recv_Size)
-
        Element => Mesh % Elements(i+Mesh % NumberOfBulkElements)
        IF ( .NOT. RadiationCheck(Element)) CYCLE
-
        DO j=1,Element % Type % NumberOfNodes
          n = Element % NodeIndexes(j)
 
          IF ( Element % GElementIndex /= gCount(n)) CYCLE
 
-         DO k=1,SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours)
-           IF(Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) == Element % PartIndex) EXIT
+         Neighbours => Mesh % ParallelInfo % NeighbourList(n) % Neighbours
+         DO k=1,SIZE(Neighbours)
+           IF(Neighbours(k) == Element % PartIndex) EXIT
          END DO
-         if ( k>SIZE(Mesh % ParallelInfo % NeighbourList(n) % Neighbours) ) stop 'fail0'
+         if ( k>SIZE(Neighbours) ) stop 'fail0'
 
-         l = Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1)
-         Mesh % ParallelInfo % NeighbourList(n) % Neighbours(1) = Element % PartIndex
-         Mesh % ParallelInfo % NeighbourList(n) % Neighbours(k) = l
-
+         l = Neighbours(1); Neighbours(1) = Element % PartIndex; Neighbours(k) = l
          if ( Element % PartIndex == parenv % mype) then
             IF ( .NOT.ASSOCIATED(element % boundaryinfo % left ) ) stop 'fail1'
-            IF ( mesh % parallelinfo % neighbourlist(n) % neighbours(1) /= parenv % mype ) stop 'fail2'
+            IF ( neighbours(1) /= parenv % mype ) stop 'fail2'
          end if
        END DO
      END DO
@@ -2634,13 +2630,13 @@ CONTAINS
 CONTAINS
 
  !------------------------------------------------------------------------------
- SUBROUTINE GetMeshRadiationSurfaceInfoA( Mesh, RadiationSurfaces, ElementNumbers, CoordsFlag )
+ SUBROUTINE GetMeshRadiationSurfaceInfoA(Mesh,RadiationSurfaces,ElementNumbers,CoordsFlag)
  !------------------------------------------------------------------------------
    IMPLICIT NONE
 
    TYPE(ValueList_t), POINTER :: BC
-   LOGICAL ::  CoordsFlag(:)
    INTEGER ::  ElementNumbers(:)
+   LOGICAL ::  CoordsFlag(:)
    TYPE(Mesh_t) :: Mesh
    INTEGER :: i,j,t,n, RadiationSurfaces, nbulk
    LOGICAL :: Found
