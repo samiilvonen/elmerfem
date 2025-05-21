@@ -391,7 +391,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
           dim, mdim )
       
       IF ( nb>0 ) THEN
-        CALL LCondensate( nd, nb, mdim, STIFF, FORCE )
+        CALL NSCondensate( nd, nb, mdim, STIFF, FORCE )
       END IF
 
       IF ( Transient ) THEN
@@ -917,47 +917,6 @@ CONTAINS
 
 !------------------------------------------------------------------------------
   END SUBROUTINE LocalBoundaryMatrix
-!------------------------------------------------------------------------------
-
-  
-!------------------------------------------------------------------------------
-    SUBROUTINE LCondensate( N, nb, dim, K, F )
-!------------------------------------------------------------------------------
-      USE LinearAlgebra
-      INTEGER :: N, nb, dim
-      REAL(KIND=dp) :: K(:,:),F(:), Kbb(Nb*dim,Nb*dim), &
-       Kbl(nb*dim,n*(dim+1)),Klb(n*(dim+1),nb*dim),Fb(nb*dim)
-
-      INTEGER :: m, i, j, l, p, Cdofs((dim+1)*n), Bdofs(dim*nb)
-
-      m = 0
-      DO p = 1,n
-        DO i = 1,dim+1
-          m = m + 1
-          Cdofs(m) = (dim+1)*(p-1) + i
-        END DO
-      END DO
-      
-      m = 0
-      DO p = 1,nb
-        DO i = 1,dim
-          m = m + 1
-          Bdofs(m) = (dim+1)*(p-1) + i + n*(dim+1)
-        END DO
-      END DO
-
-      Kbb = K(Bdofs,Bdofs)
-      Kbl = K(Bdofs,Cdofs)
-      Klb = K(Cdofs,Bdofs)
-      Fb  = F(Bdofs)
-
-      CALL InvertMatrix( Kbb,Nb*dim )
-
-      F(1:(dim+1)*n) = F(1:(dim+1)*n) - MATMUL( Klb, MATMUL( Kbb, Fb ) )
-      K(1:(dim+1)*n,1:(dim+1)*n) = &
-           K(1:(dim+1)*n,1:(dim+1)*n) - MATMUL( Klb, MATMUL( Kbb,Kbl ) )
-!------------------------------------------------------------------------------
-    END SUBROUTINE LCondensate
 !------------------------------------------------------------------------------
 
   
