@@ -2301,21 +2301,21 @@ CONTAINS
  END SUBROUTINE LoadMeshStep
 
  !------------------------------------------------------------------------------
- SUBROUTINE RadiationParallelMeshDistribute(Mesh)
+ SUBROUTINE RadiationParallelMeshDistribute(Mesh,nprocs)
  !------------------------------------------------------------------------------
    IMPLICIT NONE
 
  !------------------------------------------------------------------------------
    TYPE(Mesh_t) :: Mesh
+   INTEGER :: nprocs
 
    INTEGER :: RadiationSurfaces, n_New, n_Coord, n_Coord0, n_Curr, n_NodeInd, max_Coord
    LOGICAL :: Found
    INTEGER :: i,j,k,l,n,ntot,ierr, status(MPI_STATUS_SIZE), narr(ParEnv % PEs)
 
    REAL(KIND=dp), ALLOCATABLE :: Send_Coord(:), Recv_Coords(:)
-   INTEGER, ALLOCATABLE :: ElementNumbers(:), cPerm(:), &
-      Send_Info(:), Send_Ind(:), Recv_Size(:), Recv_Info(:), Recv_NodeInd(:), &
-          Send_Nbr(:), Recv_Nbr(:)
+   INTEGER, ALLOCATABLE :: ElementNumbers(:), Send_Info(:), Send_Ind(:), &
+      Recv_Size(:), Recv_Info(:), Recv_NodeInd(:), Send_Nbr(:), Recv_Nbr(:), cPerm(:)
    LOGICAL, ALLOCATABLE :: CoordsFlag(:)
 
    TYPE(BoundaryInfo_t), POINTER :: Bi
@@ -2383,13 +2383,12 @@ CONTAINS
        Send_Ind(n_NodeInd+1:n_NodeInd+n) = cPerm(Element % NodeIndexes)
        n_NodeInd = n_NodeInd + n
      END DO
+     CALL CheckBuffer(ParEnv % PEs*(3*RadiationSurfaces+n_NodeInd+8*n_Coord+MPI_BSEND_OVERHEAD))
    END IF
 
    ! Distribute the extracted information
    ! ------------------------------------
-   CALL CheckBuffer(ParEnv % PEs*(3*RadiationSurfaces+n_NodeInd+8*n_Coord+MPI_BSEND_OVERHEAD))
-
-   DO i=0,ParEnv % PEs-1
+   DO i=0,nprocs-1
      IF (i==ParEnv % myPE) CYCLE
 
      CALL MPI_BSEND( RadiationSurfaces,1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,ierr )
@@ -2405,7 +2404,7 @@ CONTAINS
    ! ------------------------------------------------------------------------------
    ALLOCATE(Recv_Size(0:ParEnv % PEs-1))
    Recv_Size = 0
-   DO i=0,ParEnv % PEs-1
+   DO i=0,nprocs-1
      IF (i==ParEnv % myPE) CYCLE
      CALL MPI_RECV( Recv_Size(i),1,MPI_INTEGER,i,12000,ELMER_COMM_WORLD,status,ierr )
    END DO
@@ -2478,7 +2477,7 @@ CONTAINS
    ALLOCATE(Recv_Info(3*n), Recv_NodeInd(4*n), Recv_Coords(12*n), Recv_Nbr(4*n))
 
    n_Coord = Mesh % NumberOfNodes
-   DO i=0,ParEnv % PEs-1
+   DO i=0,nprocs-1
      IF (Recv_Size(i) <= 0) CYCLE
 
      CALL MPI_RECV( Recv_Info,3*Recv_Size(i),MPI_INTEGER,i,12001,ELMER_COMM_WORLD,status,ierr )
@@ -2865,7 +2864,7 @@ CONTAINS
 
    CALL Info(Caller,'Preparing mesh done',Level=8)
 
-   IF( Parallel ) CALL RadiationParallelMeshDistribute(Mesh)
+   IF( Parallel ) CALL RadiationParallelMeshDistribute(Mesh, NumProcs)
    
  CONTAINS
 
