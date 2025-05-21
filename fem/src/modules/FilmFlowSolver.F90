@@ -458,14 +458,15 @@ CONTAINS
       IF(.NOT. Found) MinRe = 4000.0_dp
       Visited = .TRUE.
     END IF
-    
-    Re = v*D*rho/nu
+
+    ! The division by 2 fixes the inconsistancy between two scientific communities.
+    Re = v*(D/2)*rho/nu
 
     IF(Re < MinRe) THEN
       Re = MinRe
       ! Enforce also the speed to be compatible with the min Re number!
       ! Note: this has effect also outside this routine!
-      v = Re * nu / (D * rho) 
+      v = Re * nu / ((D/2) * rho) 
     END IF      
     
     A = Re * eps / 8.0897
