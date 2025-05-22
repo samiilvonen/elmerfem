@@ -1071,7 +1071,7 @@
     IMPLICIT NONE
     INTEGER :: ipar(*)  ! parameters for Hutiter
     REAL(KIND=dp) u(*)  ! new solution
-    REAL(KIND=dp) v(*)  ! right-hand-side
+    REAL(KIND=dp) v(*)  ! right-hand side
 !-------------------------------------------------------------------------------
     TYPE(Solver_t), POINTER :: Solver
     TYPE(ValueList_t), POINTER :: Params
@@ -1142,9 +1142,9 @@
 !-------------------------------------------------------------------------------
     USE DefUtils
     IMPLICIT NONE
-    INTEGER :: ipar(*)  ! parameters for Hutiter
-    COMPLEX(KIND=dp) u(*)  ! new solution
-    COMPLEX(KIND=dp) v(*)  ! right-hand-side
+    COMPLEX(KIND=dp) u(*)  ! the correction returned to create a new solution
+    COMPLEX(KIND=dp) v(*)  ! right-hand side (the current residual)
+    INTEGER :: ipar(*)  ! parameters for HutIter
 !-------------------------------------------------------------------------------
     TYPE(Solver_t), POINTER :: Solver
     TYPE(ValueList_t), POINTER :: Params
@@ -1153,7 +1153,7 @@
     TYPE(Matrix_t), POINTER :: Amat
     REAL(KIND=dp), POINTER :: b(:), x(:), r(:)
     REAL(KIND=dp) :: rnorm
-    LOGICAL :: Found
+    LOGICAL :: Found, ScaleRHS
     CHARACTER(MAX_NAME_LEN) :: str   
     INTEGER :: n
 !-------------------------------------------------------------------------------
@@ -1168,7 +1168,7 @@
     IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrecComplex','Could not find: '//TRIM(str))
     n = SIZE(pVar % Values)   
     IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
-      CALL Fatal('SlavePrecComplex','Residual should have same size as primary variable!')
+      CALL Fatal('SlavePrecComplex','Residual should have the same count of DOFs as primary variable!')
     END IF
     IF(n /= SIZE(Solver % Variable % Values) ) THEN
       CALL Fatal('SlavePrecComplex','Residual should have same size as primary variable!')
@@ -1177,6 +1177,24 @@
 
     b(1:n:2) = REAL(v(1:n/2))
     b(2:n:2) = AIMAG(v(1:n/2))
+
+    ! Check whether the residual corresponds to a scaled linear system
+    ScaleRHS = ListGetLogical(Params, 'Linear System Scaling', Found, DefValue = .TRUE.)
+    IF (ScaleRHS) THEN
+      !
+      ! Perform back-scaling
+      !
+      SELECT CASE(AMat % ScalingMethod)
+      CASE(1)
+        b(1:n) = b(1:n) / AMat % DiagScaling(1:n) * AMat % RhsScaling
+      CASE(2)
+        b(1:n) = b(1:n) / AMat % DiagScaling(1:n)
+      CASE(3)
+        b(1:n) = AMat % RhsScaling * b(1:n)
+      CASE DEFAULT
+        CALL Fatal('SlavePrec', 'Unknown back-scaling method for residual') 
+      END SELECT
+    END IF
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
     
@@ -1184,13 +1202,33 @@
     pVar => VariableGet( Mesh % Variables, str )    
     IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrec','Could not find: '//TRIM(str))
     IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
-      CALL Fatal('SlavePrecComplex','Update should have same size as primary variable!')
+      CALL Fatal('SlavePrecComplex','Update should have the same count of DOFs as primary variable!')
     END IF
+    n = SIZE(pVar % Values)
     IF(n /= SIZE(Solver % Variable % Values) ) THEN
       CALL Fatal('SlavePrecComplex','Update should have same size as primary variable!')
     END IF
 
     x => pVar % Values
+
+    IF (ScaleRHS) THEN
+      !
+      ! Transform the search direction so that it corresponds to the scaled linear system
+      !
+      SELECT CASE(AMat % ScalingMethod)
+      CASE(1)
+        x(1:n) = x(1:n) / (AMat % DiagScaling(1:n) * AMat % RhsScaling)
+        b(1:n) = AMat % DiagScaling(1:n) * b(1:n) / AMat % RhsScaling
+      CASE(2)
+        b(1:n) = AMat % DiagScaling(1:n) * b(1:n)
+      CASE(3)
+        x(1:n) = AMat % AveScaling * x(1:n) / AMat % RhsScaling
+        b(1:n) = b(1:n) / AMat % RhsScaling
+      CASE DEFAULT
+        CALL Fatal('SlavePrec', 'Unknown scaling method for update direction') 
+      END SELECT
+      
+    END IF
     
     IF( ListCheckPresent( Params,'MG Smoother') ) THEN      
       ALLOCATE(r(n))

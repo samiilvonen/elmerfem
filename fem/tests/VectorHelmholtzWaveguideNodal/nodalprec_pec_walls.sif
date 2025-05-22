@@ -4,7 +4,6 @@
 !
 ! Issues for the current implementation:
 !   - Monolithic Solver = Logical True needed
-!   - disable the linear system scalings
 
 Check Keywords "Warn"
 
@@ -49,15 +48,15 @@ Solver 1
   Use Piola Transform = True
   Second Kind Basis = False
   Linear System Symmetric = False
-  Linear System Scaling = False
-  Block Scaling = False
+  Linear System Scaling = True
+  Linear System Row Equilibration = True
 
   Linear System Solver = String "Iterative"
   Linear System Iterative Method = String "gcr"
   Linear System Convergence Tolerance = 1.0e-5
   Linear System Residual Output = 1
   Linear system abort not converged = false
-  Linear System Max Iterations = 200
+  Linear System Max Iterations = 100
   Linear System Complex = True
   Linear System Preconditioning = "slave"
 
@@ -87,7 +86,7 @@ Solver 2
   Edge Solution Name = String "e update"
 
   Linear System Symmetric = False
-  Linear System Scaling = False
+  Linear System Scaling = True
   Linear System Solver = "Iterative"
   Linear System Iterative Method = String "bicgstab2"
   Linear System Complex = True
