@@ -2325,6 +2325,7 @@ CONTAINS
 
    IF(ParEnv % PEs <= 1) RETURN
 
+
    ! Get surface elements participating in radiative heat transfer
    ! -------------------------------------------------------------
    ntot = Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
@@ -2384,6 +2385,8 @@ CONTAINS
        n_NodeInd = n_NodeInd + n
      END DO
      CALL CheckBuffer(ParEnv % PEs*(3*RadiationSurfaces+n_NodeInd+8*n_Coord+MPI_BSEND_OVERHEAD))
+   ELSE
+     CALL CheckBuffer(1024+MPI_BSEND_OVERHEAD) ! just something
    END IF
 
    ! Distribute the extracted information
