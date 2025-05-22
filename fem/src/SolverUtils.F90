@@ -13263,24 +13263,18 @@ END FUNCTION SearchNodeL
 
           IF( bnorm < SQRT( TINY( bnorm ) ) ) THEN
             CALL Info('ScaleLinearSystem','Rhs vector is almost zero, skipping rhs scaling!',Level=20)
-            DoRhs = .FALSE.
-            bnorm = 1.0_dp
+          ELSE
+            A % RhsScaling = bnorm
+            Diag(1:n) = Diag(1:n) * bnorm
+            b(1:n) = b(1:n) / bnorm
           END IF
-        ELSE
-          bnorm = 1.0_dp
-        END IF
-
-        A % RhsScaling = bnorm
-
-        IF( DoRhs ) THEN
-          Diag(1:n) = Diag(1:n) * bnorm
-          b(1:n) = b(1:n) / bnorm
-        END IF
-
-        IF( PRESENT( x) ) THEN
-          x(1:n) = x(1:n) / Diag(1:n)
         END IF
       END IF
+      
+      IF( PRESENT(x) ) THEN
+        x(1:n) = x(1:n) / Diag(1:n)
+      END IF
+      
     END SUBROUTINE ScaleLinearSystemDiagonal
 
 
@@ -13386,7 +13380,7 @@ END FUNCTION SearchNodeL
         END IF
       END IF
       
-      IF( PRESENT( x) ) THEN
+      IF( PRESENT(x) ) THEN
         Xscl = Bscl / Ascl
         x(1:n) = x(1:n) / Xscl 
       END IF
@@ -13606,14 +13600,15 @@ END FUNCTION SearchNodeL
         CALL Fatal('BackScaleLinearSystem','Diag of wrong size!')
       END IF
 
+      ! TODO: Add threading
+      ! 
+      !      Solve x:  INV(D)x = y
+      !      -------------------------------------------
+      IF( PRESENT( x ) ) THEN
+        x(1:n) = x(1:n) * Diag(1:n)
+      END IF
+      
       IF( PRESENT( b ) ) THEN
-        ! TODO: Add threading
-        ! 
-        !      Solve x:  INV(D)x = y, scale b back to orig
-        !      -------------------------------------------
-        IF( PRESENT( x ) ) THEN
-          x(1:n) = x(1:n) * Diag(1:n)
-        END IF
         bnorm = A % RhsScaling
         Diag(1:n) = Diag(1:n) / bnorm
         b(1:n) = b(1:n) / Diag(1:n) * bnorm
@@ -13725,10 +13720,11 @@ END FUNCTION SearchNodeL
       Bscl = A % RhsScaling
       Xscl = Bscl / Ascl
 
+      IF( PRESENT( x ) ) THEN
+        x(1:n) = x(1:n) * Xscl 
+      END IF
+
       IF( PRESENT( b ) ) THEN
-        IF( PRESENT( x ) ) THEN
-          x(1:n) = x(1:n) * Xscl 
-        END IF
         b(1:n) = Bscl * b(1:n) 
       END IF
 

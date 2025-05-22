@@ -283,8 +283,18 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
 
     CALL DefaultFinishBoundaryAssembly()
     CALL DefaultFinishAssembly()
-    CALL DefaultDirichletBCs()
 
+    IF( Monolithic ) THEN
+      CALL DefaultDirichletBCs()
+    ELSE
+      DO i=1,2
+        sname = ComponentName( EF,2*(compi-1)+i) 
+        CALL SetDirichletBoundaries( CurrentModel, Solver % Matrix, Solver % Matrix % rhs, &
+            sname, i, 2, Solver % Variable % Perm )
+      END DO
+      CALL EnforceDirichletConditions( Solver, Solver % Matrix, Solver % Matrix % rhs )
+    END IF
+          
     ! And finally, solve:
     !--------------------
     IF( Segregated) THEN

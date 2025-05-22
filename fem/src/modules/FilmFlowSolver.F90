@@ -125,6 +125,16 @@ SUBROUTINE FilmFlowSolver_init(Model, Solver, dt, Transient)
   ! Use global mass matrix in time integration
   CALL ListAddNewLogical(Params, 'Global Mass Matrix', .TRUE.)
 
+   
+  IF (ListGetLogical(Params,'Calculate Friction Heating',Found)) THEN
+    CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+        'FilmFriction HeatFlux' )
+    CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
+        'FilmFriction Energy' )
+  END IF
+
+  
+  
 !------------------------------------------------------------------------------ 
 END SUBROUTINE FilmFlowSolver_Init
 !------------------------------------------------------------------------------
@@ -146,24 +156,25 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   LOGICAL :: AllocationsDone = .FALSE., Newton = .FALSE., Found, Convect, CSymmetry
   TYPE(Element_t),POINTER :: Element
   INTEGER :: i,n, nb, nd, t, istat, dim, mdim, BDOFs=1,Active,iter,maxiter,CoupledIter
-  REAL(KIND=dp) :: Norm = 0, mingap, Grav
+  REAL(KIND=dp) :: Norm = 0, mingap, Grav, time, time0=-1.0_dp, MeltHeat
   TYPE(ValueList_t), POINTER :: Params, BodyForce, Material, BC
   TYPE(Mesh_t), POINTER :: Mesh
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:,:), &
       FORCE(:), rho(:), gap(:), gap0(:), mu(:), ac(:), height(:), Pres(:), Velocity(:,:), MASS(:,:),&
       PrevPressure(:), FsiRhs(:,:), PrevGap(:)
-  REAL(KIND=dp), POINTER :: gWork(:,:)
-  LOGICAL :: GradP, LateralStrain, GotAc, SurfAc, UsePrevGap, GotGrav, GotHeight
-  TYPE(Variable_t), POINTER :: pVar, thisVar
+  REAL(KIND=dp), POINTER :: gWork(:,:), FrictionEnergy(:), FrictionHeatFlux(:), FrictionW(:)
+  LOGICAL :: GradP, LateralStrain, GotAc, SurfAc, UsePrevGap, GotGrav, GotHeight, CalcHeating, &
+      UseHeating, DoneWeight = .FALSE.
+  TYPE(Variable_t), POINTER :: pVar, thisVar, hVar
   INTEGER :: GapDirection, FrictionModel 
-  REAL(KIND=dp) :: GapFactor, Nm
+  REAL(KIND=dp) :: GapFactor, Nm, TotHeating
   CHARACTER(:), ALLOCATABLE :: str
   CHARACTER(*), PARAMETER :: Caller = 'FilmFlowSolver'
   LOGICAL :: Debug
   
   SAVE STIFF, MASS, LOAD, FORCE, rho, ac, gap, gap0, mu, height, Pres, Velocity, &
       PrevPressure, AllocationsDone, pVar, GotAc, SurfAC, FsiRhs, PrevGap, &
-      FrictionModel 
+      FrictionModel, time0, hVar, FrictionEnergy, FrictionHeatFlux, FrictionW
 !------------------------------------------------------------------------------
 
   CALL Info(Caller,'Computing reduced dimensional Navier-Stokes equations!')
@@ -231,8 +242,12 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
     IF(.NOT. GotGrav) CALL Fatal(Caller,'Manning equation not possible without gravity!')
     IF(CSymmetry) CALL Fatal(Caller,'Manning equation not applicable to axial symmetry!')
   END IF
+
+
+  CalcHeating = ListGetLogical(Params,'Calculate Friction Heating',Found)
+  UseHeating = ListGetLogical(Params,'Friction Heating Source',Found)
     
-  
+
   ! Allocate some permanent storage, this is done first time only:
   !--------------------------------------------------------------
   IF ( .NOT. AllocationsDone ) THEN
@@ -266,9 +281,31 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       ALLOCATE(PrevGap(n))
       PrevGap = 0.0_dp
     END IF
+
+    IF(CalcHeating) THEN
+      CALL Info(Caller,'Registering friction heat flux and total energy production')
+      hVar => VariableGet( Mesh % Variables,'FilmFriction HeatFlux')
+      FrictionHeatFlux => hVar % Values
+      hVar => VariableGet( Mesh % Variables,'FilmFriction Energy')
+      FrictionEnergy => hVar % Values
+      ALLOCATE(FrictionW(SIZE(FrictionHeatFlux)))
+    END IF
+    
     AllocationsDone = .TRUE.
   END IF
 
+  IF( CalcHeating ) THEN
+    ! If we are visiting the same timestep several times only compute the nodal heat flux once.
+    time = GetTime()
+    IF(ABS(time-time0) < TINY(time)) THEN
+      FrictionEnergy = FrictionEnergy - dt * FrictionHeatFlux 
+    END IF
+    time0 = time
+    FrictionHeatFlux = 0.0_dp
+    IF(.NOT. DoneWeight) FrictionW = 0.0_dp
+  END IF
+
+  
   IF(GotAc) THEN  
     PrevPressure = pVar % Values
     FsiRhs = 0.0_dp
@@ -277,6 +314,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   maxiter = ListGetInteger( Params,'Nonlinear System Max Iterations',Found,minv=1)
   IF(.NOT. Found ) maxiter = 1
 
+  ! Because the heating uses previous values of velocity we need at least two iterations!
+  IF (CalcHeating) maxiter = MAX(2,maxiter)
+
+  
   DO iter=1,maxiter    
     !Initialize the system and do the assembly:
     !----------------
@@ -317,7 +358,10 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
         nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
       END IF
 
-      
+      IF(UseHeating) THEN
+        MeltHeat = ListGetConstReal( Material, 'Latent Heat', UnFoundFatal=.TRUE.) 
+      END IF
+              
       WHERE(gap(1:n) < mingap )
         gap(1:n) = mingap
       END WHERE
@@ -347,7 +391,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
           dim, mdim )
       
       IF ( nb>0 ) THEN
-        CALL LCondensate( nd, nb, mdim, STIFF, FORCE )
+        CALL NSCondensate( nd, nb, mdim, STIFF, FORCE )
       END IF
 
       IF ( Transient ) THEN
@@ -371,7 +415,9 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
         IF(sfsi < sorig) coeff = 1.0_dp
 
         ! Just report incoming and outgoing total fluxes
-        PRINT *,'RHSComp:',sorig,sfsi,coeff
+        IF(InfoActive(20)) THEN
+          PRINT *,'RHSComp:',sorig,sfsi,coeff
+        END IF
       END BLOCK
     END IF
       
@@ -417,10 +463,46 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
   CALL DefaultFinish()
 
+  IF( CalcHeating ) THEN   
+    BLOCK
+      REAL(KIND=dp) :: TotFlux, Area, cfix
+
+      TotFlux = SUM(FrictionHeatFlux)
+      IF ( ParEnv % PEs > 1) THEN
+        ! In parallel we need to sum up the terms at shared nodes. 
+        CALL ParallelSumNodalVector( Mesh, FrictionHeatFlux, HVar % Perm )
+        IF(.NOT. DoneWeight ) THEN
+          CALL ParallelSumNodalVector( Mesh, FrictionW, HVar % Perm )
+        END IF
+        TotFlux = ParallelReduction(TotFlux)
+      END IF
+      DoneWeight = .TRUE.
+
+      WHERE(FrictionW > 0.0_dp )
+        FrictionHeatFlux = FrictionHeatFlux / FrictionW
+      END WHERE
+
+      ! This is just a tentative feature that would allow finding of steady state
+      ! solutions. Not usuful generally. 
+      IF(ListGetLogical(Params,'Enforce Zero Heating', Found ) ) THEN
+        Area = ParallelReduction( SUM( FrictionW ) )
+        cfix = -TotFlux / Area
+        FrictionHeatFlux = FrictionHeatFlux + cfix
+      END IF
+
+      ! Total dissipated heat over time. 
+      FrictionEnergy = FrictionEnergy + dt * FrictionHeatFlux 
+
+      WRITE(Message,'(A,ES12.5)') 'Total friction heating power: ',TotFlux
+      CALL Info(Caller, Message, Level=7)
+    END BLOCK
+  END IF
+  
+
   BLOCK
     REAL(KIND=dp), POINTER :: Comp(:)
 
-    IF( InfoActive(10) ) THEN
+    IF( InfoActive(12) ) THEN
       n = SIZE(pVar % Values)
       DO i=1, Solver % Variable % dofs
         Comp => Solver % Variable % Values(i::Solver % Variable % Dofs)      
@@ -458,14 +540,15 @@ CONTAINS
       IF(.NOT. Found) MinRe = 4000.0_dp
       Visited = .TRUE.
     END IF
-    
-    Re = v*D*rho/nu
+
+    ! The division by 2 fixes the inconsistancy between two scientific communities.
+    Re = v*(D/2)*rho/nu
 
     IF(Re < MinRe) THEN
       Re = MinRe
       ! Enforce also the speed to be compatible with the min Re number!
       ! Note: this has effect also outside this routine!
-      v = Re * nu / (D * rho) 
+      v = Re * nu / ((D/2) * rho) 
     END IF      
     
     A = Re * eps / 8.0897
@@ -497,7 +580,7 @@ CONTAINS
     INTEGER :: t, i, j, k, l, p, q, geomc
     TYPE(GaussIntegrationPoints_t) :: IP
     REAL(KIND=dp) :: mu = 1.0d0, rho = 1.0d0, pres, gap, gap0, gap2, gapi, &
-        ac, s, s0, s1, MinPres, MuCoeff, MinSpeed
+        ac, s, s0, s1, MinPres, MuCoeff, MinSpeed, Speed
     LOGICAL :: Visited = .FALSE.
     
     TYPE(Nodes_t) :: Nodes
@@ -590,6 +673,7 @@ CONTAINS
        !--------------------------------------------
        Velo = MATMUL( NodalVelo(1:mdim,1:nd), Basis(1:nd) )
        VeloGrad = MATMUL( NodalVelo(1:mdim,1:nd), dBasisdx(1:nd,1:mdim) )
+       Speed = SQRT(SUM(Velo(1:mdim)**2))
        
        IF( GotAC ) THEN
          ac = SUM( NodalAC(1:n) * Basis(1:n) ) / dt
@@ -623,8 +707,8 @@ CONTAINS
        SELECT CASE( FrictionModel )
        CASE( 1, 2 ) 
          BLOCK
-           REAL(KIND=dp) :: Speed, D, R, fd, GradZphi2
-           Speed = MAX(MinSpeed,SQRT(SUM(Velo**2)))
+           REAL(KIND=dp) :: D, R, fd, GradZphi2
+           Speed = MAX(MinSpeed,Speed)
            ! for a cross-section that is uniform along the tube or channel length, the wetted diameter is defined as Dh=4*A/P
            ! where A is the cross-sectional area of the flow, and P is the wetted perimeter of the cross-section, see
            ! https://en.wikipedia.org/wiki/Hydraulic_diameter
@@ -723,8 +807,23 @@ CONTAINS
          
          ! Additional body force from FSI velocity
          F(mdim+1) = F(mdim+1) - s * rho * Basis(p) * LoadAtIp(mdim+2) 
-       END DO
 
+         IF(UseHeating) THEN
+           ! Additional source term from friction melting.
+           F(1:mdim+1) = F(1:mdim+1) + s * Basis(p) * MuCoeff * Speed / MeltHeat 
+         END IF
+       END DO
+         
+       IF( CalcHeating ) THEN
+         FrictionHeatFlux(hVar % Perm(Element % NodeIndexes)) = &
+             FrictionHeatFlux(hVar % Perm(Element % NodeIndexes)) + s * Basis(1:n) * MuCoeff * Speed
+         IF(.NOT. DoneWeight) THEN
+           ! We compute the normalization weight.
+           FrictionW(hVar % Perm(Element % NodeIndexes)) = &
+               FrictionW(hVar % Perm(Element % NodeIndexes)) + s * Basis(1:n)
+         END IF
+       END IF
+         
        ! These are just recorded in order to study the total forced
        ! and induced (by FSI coupling) fluxes. 
        IF(GotAC) THEN
@@ -818,47 +917,6 @@ CONTAINS
 
 !------------------------------------------------------------------------------
   END SUBROUTINE LocalBoundaryMatrix
-!------------------------------------------------------------------------------
-
-  
-!------------------------------------------------------------------------------
-    SUBROUTINE LCondensate( N, nb, dim, K, F )
-!------------------------------------------------------------------------------
-      USE LinearAlgebra
-      INTEGER :: N, nb, dim
-      REAL(KIND=dp) :: K(:,:),F(:), Kbb(Nb*dim,Nb*dim), &
-       Kbl(nb*dim,n*(dim+1)),Klb(n*(dim+1),nb*dim),Fb(nb*dim)
-
-      INTEGER :: m, i, j, l, p, Cdofs((dim+1)*n), Bdofs(dim*nb)
-
-      m = 0
-      DO p = 1,n
-        DO i = 1,dim+1
-          m = m + 1
-          Cdofs(m) = (dim+1)*(p-1) + i
-        END DO
-      END DO
-      
-      m = 0
-      DO p = 1,nb
-        DO i = 1,dim
-          m = m + 1
-          Bdofs(m) = (dim+1)*(p-1) + i + n*(dim+1)
-        END DO
-      END DO
-
-      Kbb = K(Bdofs,Bdofs)
-      Kbl = K(Bdofs,Cdofs)
-      Klb = K(Cdofs,Bdofs)
-      Fb  = F(Bdofs)
-
-      CALL InvertMatrix( Kbb,Nb*dim )
-
-      F(1:(dim+1)*n) = F(1:(dim+1)*n) - MATMUL( Klb, MATMUL( Kbb, Fb ) )
-      K(1:(dim+1)*n,1:(dim+1)*n) = &
-           K(1:(dim+1)*n,1:(dim+1)*n) - MATMUL( Klb, MATMUL( Kbb,Kbl ) )
-!------------------------------------------------------------------------------
-    END SUBROUTINE LCondensate
 !------------------------------------------------------------------------------
 
   
