@@ -985,7 +985,7 @@
 
        IF(.NOT. AllocDone .OR. UpdateViewFactors) THEN
          IF (UseFullMatrix) THEN
-           IF (ALLOCATED(G_full)) CALL DEALLOCATE(G_full)
+           IF (ALLOCATED(G_full)) DEALLOCATE(G_full)
            ALLOCATE(G_full(n,n)); G_full = 0.0_dp
          ELSE
            IF(ASSOCIATED(G)) CALL FreeMatrix(G)
