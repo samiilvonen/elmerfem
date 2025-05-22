@@ -2255,11 +2255,10 @@
 
        ! Distribute the linear system result
        BLOCK
-         INTEGER :: Status(MPI_STATUS_SIZE), ierr, SendInfo(n), RecvInfo(n)
+         INTEGER :: sz, Status(MPI_STATUS_SIZE), ierr, SendInfo(n), RecvInfo(n)
          REAL(KIND=dp) :: y(n)
          INTEGER, ALLOCATABLE :: RecvPerm(:)
 
-         ALLOCATE(RecvPerm(Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements))
 
          IF(ParEnv % myPE==FirstActive ) THEN
            DO i=1,n
@@ -2277,6 +2276,12 @@
            CALL MPI_RECV( y,n,MPI_DOUBLE_PRECISION,FirstActive,12007,ELMER_COMM_WORLD,status,ierr )
 
            ! create a permutation for finding the correct place for the result ...
+           sz  = 0
+           DO i=Mesh % NumberOfBulkElements+1,Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements
+             sz = MAX(sz, Mesh % Elements(i) % GelementIndex)
+           END DO
+
+           ALLOCATE(RecvPerm(sz))
            DO i=1,n
              Element => Mesh % Elements(ElementNumbers(i))
              RecvPerm(Element % GelementIndex) = i
