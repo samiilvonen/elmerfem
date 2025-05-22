@@ -285,14 +285,14 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     CALL DefaultFinishAssembly()
 
     IF( Monolithic ) THEN
-      sname = "XYZ"
-      CALL SetDirichletBoundaries( CurrentModel, Solver % Matrix, Solver % Matrix % rhs, &
-          'PE'//sname(compi:compi)//' re', 1, 2, Solver % Variable % Perm )
-      CALL SetDirichletBoundaries( CurrentModel, Solver % Matrix, Solver % Matrix % rhs, &
-          'PE'//sname(compi:compi)//' im', 2, 2, Solver % Variable % Perm )
-      CALL EnforceDirichletConditions( Solver, Solver % Matrix, Solver % Matrix % rhs )
-    ELSE
       CALL DefaultDirichletBCs()
+    ELSE
+      DO i=1,2
+        sname = ComponentName( EF,2*(compi-1)+i) 
+        CALL SetDirichletBoundaries( CurrentModel, Solver % Matrix, Solver % Matrix % rhs, &
+            sname, i, 2, Solver % Variable % Perm )
+      END DO
+      CALL EnforceDirichletConditions( Solver, Solver % Matrix, Solver % Matrix % rhs )
     END IF
           
     ! And finally, solve:
