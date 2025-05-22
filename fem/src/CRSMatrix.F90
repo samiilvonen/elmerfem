@@ -227,7 +227,7 @@ CONTAINS
         !$OMP PARALLEL DO DEFAULT(NONE) &
         !$OMP SHARED(Diag, Rows, Cols, N) &
         !$OMP PRIVATE(i,j)
-        DO i=1,N
+        DO i=1,n
           DO j=Rows(i),Rows(i+1)-1
             IF ( Cols(j) == i ) THEN
               Diag(i) = j
@@ -737,8 +737,8 @@ CONTAINS
      REAL(KIND=dp), OPTIONAL, TARGET :: GlobalValues(:)
 !------------------------------------------------------------------------------ 
      INTEGER :: i,j,k,l,c,Row,Col
-     INTEGER, POINTER :: Cols(:),Rows(:),Diag(:)
      REAL(KIND=dp), POINTER :: Values(:)
+     INTEGER, POINTER :: Cols(:),Rows(:),Diag(:)
 !------------------------------------------------------------------------------
 
      Diag   => A % Diag
@@ -751,13 +751,14 @@ CONTAINS
      END IF
 
      IF ( Dofs == 1 ) THEN
-       DO i=1,N
+       DO i=1,n
          Row = Indeces(i)
          IF ( Row <=0 ) CYCLE
-         DO j=1,N
+         IF ( Diag(Row) <= 0) CYCLE
+         DO j=1,n
            Col = Indeces(j)
            IF ( Col <= 0 ) CYCLE
-           IF ( Col >= Row ) THEN
+           IF (Col >= Row ) THEN
              DO c=Diag(Row),Rows(Row+1)-1
                IF ( Cols(c) == Col ) THEN
 !$omp atomic
@@ -781,6 +782,7 @@ CONTAINS
           DO k=0,Dofs-1
              IF ( Indeces(i) <= 0 ) CYCLE
              Row  = Dofs * Indeces(i) - k
+             IF ( Diag(Row) <= 0)  CYCLE
              DO j=1,N
                 DO l=0,Dofs-1
                    IF ( Indeces(j) <= 0 ) CYCLE
