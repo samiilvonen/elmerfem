@@ -13038,8 +13038,12 @@ END FUNCTION SearchNodeL
   CONTAINS
 
     !-------------------------------------------------------------
-    !>  Scale system Ax = b as:
-    !>  (DAD)y = Db, where D = 1/SQRT(Diag(A)), and y = D^-1 x
+    !> Scale system Ax = b as (DAD)y = Db, where
+    !> D = 1/SQRT(Diag(A)) and y = D^-1 x. By default, if the scaled
+    !> system is rewritten as A'y = b', this subroutine also performs
+    !> an additional scaling so that the final form is given by
+    !> A'(y/|b'|) = b'/|b'|. Whether the last step is taken depends
+    !> on the optional argument RhsScaling.
     !-------------------------------------------------------------    
     SUBROUTINE ScaleLinearSystemDiagonal()
 
@@ -13265,22 +13269,25 @@ END FUNCTION SearchNodeL
             CALL Info('ScaleLinearSystem','Rhs vector is almost zero, skipping rhs scaling!',Level=20)
           ELSE
             A % RhsScaling = bnorm
-            Diag(1:n) = Diag(1:n) * bnorm
             b(1:n) = b(1:n) / bnorm
           END IF
         END IF
       END IF
       
       IF( PRESENT(x) ) THEN
-        x(1:n) = x(1:n) / Diag(1:n)
+        x(1:n) = x(1:n) / (Diag(1:n) * A % RhsScaling) 
       END IF
       
     END SUBROUTINE ScaleLinearSystemDiagonal
 
 
     !-------------------------------------------------------------
-    !>  Scale system Ax = b as:
-    !>  (A/Ascl)(Ascl*x/bscl) = (b/bscl)
+    !>  Scale system Ax = b as (A/Ascl)y = b, with y = Ascl x.
+    !>  By default, if the scaled system is rewritten as A'y = b',
+    !>  this subroutine also perform an additional scaling, so that
+    !>  the final form is given by A'(y/bscl) = b'/bscl, i.e.
+    !>  (A/Ascl)(Ascl*x/bscl) = (b/bscl). Whether the last step is
+    !>  taken depends on the optional argument RhsScaling.
     !-------------------------------------------------------------    
     SUBROUTINE ScaleLinearSystemConstant()
 
@@ -13381,7 +13388,7 @@ END FUNCTION SearchNodeL
       END IF
       
       IF( PRESENT(x) ) THEN
-        Xscl = Bscl / Ascl
+        Xscl = A % RhsScaling / Ascl
         x(1:n) = x(1:n) / Xscl 
       END IF
 
@@ -13400,7 +13407,7 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
     TYPE(Solver_t) :: Solver
     TYPE(Matrix_t), TARGET :: A
-    REAL(KIND=dp) :: f(:)
+    REAL(KIND=dp), OPTIONAL :: f(:)
     LOGICAL :: Parallel
     LOGICAL, OPTIONAL :: ApplyScaling 
 !-----------------------------------------------------------------------------
@@ -13520,9 +13527,14 @@ END FUNCTION SearchNodeL
       DO j=Rows(i),Rows(i+1)-1
         Values(j) = Values(j) * Diag(i)
       END DO
-      f(i) = Diag(i) * f(i)
     END DO
 
+    IF (PRESENT(f)) THEN
+      DO i=1,n    
+        f(i) = Diag(i) * f(i)
+      END DO
+    END IF
+    
     IF ( ASSOCIATED( A % PrecValues ) ) THEN
       IF (SIZE(A % Values) == SIZE(A % PrecValues)) THEN
         DO i=1,n
@@ -13580,7 +13592,6 @@ END FUNCTION SearchNodeL
     SUBROUTINE BackScaleLinearSystemDiagonal()
 
       REAL(KIND=dp), POINTER :: Diag(:)
-      REAL(KIND=dp) :: bnorm
       INTEGER :: i,j
       LOGICAL :: doCM      
       TYPE(Matrix_t), POINTER :: CM
@@ -13605,13 +13616,11 @@ END FUNCTION SearchNodeL
       !      Solve x:  INV(D)x = y
       !      -------------------------------------------
       IF( PRESENT( x ) ) THEN
-        x(1:n) = x(1:n) * Diag(1:n)
+        x(1:n) = x(1:n) * Diag(1:n) * A % RhsScaling
       END IF
       
       IF( PRESENT( b ) ) THEN
-        bnorm = A % RhsScaling
-        Diag(1:n) = Diag(1:n) / bnorm
-        b(1:n) = b(1:n) / Diag(1:n) * bnorm
+        b(1:n) = b(1:n) / Diag(1:n) * A % RhsScaling 
       END IF
 
       IF( PRESENT( EigenScaling ) ) THEN
@@ -13778,7 +13787,7 @@ END FUNCTION SearchNodeL
   SUBROUTINE ReverseRowEquilibration( A, f )
 !------------------------------------------------------------------------------
     TYPE(Matrix_t) :: A
-    REAL(KIND=dp) :: f(:)
+    REAL(KIND=dp), OPTIONAL :: f(:)
 !-----------------------------------------------------------------------------
     INTEGER :: i, j, n
     INTEGER, POINTER :: Rows(:)
@@ -13798,7 +13807,7 @@ END FUNCTION SearchNodeL
       CALL Fatal('ReverseRowEquilibration','Diag of wrong size!')
     END IF 
 
-    f(1:n) = f(1:n) / Diag(1:n)
+    IF (PRESENT(f)) f(1:n) = f(1:n) / Diag(1:n)
     DO i=1,n    
       DO j = Rows(i), Rows(i+1)-1
         Values(j) = Values(j) / Diag(i)
