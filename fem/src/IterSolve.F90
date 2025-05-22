@@ -88,6 +88,8 @@ MODULE IterSolve
    INTEGER :: stack_pos=0
    LOGICAL :: FirstCall(stack_max)
 
+   REAL(KIND=dp), POINTER :: fm_Diag(:), fm_G(:,:)
+
 CONTAINS
 
 
@@ -146,6 +148,56 @@ CONTAINS
   END SUBROUTINE pcond_dummy_cmplx
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+  SUBROUTINE fm_DiagPrec( u,v,ipar )
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+
+    REAL(KIND=dp) :: u(*),v(*)
+    INTEGER :: ipar(*)
+
+    INTEGER :: n
+
+    n = HUTI_NDIM
+    u(1:n) = v(1:n)*fm_diag(1:n)
+!------------------------------------------------------------------------------
+  END SUBROUTINE fm_DiagPrec
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE fm_MatVec( u,v,ipar )
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+
+    INTEGER :: ipar(*)
+    REAL(KIND=dp) :: u(*),v(*), ct, rsum, cumt=0, s
+
+    INTEGER :: i,j,n
+
+    n = HUTI_NDIM
+#if 1
+!   CALL DSYMV('U',n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
+    CALL DGEMV('N',n,n,1.0_dp,fm_G,n,u,1,0.0_dp,v,1)
+#else
+    v(1:n) = 0
+!$omp parallel do private(i,j,s) shared(n,u,v,fM_G)
+    DO i=1,n
+       s = 0._dp
+       DO j=1,n
+         s = s + fm_G(i,j) * u(j)
+       END DO
+       v(i) = s
+    END DO
+!$omp end parallel do
+#endif
+!------------------------------------------------------------------------------
+  END SUBROUTINE fm_MatVec
+!------------------------------------------------------------------------------
+
+  
+!> \}
+!> \}  
 
 !------------------------------------------------------------------------------
 !> The routine that decides which linear system solver to call, and calls it.
@@ -1087,6 +1139,7 @@ CONTAINS
 !-----------------------------------------------------------------------
    END SUBROUTINE NumericalError
 !-----------------------------------------------------------------------
+
 
 END MODULE IterSolve
 

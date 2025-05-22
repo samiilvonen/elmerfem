@@ -81,8 +81,14 @@
      LOGICAL :: FirstTime = .TRUE.
 
      INTEGER, PARAMETER :: VFUnit = 10
-     LOGICAL, ALLOCATABLE :: ActiveNodes(:)
+     LOGICAL, ALLOCATABLE :: ActiveNodes(:), ActiveMe(:), ActiveTasks(:)
      TYPE(ValueList_t), POINTER :: Params, BC
+
+     LOGICAL :: UseFullMatrix
+     REAL(KIND=dp), ALLOCATABLE, TARGET, SAVE :: G_Full(:,:)
+
+     INTEGER(KIND=AddrInt) :: mvProc, AddrFunc
+     EXTERNAL AddrFunc
      
      SAVE TimesVisited, FirstTime     
 
@@ -202,6 +208,13 @@
      IF ( istat /= 0 ) CALL Fatal('RadiationFactors','Memory allocation error 2.')
 
      CALL GetMeshRadiationSurfaceInfo()
+
+     ALLOCATE(ActiveMe(0:ParEnv % PEs-1), ActiveTasks(0:ParEnv % PEs-1))
+     ActiveMe = .FALSE.
+     ActiveMe(ParEnv % myPE) = RadiationSurfaces > 0
+     CALL MPI_ALLREDUCE( ActiveMe, ActiveTasks, ParEnv % PEs, &
+        MPI_LOGICAL, MPI_LOR, ELMER_COMM_WORLD, i )
+
      IF ( RadiationSurfaces == 0 ) THEN
        CALL Info('RadiationFactors','No surfaces participating in radiation',Level=5)
        RETURN
@@ -942,11 +955,17 @@
 
        INTEGER, ALLOCATABLE :: RowSpace(:),Reorder(:)
        INTEGER, POINTER :: Cols(:)
+       LOGICAL :: AllocDone
        INTEGER :: i,j,t,previ,MatrixEntries
 
        ALLOCATE(RowSpace(n), Reorder(n))
 
        CALL Info('CreateRadiationMatrix','Creating matrix for Gebhart computation of size '//TRIM(I2S(n)),Level=12)
+
+       UseFullMatrix = .FALSE.
+       IF (IterSolveFactors) THEN
+         UseFullMatrix = ListGetLogical( Params, 'Use Full Matrix for Radiation', Found )
+       END IF
        
        ! Check whether the element already sees itself, it will when 
        ! gebhardt factors are computed. Also compute matrix size.
@@ -961,29 +980,40 @@
        MatrixEntries = SUM(RowSpace(1:n))
        CALL Info('CreateRadiationMatrix','Number of entries in matrix: '//I2S(MatrixEntries),Level=7)
        
-       IF(.NOT.ASSOCIATED(G) .OR. UpdateViewFactors) THEN
-         IF(ASSOCIATED(G)) CALL FreeMatrix(G)
+       AllocDone = ASSOCIATED(G) .AND. .NOT. UseFullMatrix
+       AllocDone = AllocDone .OR. ALLOCATED(G_full) .AND. UseFullMatrix
 
-         ! Assembly the matrix form
-         Reorder = [(i, i=1,n)]
-         G => CRS_CreateMatrix(n,MatrixEntries,RowSpace,1,Reorder,.TRUE. )
+       IF(.NOT. AllocDone .OR. UpdateViewFactors) THEN
+         IF (UseFullMatrix) THEN
+           IF (ALLOCATED(G_full)) CALL DEALLOCATE(G_full)
+           ALLOCATE(G_full(n,n)); G_full = 0.0_dp
+         ELSE
+           IF(ASSOCIATED(G)) CALL FreeMatrix(G)
 
-         DO t=1,n
-           Cols => ViewFactors(t) % Elements         
-           previ = G % Rows(t)-1
-           DO j=1,ViewFactors(t) % NumberOfFactors
-             CALL CRS_MakeMatrixIndex(G,t,Cols(j),previ)
+           ! Create matrix structures
+           Reorder = [(i, i=1,n)]
+           G => CRS_CreateMatrix(n,MatrixEntries,RowSpace,1,Reorder,.TRUE. )
+ 
+           ! Create matrix entries
+           DO t=1,n
+             Cols => ViewFactors(t) % Elements         
+             previ = G % Rows(t)-1
+             DO j=1,ViewFactors(t) % NumberOfFactors
+               CALL CRS_MakeMatrixIndex(G,t,Cols(j),previ)
+             END DO
+             CALL CRS_MakeMatrixIndex(G,t,t)
            END DO
-           CALL CRS_MakeMatrixIndex(G,t,t)
-         END DO
 
-         CALL CRS_SortMatrix(G)
-         CALL CRS_ZeroMatrix(G)
-         MatrixEntries = SIZE(G % Cols)
-         WRITE(Message,'(A,T35,ES15.4)') 'View factors filling (%)',(100.0*MatrixEntries)/(n**2)
-         CALL Info('RadiationFactors',Message,Level=5)
+           CALL CRS_SortMatrix(G)
+           CALL CRS_ZeroMatrix(G)
+           MatrixEntries = SIZE(G % Cols)
+           WRITE(Message,'(A,T35,ES15.4)') 'View factors filling (%)',(100.0*MatrixEntries)/(n**2)
+           CALL Info('RadiationFactors',Message,Level=5)
+         END IF
+       ELSE IF (UseFullMatrix) THEN
+           G_full = 0._dp
        ELSE
-         CALL CRS_ZeroMatrix(G)
+          CALL CRS_ZeroMatrix(G)
        END IF
      END SUBROUTINE CreateRadiationMatrix
      
@@ -1223,6 +1253,8 @@
      SUBROUTINE CalculateRadiation()
 
        INTEGER :: istat
+       real(kind=dp) :: st=0
+
 
        !IF(Radiosity .AND. FirstTime) RETURN
 
@@ -1241,7 +1273,11 @@
        ELSE
          ! Fill the matrix for gebhardt factors
          CALL CalculateGebhartFactors()
-         CALL FreeMatrix(G);G => NULL()
+         IF (UseFullMatrix) THEN
+           DEALLOCATE(G_full)
+         ELSE
+           CALL FreeMatrix(G);G => NULL()
+         ENDIF
        END IF
 
        DEALLOCATE(Emissivity,Reflectivity,Absorptivity)
@@ -1293,7 +1329,7 @@
        IF(.NOT.Found) &
            NeglectLimit  = GetConstReal( Params, 'Neglected Gebhardt Factor Fraction', Found) 
        IF(.NOT. Found) NeglectLimit = 1.0d-6
-       
+
        IF(.NOT. gTriv) THEN
          r=1._dp
          DO i=1,RadiationSurfaces
@@ -1307,19 +1343,33 @@
              ELSE
                s = Reflectivity(i)
              END IF
-             CALL CRS_AddToMatrixElement(G,i,Cols(j),-s*Vals(j))
+             IF (UseFullMatrix) THEN
+               G_full(i,Cols(j)) = G_full(i,Cols(j)) - s*Vals(j)
+             ELSE
+               CALL CRS_AddToMatrixElement(G,i,Cols(j),-s*Vals(j))
+             END  IF
            END DO
            Diag(i) = r*RelAreas(i)
-           CALL CRS_AddToMatrixElement( G,i,i,r*RelAreas(i) )
+           IF (UseFullMatrix) THEN
+             G_full(i,i) = Diag(i)
+           ELSE
+             CALL CRS_AddToMatrixElement( G,i,i,Diag(i) )
+           END IF
          END DO
        END IF
        
        ! Scale matrix to unit diagonals
        Diag = SQRT(1._dp/MAX(ABS(Diag),1.0d-12))
        DO i=1,RadiationSurfaces
-         DO j=G % Rows(i),G % Rows(i+1)-1
-           G % Values(j) = G % Values(j)*Diag(i)*Diag(G % Cols(j))
-         END DO
+         IF ( UseFullMatrix ) THEN
+           DO j=1,RadiationSurfaces
+             G_full(i,j) = G_full(i,j)*Diag(i)*Diag(j)
+           END DO
+         ELSE
+           DO j=G % Rows(i),G % Rows(i+1)-1
+             G % Values(j) = G % Values(j)*Diag(i)*Diag(G % Cols(j))
+           END DO
+         END IF
        END DO
        
        SOL = 1.0d-4
@@ -1367,7 +1417,12 @@
            IF ( Element % PartIndex==ParEnv % MyPE )THEN
              IF(IterSolveFactors) THEN
                Solver % Matrix => G
-               CALL IterSolver( G, SOL, RHS, Solver )
+               IF(UseFullMatrix) THEN
+                 fm_G => G_full
+                 CALL IterSolver( G, SOL, RHS, Solver, MatVecF=AddrFunc(fm_Matvec) )
+               ELSE
+                 CALL IterSolver( G, SOL, RHS, Solver )
+               END IF
              !------------------------------------------------------------------------------
              ELSE           
                IF (t==1) THEN
@@ -1383,7 +1438,6 @@
                    CALL ListAddString( Solver % Values, 'Linear System Direct Method', 'UMFpack' )
                  END IF
                END IF
-
                CALL DirectSolver( G, SOL, RHS, Solver )
              END IF
 
@@ -1871,7 +1925,11 @@
          RHS  = 0.0_dp         
          IF(Newton) RHS_d = 0.0_dp
 
-         G % Values = 0.0_dp
+         IF ( UseFullMatrix ) THEN
+            G_full = 0.0_dp
+         ELSE
+            G % Values = 0.0_dp
+         END IF
          
          ! This is the temperature under study for which we will get the emissivities for. 
          Trad = k*dT         
@@ -2091,17 +2149,25 @@
          a = Absorptivity(i)
          r = 1-a !e
          c = RelAreas(i) * (r/a)**2  !(r/e)**2
-         previ = G % Rows(i)-1
+         IF( .NOT. UseFullMatrix ) previ = G % Rows(i)-1
          DO j=1,nf
 !          ej = Emissivity(Cols(j))
            aj = Absorptivity(Cols(j))
            rj = 1-aj !ej
            s = r*Vals(j) * (r/a*rj/aj) !(r/e*rj/ej)
-           CALL CRS_AddToMatrixElement(G,i,Cols(j),s,previ)
+           IF ( UseFullMatrix ) THEN
+             G_full(i,Cols(j)) = G_full(i,Cols(j)) + s
+           ELSE
+             CALL CRS_AddToMatrixElement(G,i,Cols(j),s,previ)
+           END IF
          END DO
-         CALL CRS_AddToMatrixElement(G,i,i,-c)
+         Diag(i) = -c
+         IF( UseFullMatrix ) THEN
+           G_full(i,i) = Diag(i)
+         ELSE
+           CALL CRS_AddToMatrixElement(G,i,i,Diag(i))
+         END IF
        END DO
-       Diag = G % Values(G % Diag)
      END SUBROUTINE RadiosityAssembly
 
 
@@ -2111,65 +2177,145 @@
      SUBROUTINE RadiationLinearSolver(n, A, x, b, Diag,  Solver, Scaling)
 
        INTEGER :: n
-       REAL(KIND=dp) :: x(:), b(:), Diag(:)
+       REAL(KIND=dp), TARGET :: x(n), b(n), Diag(n)
        TYPE(Matrix_t), POINTER :: A
        LOGICAL, OPTIONAL :: Scaling
        TYPE(Solver_t), POINTER :: Solver
 
        LOGICAL :: Scal,Found
-       INTEGER :: i,j
-       REAL(KIND=dp) :: bscal
+       REAL(KIND=dp) :: bscal, eps
+       INTEGER :: i,j, maxiter, FirstActive
+
+       real(kind=dp) :: st=0
+
+       ! Solve serially and distribute the result afterwards, memory bandwidth
+       ! destroys the performance otherwise (at least for non-supercomputer systems)
+       DO i=0,ParEnv % PEs-1
+         IF (ActiveTasks(i)) THEN
+           FirstActive=i; EXIT
+         END IF
+       END DO
 
        scal = .TRUE.
        IF(PRESENT(Scaling)) scal = Scaling
 
-       ! Scale matrix to unit diagonals (if not done already)
-       IF(scal) THEN
-         Diag = SQRT(1._dp/ABS(Diag))
-         DO i=1,n
-           DO j=A % Rows(i),A % Rows(i+1)-1
-             A % Values(j) = A % Values(j)*Diag(i)*Diag(A % Cols(j))
+       IF ( ParEnv % myPE == FirstActive ) THEN
+         ! Scale matrix to unit diagonals (if not done already)
+         IF(scal) THEN
+           Diag = SQRT(1._dp/ABS(Diag))
+           IF (UseFullMatrix) THEN
+             DO j=1,n
+               DO i=1,n
+                 G_full(i,j) = G_full(i,j)*Diag(i)*Diag(j)
+               END DO
+             END DO
+           ELSE
+             DO i=1,n
+               DO j=A % Rows(i),A % Rows(i+1)-1
+                 A % Values(j) = A % Values(j)*Diag(i)*Diag(A % Cols(j))
+               END DO
+             END DO
+           END IF
+         END IF
+         b = b * Diag
+
+         ! Scale rhs to one!
+         bscal = SQRT(SUM(b**2))
+         b = b / bscal
+
+         x = 0.0_dp
+         IF(IterSolveFactors) THEN
+           Solver % Matrix => A
+
+           eps = ListGetCReal( Params,'Linear System Convergence Tolerance', Found)
+           IF  (.NOT. Found ) eps = 1.0d-8
+           maxiter = ListGetInteger( Params,'Linear System Max Iterations', Found)
+           IF  (.NOT. Found ) maxiter = 100
+
+           IF (UseFullMatrix) THEN
+             BLOCK
+               TYPE(Matrix_t), POINTER :: Gm
+               fm_G => G_full
+               Gm => AllocateMatrix()
+               Gm % NumberOfRows = n
+               mvProc = ADDRFUNC(fm_MatVec)
+               CALL RadiationCG( n, Gm, x, b, eps, maxiter )
+!              CALL IterSolver( Gm, x, b, Solver, MatvecF=mvproc )
+               DEALLOCATE(Gm)
+             END BLOCK
+           ELSE
+             CALL RadiationCG( n, A, x, b, eps, maxiter )
+!            CALL IterSolver( A, x, b, Solver )
+           END IF
+         ELSE           
+           CALL DirectSolver( A, x, b, Solver )
+         END IF
+         x = x * bscal * Diag
+       END IF
+
+       ! Distribute the linear system result
+       BLOCK
+         INTEGER :: Status(MPI_STATUS_SIZE), ierr, SendInfo(n), RecvInfo(n)
+         REAL(KIND=dp) :: y(n)
+         INTEGER, ALLOCATABLE :: RecvPerm(:)
+
+         ALLOCATE(RecvPerm(Mesh % NumberOfBulkElements+Mesh % NumberOfBoundaryElements))
+
+         IF(ParEnv % myPE==FirstActive ) THEN
+           DO i=1,n
+             Element => Mesh % Elements(ElementNumbers(i))
+             SendInfo(i) = Element % GElementIndex
            END DO
-         END DO
-       END IF
-       b = b * Diag
 
-       ! Scale rhs to one!
-       bscal = SQRT(SUM(b**2))
-       b = b / bscal
+           DO i=0,ParEnv % PEs-1
+             IF (i==ParEnv % myPE .OR. .NOT.ActiveTasks(i) ) CYCLE
+             CALL MPI_BSEND(SendInfo,n,MPI_INTEGER,i,12006,ELMER_COMM_WORLD,ierr)
+             CALL MPI_BSEND(x,n,MPI_DOUBLE_PRECISION,i,12007,ELMER_COMM_WORLD,ierr)
+           END DO
+         ELSE
+           CALL MPI_RECV( RecvInfo,n,MPI_INTEGER,FirstActive,12006,ELMER_COMM_WORLD,status,ierr )
+           CALL MPI_RECV( y,n,MPI_DOUBLE_PRECISION,FirstActive,12007,ELMER_COMM_WORLD,status,ierr )
 
-       x = 0.0_dp
-       IF(IterSolveFactors) THEN
-         Solver % Matrix => A
-         CALL IterSolver( A, x, b, Solver )
-       ELSE           
-         CALL DirectSolver( A, x, b, Solver )
-       END IF
-       x = x * bscal * Diag
+           ! create a permutation for finding the correct place for the result ...
+           DO i=1,n
+             Element => Mesh % Elements(ElementNumbers(i))
+             RecvPerm(Element % GelementIndex) = i
+           END DO
+           ! ... and store the result ...
+           DO i=1,n
+             x(RecvPerm(RecvInfo(i))) = y(i)
+           END DO
+         END IF
+       END BLOCK
      END SUBROUTINE RadiationLinearSolver
 
-#if TESTCG
+#define TESTCG
+#ifdef TESTCG
      ! Tailored local CG algo for speed testing (somewhat faster than any of the 
      ! library routines but not so much...)
      !-------------------------------------------------------------------------
-     SUBROUTINE  RadiationCG( n, A, x, b, eps)
-       REAL(KIND=dp) :: x(:),b(:), eps
-       INTEGER :: n
+     SUBROUTINE  RadiationCG( n, A, x, b, eps, maxiter )
+       REAL(KIND=dp) :: x(n),b(n), eps
+       INTEGER :: n, maxiter
        TYPE(Matrix_t), POINTER :: A
 
        REAL(KIND=dp):: alpha, beta, rho, oldrho
-       REAL(KIND=dp) :: r(n), p(n), q(n), z(n)
-       INTEGER :: iter, i
-       REAL(KIND=dp) :: residual, eps2
+       REAL(KIND=dp) :: r(n), p(n), q(n), z(n), s
+       INTEGER :: iter, i, j, k
+       REAL(KIND=dp) :: residual, eps2,st
 
        eps2 = eps*eps
 
-       CALL CRS_MatrixVectorMultiply(A,x,r) 
+       IF ( UseFullMatrix) THEN
+         CALL DGEMV('N',n,n,1.0_dp,G_full,n,x,1,0.0_dp,r,1)
+       ELSE
+         CALL CRS_MatrixVectorMultiply(A,x,r) 
+       END IF
        r = b - r
        residual = SUM(r*r)
        IF(residual<eps2) RETURN
 
-       DO iter=1,100
+       DO iter=1,maxiter
          rho = SUM(r*r)
          IF(rho==0.0_dp) STOP 'CG, rho=0'
   
@@ -2180,7 +2326,11 @@
            p = r + beta * p
          END IF
 
-         CALL CRS_MatrixVectorMultiply(A,p,q) 
+         IF ( UseFullMatrix) THEN
+           CALL DGEMV('N',n,n,1.0_dp,G_full,n,p,1,0.0_dp,q,1)
+         ELSE
+           CALL CRS_MatrixVectorMultiply(A,p,q) 
+         END IF
          alpha = rho/SUM(p*q)
 
          x = x + alpha * p
@@ -2191,7 +2341,11 @@
          oldrho = rho
        END DO
 
-       CALL CRS_MatrixVectorMultiply(A,x,r) 
+       IF ( UseFullMatrix) THEN
+         CALL DGEMV('N',n,n,1.0_dp,G_full,n,x,1,0.0_dp,r,1)
+       ELSE
+         CALL CRS_MatrixVectorMultiply(A,x,r) 
+       END IF
        r = b - r
        residual = SQRT(SUM(r*r))
        WRITE (*, '(I8, E11.4)') iter, residual

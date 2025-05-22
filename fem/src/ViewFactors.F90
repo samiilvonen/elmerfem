@@ -46,7 +46,7 @@
 
    MODULE ViewFactorGlobals
      USE Types
-     REAL(KIND=dp), ALLOCATABLE :: Jdiag(:), Jacobian(:,:)
+     REAL(KIND=dp), ALLOCATABLE, TARGET :: Jdiag(:), Jacobian(:,:)
    END MODULE ViewFactorGlobals
 
 !------------------------------------------------------------------------------
@@ -1097,8 +1097,12 @@
       HUTI_STOPC = HUTI_TRESID_SCALED_BYB
       
       iterProc  = AddrFunc(HUTI_D_CG)
-      mvProc    = AddrFunc(MatvecViewFact)
-      pcondProc = AddrFunc(DiagPrecViewFact)
+
+      fm_G => Jacobian
+      mvProc    = AddrFunc(fm_MatVec)
+      fm_Diag => Jdiag
+      pcondProc = AddrFunc(fm_DiagPrec)
+
       CALL IterCall( iterProc,x,b,ipar,dpar,work,mvProc,pcondProc, &
                 dProc, dProc, dProc, dProc )
           
@@ -1205,49 +1209,5 @@
 
   END PROGRAM ViewFactors
 
-
-  SUBROUTINE DiagPrecViewFact( u,v,ipar )
-    USE ViewFactorGlobals
-    IMPLICIT NONE
-
-    REAL(KIND=dp) :: u(*),v(*)
-    INTEGER :: ipar(*)
-
-    INTEGER :: n
-
-    n = HUTI_NDIM
-    u(1:n) = v(1:n)*Jdiag(1:n)
-  END SUBROUTINE DiagPrecViewFact
-
-
-  SUBROUTINE MatvecViewFact( u,v,ipar )
-    USE ViewFactorGlobals
-    USE LoadMod
-    IMPLICIT NONE
-
-    INTEGER :: ipar(*)
-    REAL(KIND=dp) :: u(*),v(*), ct, rsum, cumt=0, s, t
-
-    INTEGER :: i,j,n
-
-    n = HUTI_NDIM
-#if 1
-!   CALL DSYMV('U',n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
-    CALL DGEMV('N',n,n,1.0_dp,Jacobian,n,u,1,0.0_dp,v,1)
-#else
-    v(1:n) = 0
-!$omp parallel do private(i,j,s) shared(u,v,Jacobian)
-    DO i=1,n
-       s = 0._dp
-       DO j=1,n
-         s = s + Jacobian(i,j) * u(j)
-       END DO
-       v(i) = s
-    END DO
-!$omp end parallel do
-#endif
-  END SUBROUTINE MatvecViewFact
-
-  
 !> \}
 !> \}  
