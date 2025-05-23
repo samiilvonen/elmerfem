@@ -35,7 +35,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
   TYPE(Element_t),POINTER :: Element
 
   REAL(KIND=dp) :: Norm, d_val, diag, rt, ct, eps
-  INTEGER :: sz, i, j, k, l, m, n, nb, nd, t, istat, active, maxi
+  INTEGER :: sz, i, j, k, l, m, n, nelem, nb, nd, t, istat, active, maxi
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(ValueList_t), POINTER :: BodyForce, BC
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:), FORCE(:)
@@ -58,9 +58,9 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
     REAL(KIND=dp), ALLOCATABLE :: stiff(:,:), force(:)
   END TYPE ed_t
 
-  TYPE(ed_t), ALLOCATABLE, TARGET :: ed(:)
   TYPE(np_t), ALLOCATABLE :: np(:)
   INTEGER, ALLOCATABLE :: tp(:)
+  TYPE(ed_t), ALLOCATABLE, TARGET :: ed(:)
 
   SAVE STIFF, LOAD, FORCE, AllocationsDone
 !------------------------------------------------------------------------------
@@ -127,7 +127,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    END DO
 
    ! Dirichlet-conditions
-!$omp parallel do private(t,n,nd,nb,i,j,k,l,m,inds,found,element,BC,d_val,diag)
+!$omp parallel do private(t,n,nelem,nd,nb,i,j,k,l,m,inds,found,element,BC,d_val,diag)
    DO t=1,GetNOFBoundaryElements()
      Element => GetBoundaryElement(t)
 
@@ -137,28 +137,31 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      d_val = GetCReal( BC, Solver % Variable % Name, Found )
      IF (.NOT. Found ) CYCLE
 
+     n  = GetElementNOFNodes(Element)
      nd = GetElementNofDOFs(Element)
+
      inds = [(i,i=1,nd)]
      nd = GetElementDOFs(inds, Element)
      inds = solver % variable % perm(inds)
+
      DO j=1,nd
-       n = np(inds(j)) % eCount
+       nelem = np(inds(j)) % eCount
        diag = np(inds(j)) % diag
-       DO k=1,n
+       DO k=1,nelem
          m = np(inds(j)) % elems(k)
          DO l=1,SIZE(ed(m) % dofIndeces)
            IF(ed(m) % dofIndeces(l)==inds(j)) EXIT
          END DO
          IF(l>SIZE(ed(m) % dofIndeces)) stop 'l'
 
-         IF ( j<=2) THEN
+         IF (j<=n) THEN
            ed(m) % force = ed(m) % force - ed(m) % stiff(:,l)*d_val
          END IF
          ed(m) % stiff(:,l) = 0._dp
          ed(m) % stiff(l,:) = 0._dp
-         ed(m) % stiff(l,l) = diag/n
-         IF(j<=2) THEN
-           ed(m) % force(l) = d_val * diag/n
+         ed(m) % stiff(l,l) = diag/nelem
+         IF(j<=n) THEN
+           ed(m) % force(l) = d_val * diag/nelem
          ELSE
            ed(m) % force(l) = 0
          ENDIF
