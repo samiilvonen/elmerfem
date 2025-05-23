@@ -40,7 +40,8 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
   TYPE(ValueList_t), POINTER :: BodyForce, BC
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:), FORCE(:)
 
-  REAL(KIND=dp), POINTER :: b(:), x(:)
+  REAL(KIND=dp), POINTER :: x(:)
+  REAL(KIND=dp), ALLOCATABLE :: b(:)
 
   INTEGER, ALLOCATABLE :: inds(:)
 
@@ -88,42 +89,47 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
 
    !System assembly:
    !----------------
-   CALL DefaultInitialize()
    DO t=1,Active
-      Element => GetActiveElement(t)
-      n  = GetElementNOFNodes()
-      nd = GetElementNOFDOFs()
-      nb = GetElementNOFBDOFs()
+     Element => GetActiveElement(t)
+     n  = GetElementNOFNodes(Element)
+     nd = GetElementNOFDOFs(Element)
+     nb = GetElementNOFBDOFs(Element)
 
-      LOAD = 0.0d0
-      BodyForce => GetBodyForce()
-      IF ( ASSOCIATED(BodyForce) ) THEN
-         Load(1:n) = GetReal( BodyForce, 'Source', Found )
-      END IF
+     LOAD = 0.0d0
+     BodyForce => GetBodyForce(Element)
+     IF ( ASSOCIATED(BodyForce) ) THEN
+       Load(1:n) = GetReal( BodyForce, 'Source', Found )
+     END IF
 
-      !Get element local matrix and rhs vector:
-      !----------------------------------------
-      CALL LocalMatrix(  STIFF, FORCE, LOAD, Element, n, nd+nb )
-      CALL LCondensate( nd, nb, STIFF, FORCE )
+     !Get element local matrix and rhs vector:
+     !----------------------------------------
+     CALL LocalMatrix(  STIFF, FORCE, LOAD, Element, n, nd+nb )
+     CALL LCondensate( nd, nb, STIFF, FORCE )
 
-      ed(t) % Stiff = STIFF(1:nd,1:nd)
-      ed(t) % Force = FORCE(1:nd)
-      ed(t) % dofIndeces = [(i,i=1,nd)]
-      nd =  GetElementDOFs(ed(t) % dofIndeces, Element)
-      ed(t) % dofIndeces = solver % variable % perm(ed(t) % dofIndeces)
-      DO i=1,nd
-        j = ed(t) % dofIndeces(i)
-        sz = np(j) % eCount
-        IF ( sz>=SIZE(np(j) % Elems) ) THEN
-          tp = np(j) % Elems(1:sz)
-          DEALLOCATE(np(j) % Elems)
-          ALLOCATE(np(j) % Elems(sz*2))
-          np(j) % Elems(1:sz) = tp
-        END IF
-        np(j) % Elems(sz+1)=t
-        np(j) % eCount = sz+1
-        np(j) % diag = np(j) % diag + Stiff(i,i)
-      END DO
+     ed(t) % Stiff = STIFF(1:nd,1:nd)
+     ed(t) % Force = FORCE(1:nd)
+     ed(t) % dofIndeces = [(i,i=1,nd)]
+     nd =  GetElementDOFs(ed(t) % dofIndeces, Element)
+     ed(t) % dofIndeces = Solver % Variable % Perm(ed(t) % dofIndeces)
+   END DO
+
+   ! update dof structures, notably the nodal element list
+   DO t=1,Active
+     Element => GetActiveElement(t)
+     nd = GetElementNOFDOFs(Element)
+     DO i=1,nd
+       j = ed(t) % dofIndeces(i)
+       sz = np(j) % eCount
+       IF ( sz>=SIZE(np(j) % Elems) ) THEN
+         tp = np(j) % Elems(1:sz)
+         DEALLOCATE(np(j) % Elems)
+         ALLOCATE(np(j) % Elems(sz*2))
+         np(j) % Elems(1:sz) = tp
+       END IF
+       np(j) % Elems(sz+1)=t
+       np(j) % eCount = sz+1
+       np(j) % diag = np(j) % diag + ed(t) % Stiff(i,i)
+     END DO
    END DO
 
    ! Dirichlet-conditions
@@ -131,7 +137,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    DO t=1,GetNOFBoundaryElements()
      Element => GetBoundaryElement(t)
 
-     BC => GetBC()
+     BC => GetBC(Element)
      IF (.NOT.ASSOCIATED(BC)) CYCLE
 
      d_val = GetCReal( BC, Solver % Variable % Name, Found )
@@ -142,7 +148,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
 
      inds = [(i,i=1,nd)]
      nd = GetElementDOFs(inds, Element)
-     inds = solver % variable % perm(inds)
+     inds = Solver % Variable % Perm(inds)
 
      DO j=1,nd
        nelem = np(inds(j)) % eCount
@@ -170,9 +176,9 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    END DO
 !$omp end parallel do
 
-   b => Solver % Matrix % RHS
    x => Solver % Variable % Values
-   n = SIZE(Solver % Variable % Values)
+   n = SIZE(x)
+   ALLOCATE(b(n))
 
    b = 0._dp
    DO i=1,SIZE(ed)
@@ -198,7 +204,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: STIFF(:,:), FORCE(:), LOAD(:)
     INTEGER :: n, nd
-    TYPE(Element_t), POINTER :: Element
+    TYPE(Element_t) :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3),DetJ,LoadAtIP
     LOGICAL :: Stat
@@ -207,6 +213,7 @@ CONTAINS
 
     TYPE(Nodes_t) :: Nodes
     SAVE Nodes
+!$omp threadprivate(nodes)
 !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
     STIFF = 0.0d0
@@ -238,7 +245,7 @@ CONTAINS
 ! Tailored local CG algo for speed testing (somewhat faster than any of the 
 ! library routines but not so much...)
 !-------------------------------------------------------------------------
-  SUBROUTINE  pcg( n, x, b, eps, maxiter )
+  SUBROUTINE  PCG( n, x, b, eps, maxiter )
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: x(n),b(n), eps
     INTEGER :: n, maxiter
@@ -282,7 +289,7 @@ CONTAINS
     r = b - r
     residual = SQRT(SUM(r*r))
     WRITE (*, '(I8, E11.4)') iter, residual
-  END SUBROUTINE pcg
+  END SUBROUTINE PCG
 
 
   SUBROUTINE mv(n,u,v)
@@ -301,10 +308,10 @@ CONTAINS
 
 
   SUBROUTINE prec(n,u,v)
-    INTEGER :: i,j,k,l,n
-    REAL(KIND=dp) :: u(n), v(n), dval
+    INTEGER :: i,j,n
+    REAL(KIND=dp) :: u(n), v(n)
 
-!!omp parallel do private(i,j,inds) shared(ed,u,v)
+!!omp parallel do private(i,j,inds) shared(ed,n,u,v)
 !      DO i=1,SIZE(ed)
 !        inds = ed(i) % dofIndeces
 !        DO j=1,size(inds)
@@ -313,7 +320,7 @@ CONTAINS
 !      END DO
 !!omp end parallel do
 
-!$omp parallel do private(i) shared(np)
+!$omp parallel do private(i) shared(np,n,u,v)
     DO i=1,n
       v(i) = u(i) / np(i) % diag
     END DO
@@ -353,8 +360,6 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
-
-           
 
 !------------------------------------------------------------------------------
 END SUBROUTINE PoissonSolver
