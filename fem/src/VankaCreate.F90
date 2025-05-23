@@ -1063,15 +1063,17 @@
 
 !-------------------------------------------------------------------------------
 !> Assumes another solver being used for the preconditioning.
-!> Given residual "v" solves Au=v in an approximate manner.
+!> Given a residual "v" this solves Au=v (usually in an approximate manner),
+!> where A is the matrix of the solver specified by using the keyword
+!> "Prec Solvers".  
 !-------------------------------------------------------------------------------
   SUBROUTINE SlavePrec(u,v,ipar)
 !-------------------------------------------------------------------------------
     USE DefUtils
     IMPLICIT NONE
-    INTEGER :: ipar(*)  ! parameters for Hutiter
-    REAL(KIND=dp) u(*)  ! new solution
-    REAL(KIND=dp) v(*)  ! right-hand side
+    REAL(KIND=dp) u(*)  !< the correction returned to create a new solution
+    REAL(KIND=dp) v(*)  !< right-hand side (the current residual)
+    INTEGER :: ipar(*)  !< parameters for HutIter
 !-------------------------------------------------------------------------------
     TYPE(Solver_t), POINTER :: Solver
     TYPE(ValueList_t), POINTER :: Params
@@ -1080,7 +1082,7 @@
     TYPE(Matrix_t), POINTER :: Amat
     REAL(KIND=dp), POINTER :: b(:), x(:), r(:)
     REAL(KIND=dp) :: rnorm
-    LOGICAL :: Found
+    LOGICAL :: Found, ScaleRHS
     CHARACTER(MAX_NAME_LEN) :: str   
     INTEGER :: n
 !-------------------------------------------------------------------------------
@@ -1097,13 +1099,30 @@
     b => pVar % Values
 
     b(1:n) = v(1:n)
-
+    
+    ! Check whether the residual corresponds to a scaled linear system
+    ScaleRHS = ListGetLogical(Params, 'Linear System Scaling', Found, DefValue = .TRUE.)
+    IF (ScaleRHS) THEN
+      !
+      ! Perform back-scaling
+      !
+      CALL ScaleLinearSystemVectors(AMat, b, n, BackScaling = .TRUE.)
+    END IF
+    
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
 
     str = ListGetString( Params,'Slave Prec Update',UnfoundFatal=.TRUE.)
     pVar => VariableGet( Mesh % Variables, str )
     IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrec','Could not find: '//TRIM(str))
+    n = SIZE(pVar % Values)
     x => pVar % Values
+
+    IF (ScaleRHS) THEN
+      !
+      ! Transform the search direction so that it corresponds to the scaled linear system
+      !
+      CALL ScaleLinearSystemVectors(AMat, b, n, x)
+    END IF
     
     IF( ListCheckPresent( Params,'MG Smoother') ) THEN
       ALLOCATE(r(n))
@@ -1136,15 +1155,16 @@
   END SUBROUTINE SlavePrec
 !-------------------------------------------------------------------------------
 
-
+!-------------------------------------------------------------------------------
+!> The complex version corresponding to the subroutine SlavePrec
 !-------------------------------------------------------------------------------
   SUBROUTINE SlavePrecComplex(u,v,ipar)
 !-------------------------------------------------------------------------------
     USE DefUtils
     IMPLICIT NONE
-    COMPLEX(KIND=dp) u(*)  ! the correction returned to create a new solution
-    COMPLEX(KIND=dp) v(*)  ! right-hand side (the current residual)
-    INTEGER :: ipar(*)  ! parameters for HutIter
+    COMPLEX(KIND=dp) u(*)  !< the correction returned to create a new solution
+    COMPLEX(KIND=dp) v(*)  !< right-hand side (the current residual)
+    INTEGER :: ipar(*)  !< parameters for HutIter
 !-------------------------------------------------------------------------------
     TYPE(Solver_t), POINTER :: Solver
     TYPE(ValueList_t), POINTER :: Params
@@ -1184,16 +1204,7 @@
       !
       ! Perform back-scaling
       !
-      SELECT CASE(AMat % ScalingMethod)
-      CASE(1)
-        b(1:n) = b(1:n) / AMat % DiagScaling(1:n) * AMat % RhsScaling
-      CASE(2)
-        b(1:n) = b(1:n) / AMat % DiagScaling(1:n)
-      CASE(3)
-        b(1:n) = AMat % RhsScaling * b(1:n)
-      CASE DEFAULT
-        CALL Fatal('SlavePrec', 'Unknown back-scaling method for residual') 
-      END SELECT
+      CALL ScaleLinearSystemVectors(AMat, b, n, BackScaling = .TRUE.)
     END IF
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
@@ -1215,19 +1226,7 @@
       !
       ! Transform the search direction so that it corresponds to the scaled linear system
       !
-      SELECT CASE(AMat % ScalingMethod)
-      CASE(1)
-        x(1:n) = x(1:n) / (AMat % DiagScaling(1:n) * AMat % RhsScaling)
-        b(1:n) = AMat % DiagScaling(1:n) * b(1:n) / AMat % RhsScaling
-      CASE(2)
-        b(1:n) = AMat % DiagScaling(1:n) * b(1:n)
-      CASE(3)
-        x(1:n) = AMat % AveScaling * x(1:n) / AMat % RhsScaling
-        b(1:n) = b(1:n) / AMat % RhsScaling
-      CASE DEFAULT
-        CALL Fatal('SlavePrec', 'Unknown scaling method for update direction') 
-      END SELECT
-      
+      CALL ScaleLinearSystemVectors(AMat, b, n, x)
     END IF
     
     IF( ListCheckPresent( Params,'MG Smoother') ) THEN      

@@ -13831,6 +13831,64 @@ END FUNCTION SearchNodeL
   END SUBROUTINE ReverseRowEquilibration
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+!> A simplified subroutine for scaling vectors so that they are transformed
+!> in the same way as the RHS and the solution vector of the linear system
+!> associated with the given matrix A.  
+!------------------------------------------------------------------------------
+  SUBROUTINE ScaleLinearSystemVectors(A, b, n, x, BackScaling)
+!------------------------------------------------------------------------------
+    TYPE(Matrix_t), POINTER, INTENT(IN) :: A
+    REAL(KIND=dp), POINTER, INTENT(INOUT) :: b(:)
+    INTEGER, INTENT(IN) :: n
+    REAL(KIND=dp), POINTER, OPTIONAL, INTENT(INOUT) :: x(:)
+    LOGICAL, OPTIONAL, INTENT(IN) :: BackScaling
+!------------------------------------------------------------------------------
+    LOGICAL :: Backwards
+!------------------------------------------------------------------------------    
+    IF (PRESENT(BackScaling)) THEN
+      Backwards = BackScaling
+    ELSE
+      Backwards = .FALSE.
+    END IF
+
+    IF (Backwards) THEN
+      !
+      ! Perform back-scaling
+      !
+      SELECT CASE(A % ScalingMethod)
+      CASE(1)
+        b(1:n) = b(1:n) / A % DiagScaling(1:n) * A % RhsScaling
+        IF (PRESENT(x)) x(1:n) = x(1:n) * A % DiagScaling(1:n) * A % RhsScaling
+      CASE(2)
+        b(1:n) = b(1:n) / A % DiagScaling(1:n)
+      CASE(3)
+        b(1:n) = A % RhsScaling * b(1:n)
+        IF (PRESENT(x)) x(1:n) = (A % RhsScaling / A % AveScaling) * x(1:n) 
+      CASE DEFAULT
+        CALL Fatal('ScaleLinearSystemVectors', 'Unknown method for back-scaling') 
+      END SELECT
+    ELSE
+      !
+      ! Transform the vectors so that they correspond to the scaled version of linear system
+      !
+      SELECT CASE(A % ScalingMethod)
+      CASE(1)
+        b(1:n) = A % DiagScaling(1:n) * b(1:n) / A % RhsScaling
+        IF (PRESENT(x)) x(1:n) = x(1:n) / (A % DiagScaling(1:n) * A % RhsScaling)
+      CASE(2)
+        b(1:n) = A % DiagScaling(1:n) * b(1:n)
+      CASE(3)
+        b(1:n) = b(1:n) / A % RhsScaling
+        IF (PRESENT(x)) x(1:n) = A % AveScaling * x(1:n) / A % RhsScaling
+      CASE DEFAULT
+        CALL Fatal('ScaleLinearSystemVectors', 'Unknown method for scaling') 
+      END SELECT
+    END IF
+!------------------------------------------------------------------------------
+  END SUBROUTINE ScaleLinearSystemVectors
+!------------------------------------------------------------------------------
+  
 
   SUBROUTINE CalculateLoads( Solver, Aaid, x, DOFs, UseBulkValues, NodalLoads, NodalValues ) 
 
