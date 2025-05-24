@@ -113,7 +113,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      ed(t) % dofIndeces = Solver % Variable % Perm(ed(t) % dofIndeces)
    END DO
 
-   ! update dof structures, notably the nodal element list
+   ! update dof structures, notably the dof element list
    DO t=1,Active
      Element => GetActiveElement(t)
      nd = GetElementNOFDOFs(Element)
@@ -162,15 +162,13 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
 
          IF (j<=n) THEN
            ed(m) % force = ed(m) % force - ed(m) % stiff(:,l)*d_val
-         END IF
-         ed(m) % stiff(:,l) = 0._dp
-         ed(m) % stiff(l,:) = 0._dp
-         ed(m) % stiff(l,l) = diag/nelem
-         IF(j<=n) THEN
            ed(m) % force(l) = d_val * diag/nelem
          ELSE
            ed(m) % force(l) = 0
          ENDIF
+         ed(m) % stiff(:,l) = 0._dp
+         ed(m) % stiff(l,:) = 0._dp
+         ed(m) % stiff(l,l) = diag/nelem
        END DO
      END DO
    END DO
@@ -226,7 +224,7 @@ CONTAINS
       ! Basis function values & derivatives at the integration point:
       !--------------------------------------------------------------
       stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
-       IP % W(t), detJ, Basis, dBasisdx )
+               IP % W(t), detJ, Basis, dBasisdx )
 
       ! The source term at the integration point:
       !------------------------------------------
@@ -293,12 +291,12 @@ CONTAINS
 
 
   SUBROUTINE mv(n,u,v)
-    REAL(KIND=dp) :: u(n), v(n)
+    REAL(KIND=dp) :: u(n), v(n), x(100),y(100)
     INTEGER :: i,j,k,l,m,n,nd
     INTEGER, POINTER :: inds(:)
 
      v(1:n) = 0._dp
-!$omp parallel do private(i,inds) shared(ed,u,v)
+!$omp parallel do private(i,nd,inds,x,y) shared(ed,u) reduction(+:v)
      DO i=1,SIZE(ed)
        inds => ed(i)  % dofIndeces
        v(inds) = v(inds) + MATMUL(ed(i) % stiff,u(inds))
