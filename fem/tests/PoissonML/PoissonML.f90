@@ -291,12 +291,12 @@ CONTAINS
 
 
   SUBROUTINE mv(n,u,v)
-    REAL(KIND=dp) :: u(n), v(n), x(100),y(100)
+    REAL(KIND=dp) :: u(n), v(n)
     INTEGER :: i,j,k,l,m,n,nd
     INTEGER, POINTER :: inds(:)
 
      v(1:n) = 0._dp
-!$omp parallel do private(i,nd,inds,x,y) shared(ed,u) reduction(+:v)
+!$omp parallel do private(i,nd,inds) shared(ed,u) reduction(+:v)
      DO i=1,SIZE(ed)
        inds => ed(i)  % dofIndeces
        v(inds) = v(inds) + MATMUL(ed(i) % stiff,u(inds))
