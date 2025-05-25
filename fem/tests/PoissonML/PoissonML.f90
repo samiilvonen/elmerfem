@@ -89,13 +89,14 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
 
    !System assembly:
    !----------------
+!$omp parallel do private(t,i,n,nb,nd,element,load,stiff,force,bodyforce,found)
    DO t=1,Active
      Element => GetActiveElement(t)
      n  = GetElementNOFNodes(Element)
      nd = GetElementNOFDOFs(Element)
      nb = GetElementNOFBDOFs(Element)
 
-     LOAD = 0.0d0
+     Load = 0.0_dp
      BodyForce => GetBodyForce(Element)
      IF ( ASSOCIATED(BodyForce) ) THEN
        Load(1:n) = GetReal( BodyForce, 'Source', Found )
@@ -112,6 +113,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      nd =  GetElementDOFs(ed(t) % dofIndeces, Element)
      ed(t) % dofIndeces = Solver % Variable % Perm(ed(t) % dofIndeces)
    END DO
+!$omp end parallel do
 
    ! update dof structures, notably the dof element list
    DO t=1,Active
@@ -133,7 +135,6 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    END DO
 
    ! Dirichlet-conditions
-!$omp parallel do private(t,n,nelem,nd,nb,i,j,k,l,m,inds,found,element,BC,d_val,diag)
    DO t=1,GetNOFBoundaryElements()
      Element => GetBoundaryElement(t)
 
@@ -172,7 +173,6 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
        END DO
      END DO
    END DO
-!$omp end parallel do
 
    x => Solver % Variable % Values
    n = SIZE(x)
@@ -205,17 +205,16 @@ CONTAINS
     TYPE(Element_t) :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3),DetJ,LoadAtIP
-    LOGICAL :: Stat
+    LOGICAL :: stat
     INTEGER :: i,t
     TYPE(GaussIntegrationPoints_t) :: IP
 
-    TYPE(Nodes_t) :: Nodes
-    SAVE Nodes
+    TYPE(Nodes_t), SAVE :: Nodes
 !$omp threadprivate(nodes)
 !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     !Numerical integration:
     !----------------------
@@ -291,12 +290,12 @@ CONTAINS
 
 
   SUBROUTINE mv(n,u,v)
+    INTEGER :: i, n
     REAL(KIND=dp) :: u(n), v(n)
-    INTEGER :: i,j,k,l,m,n,nd
     INTEGER, POINTER :: inds(:)
 
      v(1:n) = 0._dp
-!$omp parallel do private(i,nd,inds) shared(ed,u) reduction(+:v)
+!$omp parallel do private(i,inds) shared(ed,u) reduction(+:v)
      DO i=1,SIZE(ed)
        inds => ed(i)  % dofIndeces
        v(inds) = v(inds) + MATMUL(ed(i) % stiff,u(inds))
@@ -306,7 +305,7 @@ CONTAINS
 
 
   SUBROUTINE prec(n,u,v)
-    INTEGER :: i,j,n
+    INTEGER :: i,n
     REAL(KIND=dp) :: u(n), v(n)
 
 !!omp parallel do private(i,j,inds) shared(ed,n,u,v)
