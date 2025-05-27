@@ -34,8 +34,8 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
   LOGICAL :: AllocationsDone = .FALSE., Found
   TYPE(Element_t),POINTER :: Element
 
-  REAL(KIND=dp) :: Norm, d_val, diag, rt, ct, eps
-  INTEGER :: sz, i, j, k, l, m, n, nelem, nb, nd, t, istat, active, maxi
+  REAL(KIND=dp) :: Norm, d_val, diag, rt, ct, eps, f
+  INTEGER :: sz, i, j, k, l, m, n, nelem, nb, nd, t, istat, Active, bActive, maxi
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(ValueList_t), POINTER :: BodyForce, BC
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:), FORCE(:)
@@ -66,23 +66,23 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
   SAVE STIFF, LOAD, FORCE, AllocationsDone
 !------------------------------------------------------------------------------
 
-  !Allocate some permanent storage, this is done first time only:
-  !--------------------------------------------------------------
-  Mesh => GetMesh()
+   !Allocate some permanent storage, this is done first time only:
+   !--------------------------------------------------------------
+   Mesh => GetMesh()
 
-  IF ( .NOT. AllocationsDone ) THEN
-     N = Solver % Mesh % MaxElementDOFs  ! just big enough for elemental arrays
-     ALLOCATE( FORCE(N), LOAD(N), STIFF(N,N), STAT=istat )
-     IF ( istat /= 0 ) THEN
-        CALL Fatal( 'PoissonSolve', 'Memory allocation error.' )
-     END IF
-     AllocationsDone = .TRUE.
-  END IF
+   IF ( .NOT. AllocationsDone ) THEN
+      N = Solver % Mesh % MaxElementDOFs  ! just big enough for elemental arrays
+      ALLOCATE( FORCE(N), LOAD(N), STIFF(N,N), STAT=istat )
+      IF ( istat /= 0 ) THEN
+         CALL Fatal( 'PoissonSolve', 'Memory allocation error.' )
+      END IF
+      AllocationsDone = .TRUE.
+   END IF
 
    Active = GetNOFActive()
-
+   bActive = GetNOFBoundaryElements()
    n = SIZE(Solver % Variable % Values)
-   ALLOCATE(ed(Active), np(n))
+   ALLOCATE(ed(Active+bActive), np(n))
    DO i=1,n
      ALLOCATE(np(i) % Elems(4))
    END DO
@@ -115,9 +115,41 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    END DO
 !$omp end parallel do
 
+
+   ! BC's
+!$omp parallel do private(t,i,j,n,nd,stiff,force,load,bc,found,element)
+   DO t=1,GetNOFBoundaryElements()
+     Element => GetBoundaryElement(t)
+
+     n  = GetElementNOFNodes(Element)
+     nd = GetElementNofDOFs(Element)
+
+     BC => GetBC(Element)
+     IF ( ASSOCIATED(BC)) THEN
+       Load(1:n) = GetReal( BC, 'Flux', Found )
+       CALL LocalMatrixBC(STIFF, FORCE, LOAD, Element, n, nd)
+     ELSE
+       FORCE(1:nd) = 0.0_dp
+       STIFF(1:nd,1:nd) = 0.0_dp
+     END IF
+
+     j = t + Active
+     ed(j) % Stiff = STIFF(1:nd,1:nd)
+     ed(j) % Force = FORCE(1:nd)
+     ed(j) % dofIndeces = [(i,i=1,nd)]
+     nd =  GetElementDOFs(ed(j) % dofIndeces, Element)
+     ed(j) % dofIndeces = Solver % Variable % Perm(ed(j) % dofIndeces)
+   END DO
+!$omp end parallel do
+
+
    ! update dof structures, notably the dof element list
-   DO t=1,Active
-     Element => GetActiveElement(t)
+   DO t=1,SIZE(ed)
+     IF ( t<=Active ) THEN
+       Element => GetActiveElement(t)
+     ELSE
+       Element => GetBoundaryElement(t-Active)
+     END IF
      nd = GetElementNOFDOFs(Element)
      DO i=1,nd
        j = ed(t) % dofIndeces(i)
@@ -134,7 +166,8 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      END DO
    END DO
 
-   ! Dirichlet-conditions
+
+   ! Dirichlet conditions
    DO t=1,GetNOFBoundaryElements()
      Element => GetBoundaryElement(t)
 
@@ -147,13 +180,13 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      n  = GetElementNOFNodes(Element)
      nd = GetElementNofDOFs(Element)
 
-     inds = [(i,i=1,nd)]
+     IF ( SIZE(inds)<nd ) inds = [(i,i=1,nd)]
      nd = GetElementDOFs(inds, Element)
      inds = Solver % Variable % Perm(inds)
 
      DO j=1,nd
        nelem = np(inds(j)) % eCount
-       diag = np(inds(j)) % diag
+       diag = np(inds(j)) % diag / nelem
        DO k=1,nelem
          m = np(inds(j)) % elems(k)
          DO l=1,SIZE(ed(m) % dofIndeces)
@@ -163,13 +196,13 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
 
          IF (j<=n) THEN
            ed(m) % force = ed(m) % force - ed(m) % stiff(:,l)*d_val
-           ed(m) % force(l) = d_val * diag/nelem
+           ed(m) % force(l) = d_val * diag
          ELSE
-           ed(m) % force(l) = 0
+           ed(m) % force(l) = 0.0_dp
          ENDIF
-         ed(m) % stiff(:,l) = 0._dp
-         ed(m) % stiff(l,:) = 0._dp
-         ed(m) % stiff(l,l) = diag/nelem
+         ed(m) % stiff(:,l) = 0.0_dp
+         ed(m) % stiff(l,:) = 0.0_dp
+         ed(m) % stiff(l,l) = diag
        END DO
      END DO
    END DO
@@ -178,7 +211,13 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    n = SIZE(x)
    ALLOCATE(b(n))
 
-   b = 0._dp
+!$omp parallel do private(i)
+   DO i=1,n
+     b(i) = 0
+   END DO
+!$omp end parallel do
+
+!$omp parallel do private(i,j,k,nd) reduction(+:b)
    DO i=1,SIZE(ed)
      nd = SIZE(ed(i) % dofIndeces)
      DO j=1,nd
@@ -186,6 +225,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
        b(k) = b(k) + ed(i) % force(j)
      END DO
    END DO
+!$omp end parallel do
 
    ct = Cputime(); rt=RealTime();
 
@@ -193,7 +233,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
    maxi = GetInteger( GetSolverParams(), 'Linear System Max Iterations', Found )
    CALL PCG( n, x, b, eps, maxi )
 
-   print*,'Linear System Timing: ', cputime()-ct,realtime()-rt
+   PRINT*,'Linear System Timing: ', cputime()-ct,realtime()-rt
 
 CONTAINS
 
@@ -239,9 +279,48 @@ CONTAINS
   END SUBROUTINE LocalMatrix
 !------------------------------------------------------------------------------
 
+
+!------------------------------------------------------------------------------
+  SUBROUTINE LocalMatrixBC(  STIFF, FORCE, LOAD, Element, n, nd )
+!------------------------------------------------------------------------------
+    REAL(KIND=dp) :: STIFF(:,:), FORCE(:), LOAD(:)
+    INTEGER :: n, nd
+    TYPE(Element_t) :: Element
+!------------------------------------------------------------------------------
+    REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3),DetJ,LoadAtIP, dx,dy,dz
+    LOGICAL :: stat
+    INTEGER :: i,t
+    TYPE(GaussIntegrationPoints_t) :: IP
+
+    TYPE(Nodes_t), SAVE :: Nodes
+!$omp threadprivate(nodes)
+!------------------------------------------------------------------------------
+    CALL GetElementNodes( Nodes )
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
+
+    !Numerical integration:
+    !----------------------
+    IP = GaussPoints( Element )
+    DO t=1,IP % n
+      ! Basis function values & derivatives at the integration point:
+      !--------------------------------------------------------------
+      stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
+               IP % W(t), detJ, Basis, dBasisdx )
+
+      ! The source term at the integration point:
+      !------------------------------------------
+      LoadAtIP = SUM( Basis(1:n) * LOAD(1:n) )
+      FORCE(1:nd) = FORCE(1:nd) + IP % s(t) * DetJ * LoadAtIP * Basis(1:nd)
+    END DO
+!------------------------------------------------------------------------------
+  END SUBROUTINE LocalMatrixBC
+!------------------------------------------------------------------------------
+
+
 ! Tailored local CG algo for speed testing (somewhat faster than any of the 
 ! library routines but not so much...)
-!-------------------------------------------------------------------------
+!------------------------------------------------------------------------------
   SUBROUTINE  PCG( n, x, b, eps, maxiter )
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: x(n),b(n), eps
@@ -253,60 +332,180 @@ CONTAINS
     INTEGER :: iter, i, j, k
     REAL(KIND=dp) :: residual, eps2,st
 
-    eps2 = eps*eps
-    call mv(n,x,r)
-    r = b - r
+    REAL(KIND=dp), PARAMETER :: one = 1
 
-    residual = SUM(r*r)
+    eps2 = eps*eps
+
+    call rmv(n,x,r)         ! r = Ax
+    CALL rsumb(n,r,-one,b)  ! r = b - r
+    residual = rnrm(n,r)    ! residual = SUM(r*r)
     IF(residual<eps2) RETURN
 
-    call prec(n,r,z)
-    p = z
-    rho = SUM(r*z)
-
     DO iter=1,maxiter
+      call rprec(n,r,z)     ! z = r / diag(A)
+      rho = rdot(n,r,z)     ! rho = SUM(r*z)
+      
+      IF (iter==1) THEN
+        call rset(n,p,z)    ! p = z
+      ELSE
+        beta = rho/oldrho
+        call rsumb(n,p,beta,z)    ! p = z + beta*p
+      END IF
       oldrho = rho
-      call mv(n,p,q)
-      alpha = rho/SUM(p*q)
 
-      x = x + alpha * p
-      r = r - alpha * q
+      call rmv(n,p,q)             ! q = Ap
+      alpha = rho/rdot(n,p,q)     ! alpha = rho/SUM(p*q)
 
-      residual = SUM(r*r)
-      IF(MOD(iter,10)==0) WRITE (*, '(I8, E11.4)') iter, SQRT(residual)
+      CALL rsuma( n,x,alpha,p )   ! x = x + alpha*p
+      CALL rsuma( n,r,-alpha,q )  ! r = r - alpha*q
+
+      residual = rnrm(n,r)        ! residual = SUM(r*r)
+      IF(MOD(iter,25)==0) WRITE (*, '(I8, E11.4)') iter, SQRT(residual)
       IF (residual < eps2) EXIT
-
-      call prec(n,r,z)
-      rho = SUM(r*z)
-      beta = rho / oldrho
-      p = z + beta * p
     END DO
 
-    call mv(n,x,r)
-    r = b - r
-    residual = SQRT(SUM(r*r))
+    call rmv(n,x,r)               ! r = Ax
+    CALL rsumb(n,r,-one,b)        ! r = b - r
+    residual = SQRT(rnrm(n,r))    ! residual = SUM(r*r)
     WRITE (*, '(I8, E11.4)') iter, residual
+!------------------------------------------------------------------------------
   END SUBROUTINE PCG
+!------------------------------------------------------------------------------
 
 
-  SUBROUTINE mv(n,u,v)
-    INTEGER :: i, n
-    REAL(KIND=dp) :: u(n), v(n)
+!------------------------------------------------------------------------------
+  FUNCTION rdot(n,p,q) RESULT(r)
+!------------------------------------------------------------------------------
+     INTEGER, INTENT(in) :: n
+     REAL(KIND=dp) :: r
+     REAL(KIND=dp), INTENT(in) :: p(:),q(:)
+
+     INTEGER :: i
+
+     r = 0
+!$omp parallel do private(i) reduction(+:r)
+     DO i=1,n
+       r = r + p(i)*q(i)
+     END DO
+!$omp end parallel do
+!------------------------------------------------------------------------------
+  END FUNCTION rdot
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  FUNCTION rnrm(n,p) RESULT(r)
+!------------------------------------------------------------------------------
+     INTEGER, INTENT(in) :: n
+     REAL(KIND=dp) :: r
+     REAL(KIND=dp), INTENT(in) :: p(:)
+
+     INTEGER :: i
+
+     r = 0
+!$omp parallel do private(i) reduction(+:r)
+     DO i=1,n
+       r = r + p(i)*p(i)
+     END DO
+!$omp end parallel do
+!------------------------------------------------------------------------------
+  END FUNCTION rnrm
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE rset(n,p,q)
+!------------------------------------------------------------------------------
+     REAL(KIND=dp), INTENT(in) :: q(:)
+     INTEGER, INTENT(in) :: n
+     REAL(KIND=dp), INTENT(out) :: p(:)
+
+     INTEGER :: i
+
+!$omp parallel do private(i)
+     DO i=1,n
+       p(i) = q(i)
+     END DO
+!$omp end parallel do
+!------------------------------------------------------------------------------
+  END SUBROUTINE rset
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE rsuma(n,p,alpha,q)
+!------------------------------------------------------------------------------
+     REAL(KIND=dp), INTENT(inout) :: p(:)
+     INTEGER, INTENT(in) :: n
+     REAL(KIND=dp), INTENT(in) :: q(:), alpha
+
+     INTEGER :: i
+
+!$omp parallel do private(i)
+     DO i=1,n
+       p(i) = p(i) + alpha*q(i)
+     END DO
+!$omp end parallel do
+!------------------------------------------------------------------------------
+  END SUBROUTINE rsuma
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE rsumb(n,p,beta,q)
+!------------------------------------------------------------------------------
+     REAL(KIND=dp), INTENT(inout) :: p(:)
+     INTEGER, INTENT(in) :: n
+     REAL(KIND=dp), INTENT(in) :: q(:), beta
+
+     INTEGER :: i
+
+!$omp parallel do private(i)
+     DO i=1,n
+       p(i) = q(i) + beta*p(i)
+     END DO
+!$omp end parallel do
+!------------------------------------------------------------------------------
+  END SUBROUTINE rsumb
+!------------------------------------------------------------------------------
+
+
+!------------------------------------------------------------------------------
+  SUBROUTINE rmv(n,u,v)
+!------------------------------------------------------------------------------
+    REAL(KIND=dp), INTENT(in) :: u(n)
+    INTEGER, INTENT(in) :: n
+    REAL(KIND=dp), INTENT(inout) :: v(n)
+
+    INTEGER :: i
     INTEGER, POINTER :: inds(:)
 
-     v(1:n) = 0._dp
-!$omp parallel do private(i,inds) shared(ed,u) reduction(+:v)
+!$omp parallel do private(i)
+     DO i=1,n
+       v(i) = 0
+     END DO
+!$omp end parallel do
+
+!$omp parallel do private(i,inds) reduction(+:v)
      DO i=1,SIZE(ed)
        inds => ed(i)  % dofIndeces
        v(inds) = v(inds) + MATMUL(ed(i) % stiff,u(inds))
      END DO
 !$omp end parallel do
-  END SUBROUTINE mv
+!------------------------------------------------------------------------------
+  END SUBROUTINE rmv
+!------------------------------------------------------------------------------
 
 
-  SUBROUTINE prec(n,u,v)
-    INTEGER :: i,n
-    REAL(KIND=dp) :: u(n), v(n)
+!------------------------------------------------------------------------------
+  SUBROUTINE rprec(n,u,v)
+!------------------------------------------------------------------------------
+    REAL(KIND=dp), INTENT(in) :: u(n)
+    INTEGER, INTENT(in) :: n
+    REAL(KIND=dp), INTENT(out) :: v(n)
+
+    INTEGER :: i
+    REAL(KIND=dp), ALLOCATABLE :: x(:)
 
 !!omp parallel do private(i,j,inds) shared(ed,n,u,v)
 !      DO i=1,SIZE(ed)
@@ -317,12 +516,15 @@ CONTAINS
 !      END DO
 !!omp end parallel do
 
-!$omp parallel do private(i) shared(np,n,u,v)
+!$omp parallel do private(i)
     DO i=1,n
       v(i) = u(i) / np(i) % diag
     END DO
 !$omp end parallel do
-  END SUBROUTINE prec
+!------------------------------------------------------------------------------
+  END SUBROUTINE rprec
+!------------------------------------------------------------------------------
+
 
 !------------------------------------------------------------------------------
   SUBROUTINE LCondensate( N, Nb, K, F )
@@ -353,10 +555,6 @@ CONTAINS
   END SUBROUTINE LCondensate
 !------------------------------------------------------------------------------
 
-
-
-
-!------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
 END SUBROUTINE PoissonSolver
