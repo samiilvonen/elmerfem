@@ -180,7 +180,7 @@ SUBROUTINE PoissonSolver( Model,Solver,dt,TransientSimulation )
      n  = GetElementNOFNodes(Element)
      nd = GetElementNofDOFs(Element)
 
-     IF ( SIZE(inds)<nd ) inds = [(i,i=1,nd)]
+     inds = [(i,i=1,nd)]
      nd = GetElementDOFs(inds, Element)
      inds = Solver % Variable % Perm(inds)
 
