@@ -1171,7 +1171,7 @@
     TYPE(Mesh_t), POINTER :: Mesh
     TYPE(Variable_t), POINTER :: pVar
     TYPE(Matrix_t), POINTER :: Amat
-    REAL(KIND=dp), POINTER :: b(:), x(:), r(:)
+    REAL(KIND=dp), POINTER :: res(:), dx(:), r(:)
     REAL(KIND=dp) :: rnorm
     LOGICAL :: Found, ScaleRHS
     CHARACTER(MAX_NAME_LEN) :: str   
@@ -1193,10 +1193,10 @@
     IF(n /= SIZE(Solver % Variable % Values) ) THEN
       CALL Fatal('SlavePrecComplex','Residual should have same size as primary variable!')
     END IF
-    b => pVar % Values
+    res => pVar % Values
 
-    b(1:n:2) = REAL(v(1:n/2))
-    b(2:n:2) = AIMAG(v(1:n/2))
+    res(1:n:2) = REAL(v(1:n/2))
+    res(2:n:2) = AIMAG(v(1:n/2))
 
     ! Check whether the residual corresponds to a scaled linear system
     ScaleRHS = ListGetLogical(Params, 'Linear System Scaling', Found, DefValue = .TRUE.)
@@ -1204,7 +1204,7 @@
       !
       ! Perform back-scaling
       !
-      CALL ScaleLinearSystemVectors(AMat, b, n, BackScaling = .TRUE.)
+      CALL ScaleLinearSystemVectors(AMat, res, n, BackScaling = .TRUE.)
     END IF
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
@@ -1220,13 +1220,13 @@
       CALL Fatal('SlavePrecComplex','Update should have same size as primary variable!')
     END IF
 
-    x => pVar % Values
+    dx => pVar % Values
 
     IF (ScaleRHS) THEN
       !
       ! Transform the search direction so that it corresponds to the scaled linear system
       !
-      CALL ScaleLinearSystemVectors(AMat, b, n, x)
+      CALL ScaleLinearSystemVectors(AMat, res, n, dx)
     END IF
     
     IF( ListCheckPresent( Params,'MG Smoother') ) THEN      
@@ -1235,21 +1235,21 @@
       IF( ListGetLogical( Params,'MG Smoother Normalize Guess',Found) )  THEN
         BLOCK
           REAL(KIND=dp) :: rn, bnre, bnim    
-          CALL MatrixVectorMultiply( Amat, x, r) 
+          CALL MatrixVectorMultiply( Amat, dx, r) 
           rn = SUM( r(1:n)**2 )
-          bnre = SUM( r(1:n) * b(1:n) )          
-          bnim = SUM( r(1:n:2) * b(2:n:2) - r(2:n:2) * b(1:n:2) )
+          bnre = SUM( r(1:n) * res(1:n) )          
+          bnim = SUM( r(1:n:2) * res(2:n:2) - r(2:n:2) * res(1:n:2) )
           
           IF( rn > TINY( rn ) ) THEN
             bnre = bnre / rn
             bnim = bnim / rn
 #if 0
             ! This does not seem to help ...
-            b(1:n) = x(1:n)
-            x(1:n:2) = bnre * r(1:n:2) - bnim * r(2:n:2)
-            x(2:n:2) = bnim * r(1:n:2) + bnre * r(2:n:2)
+            res(1:n) = dx(1:n)
+            dx(1:n:2) = bnre * r(1:n:2) - bnim * r(2:n:2)
+            dx(2:n:2) = bnim * r(1:n:2) + bnre * r(2:n:2)
 #else            
-            x(1:n) = x(1:n) * bnre
+            dx(1:n) = dx(1:n) * bnre
 #endif
             WRITE( Message,'(A,2ES12.3)') 'Preconditioning Normalizing Factor: ',bnre,bnim
             CALL Info('SlavePrec',Message,Level=6) 
@@ -1257,15 +1257,16 @@
         END BLOCK
       END IF
         
-      CALL CRS_MatrixVectorMultiply( Amat, x, r )
-      !CALL MGmv( Amat, x, r, .TRUE. )
-      r(1:n) = b(1:n) - r(1:n)
-      RNorm = MGSmooth( Solver, Amat, Mesh, x, b, r, &
+      ! Apply additional iterations to the residual correction system. Note: the true residual
+      ! is returned via r but its initial value does not change the result 
+      r(:) = 0.0_dp
+      RNorm = MGSmooth( Solver, Amat, Mesh, dx, res, r, &
           1, pVar % dofs, PreSmooth = .FALSE.)
+
       DEALLOCATE(r)
     END IF
       
-    u(1:n/2) = CMPLX(x(1:n:2), x(2:n:2) ) 
+    u(1:n/2) = CMPLX(dx(1:n:2), dx(2:n:2) ) 
 
 !-------------------------------------------------------------------------------
   END SUBROUTINE SlavePrecComplex
