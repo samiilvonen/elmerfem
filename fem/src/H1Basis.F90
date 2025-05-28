@@ -600,6 +600,7 @@ CONTAINS
           La = H1Basis_TriangleL(edgedir(1,i),u(k),v(k))
           Lb = H1Basis_TriangleL(edgedir(2,i),u(k),v(k))
 
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = La*Lb*H1Basis_varPhi(j,Lb-La)
         END DO
       END DO
@@ -637,6 +638,7 @@ CONTAINS
           vPhi = H1Basis_varPhi(j,Lb-La)
           dVPhi = H1Basis_dVarPhi(j,Lb-La)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k, nbasis+j-1, 1) = dLa(1)*Lb*vPhi+ &
                   La*dLb(1)*vPhi +&
                   La*Lb*dVPhi*(dLb(1)-dLa(1))
@@ -677,6 +679,7 @@ CONTAINS
             Lb = H1Basis_TriangleL(2,u(k),v(k))
             Lc = H1Basis_TriangleL(3,u(k),v(k))
           
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
             fval(k,nbasis+j+1) = La*Lb*Lc*(H1Basis_PowInt((Lb-La),i))*&
                     H1Basis_PowInt((2D0*Lc-1),j)
           END DO
@@ -694,6 +697,7 @@ CONTAINS
             Lb=H1Basis_TriangleL(localnumbers(2),u(k),v(k))
             Lc=H1Basis_TriangleL(localnumbers(3),u(k),v(k))
             
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
             fval(k,nbasis+j+1) = La*Lb*Lc*H1Basis_LegendreP(i,Lb-La)* &
                                           H1Basis_LegendreP(j,2*Lc-1)
           END DO
@@ -735,6 +739,7 @@ CONTAINS
             Lb_Lai = H1Basis_PowInt((Lb-La), i)
             Lc_1n = H1Basis_PowInt((2D0*Lc-1), j)
             
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
             ! Calculate value of function from general form
             grad(k,nbasis+j+1,1) = -c*Lb*Lc*Lb_Lai*Lc_1n + La*c*Lc*Lb_Lai*Lc_1n + &
                     La*Lb*Lc*i*(H1Basis_PowInt((Lb-La),i-1))*Lc_1n
@@ -764,6 +769,7 @@ CONTAINS
             a=H1Basis_LegendreP(i,Lb_La)
             b=H1Basis_LegendreP(j,Lc_1)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
             grad(k,nbasis+j+1,1) = dLa(1)*Lb*Lc*a*b + La*dLb(1)*Lc*a*b + &
                     La*Lb*dLc(1)*a*b + &
                     La*Lb*Lc*H1Basis_dLegendreP(i,Lb_La)*(dLb(1)-dLa(1))*b + &
@@ -887,6 +893,7 @@ CONTAINS
           La = H1Basis_QuadL(edgedir(1,i), u(k), v(k))
           Lb = H1Basis_QuadL(edgedir(2,i), u(k), v(k))
 
+            if ( k<0 .or. k>size(fval,1) ) stop
           fval(k, nbasis+j-1) = c*(La+Lb-1)*H1Basis_Phi(j, Lb-La)
         END DO
       END DO
@@ -925,6 +932,7 @@ CONTAINS
           Phi = H1Basis_Phi(j, Lb-La)
           dPhi = H1Basis_dPhi(j,Lb-La)
 
+            if ( k<0 .or. k>size(grad,1) ) stop
           grad(k, nbasis+j-1, 1) = c*((dLa(1)+dLb(1))*Phi + &
                   (La+Lb-1)*dPhi*(dLb(1)-dLa(1)))
           grad(k, nbasis+j-1, 2) = c*((dLa(2)+dLb(2))*Phi + &
@@ -935,6 +943,7 @@ CONTAINS
       nbasis = nbasis + pmax(i) - 1
     END DO
   END SUBROUTINE H1Basis_SD_dQuadEdgeP
+
 
   SUBROUTINE H1Basis_SD_QuadBubbleP(nvec, u, v, pmax, nbasismax, fval, nbasis, localNumbers)
     IMPLICIT NONE
@@ -958,6 +967,7 @@ CONTAINS
         DO j=2,(pmax-i)
           !_ELMER_OMP_SIMD
           DO k=1,nvec
+            if ( k<0 .or. k>size(fval,1) ) stop
             fval(k,nbasis+j-1) = H1Basis_Phi(i,u(k))*H1Basis_Phi(j,v(k))
           END DO
         END DO
@@ -974,6 +984,7 @@ CONTAINS
             Lc = H1Basis_QuadL(localNumbers(4),u(k),v(k))
 
             ! Calculate value of function from the general form
+            if ( k<0 .or. k>size(fval,1) ) stop
             fval(k,nbasis+j-1) = H1Basis_Phi(i,Lb-La)*H1Basis_Phi(j,Lc-La)
           END DO
         END DO
@@ -1028,6 +1039,7 @@ CONTAINS
             Lb = H1Basis_QuadL(localNumbers(2),u(k),v(k))
             Lc = H1Basis_QuadL(localNumbers(4),u(k),v(k))
 
+            if ( k<0 .or. k>size(grad,1) ) stop
             grad(k,nbasis+j-1,1) = H1Basis_dPhi(i,Lb-La)*(dLbdLa(1))*H1Basis_Phi(j,Lc-La) + &
                     H1Basis_Phi(i,Lb-La)*H1Basis_dPhi(j,Lc-La)*(dLcdLa(1))
             grad(k,nbasis+j-1,2) = H1Basis_dPhi(i,Lb-La)*(dLbdLa(2))*H1Basis_Phi(j,Lc-La) + &
@@ -1072,6 +1084,7 @@ CONTAINS
           Na = fval(k,node1)
           Nb = fval(k,node2)
 
+          if ( k<0 .or. k>size(fval,1) ) stop
           fval(k, nbasis+j-1) = c*Na*Nb*H1Basis_varPhi(j, Lb-La)
         END DO
       END DO
@@ -1122,6 +1135,7 @@ CONTAINS
           Phi = H1Basis_varPhi(j, Lb-La)
           dPhi = H1Basis_dvarPhi(j,Lb-La)
 
+          if ( k<0 .or. k>size(grad,1) ) stop
           grad(k, nbasis+j-1, 1:2) = c*(dNa*Nb*Phi + Na*dNb*Phi + &
                     Na*Nb*dPhi*(dLb-dLa))
         END DO
@@ -1154,6 +1168,7 @@ CONTAINS
         DO j=2,pmax
           !_ELMER_OMP_SIMD
           DO k=1,nvec
+            if ( k<0 .or. k>size(fval,1) ) stop
             fval(k,nbasis+j-1) = H1Basis_Phi(i,u(k))*H1Basis_Phi(j,v(k))
           END DO
         END DO
@@ -1173,6 +1188,7 @@ CONTAINS
             Pb = fval(k,localNumbers(3))
 
             ! Calculate value of function from the general form
+            if ( k<0 .or. k>size(fval,1) ) stop
             fval(k,nbasis+j+1) = Pa*Pb*H1Basis_LegendreP(i,Lb-La)*H1Basis_LegendreP(j,Lc-La)
           END DO
         END DO
@@ -1203,6 +1219,7 @@ CONTAINS
         DO j=2,pmax
           !_ELMER_OMP_SIMD
           DO k=1,nvec
+            if ( k<0 .or. k>size(grad,1) ) stop
             ! First coordinate (Xi)
             grad(k,nbasis+j-1,1) = H1Basis_dPhi(i,u(k))*H1Basis_Phi(j,v(k))
             ! Second coordinate (Eta)
@@ -1239,6 +1256,7 @@ CONTAINS
             dLegi = H1Basis_dLegendreP(i,Lb-La)*(dLb-dLa)
             dLegj = H1Basis_dLegendreP(j,Lc-La)*(dLc-dLa)
 
+            if ( k<0 .or. k>size(grad,1) ) stop
             grad(k,nbasis+j+1,1:2) = dPa*Pb*Legi*Legj + Pa*dPb*Legi*Legj + &
                                    Pa*Pb*dLegi*Legj + Pa*Pb*Legi*dLegj
           END DO
@@ -1461,6 +1479,7 @@ CONTAINS
           La = H1Basis_TetraL(edgedir(1,i), u(k), v(k), w(k))
           Lb = H1Basis_TetraL(edgedir(2,i), u(k), v(k), w(k))
 
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = La*Lb*H1Basis_varPhi(j,Lb-La)
         END DO
       END DO
@@ -1497,6 +1516,7 @@ CONTAINS
           vPhi = H1Basis_varPhi(j,Lb-La)
           dVPhi = H1Basis_dVarPhi(j,Lb-La)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k, nbasis+j-1, 1) = dLa(1)*Lb*vPhi+ &
                   La*dLb(1)*vPhi +&
                   La*Lb*dVPhi*(dLb(1)-dLa(1))
@@ -1538,6 +1558,7 @@ CONTAINS
             Lb=H1Basis_TetraL(facedir(2,i),u(l),v(l),w(l))
             Lc=H1Basis_TetraL(facedir(3,i),u(l),v(l),w(l))
     
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k+1) = La*Lb*Lc*H1Basis_LegendreP(j,Lb-La)* &
                                         H1Basis_LegendreP(k,2*Lc-1)
           END DO
@@ -1581,6 +1602,7 @@ CONTAINS
             a=H1Basis_LegendreP(j,Lb_La)
             b=H1Basis_LegendreP(k,Lc_1)
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k+1,1) = dLa(1)*Lb*Lc*a*b + La*dLb(1)*Lc*a*b + &
                     La*Lb*dLc(1)*a*b + &
                     La*Lb*Lc*H1Basis_dLegendreP(j,Lb_La)*(dLb(1)-dLa(1))*b + &
@@ -1630,6 +1652,7 @@ CONTAINS
             L3_1 = 2*L3-1
             L4_1 = 2*L4-1
 
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k+1) = L1*L2*L3*L4*&
                     H1Basis_LegendreP(i,L2_L1)*&
                     H1Basis_LegendreP(j,L3_1)*&
@@ -1674,6 +1697,7 @@ CONTAINS
             c = H1Basis_LegendreP(k,L4_1)
 
             ! Gradients of tetrahedral bubble basis functions 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k+1,1) = -1d0/2*L2*L3*L4*a*b*c + &
                     1d0/2*L1*L3*L4*a*b*c + &
                     L1*L2*L3*L4*H1Basis_dLegendreP(i,L2_L1)*b*c
@@ -1724,6 +1748,7 @@ CONTAINS
           Lb = H1Basis_WedgeL(edgedir(2,i), u(k), v(k))
           Na = H1Basis_WedgeH(edgedir(1,i), w(k))
           Nb = H1Basis_WedgeH(edgedir(2,i), w(k))
+          if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = c*La*Lb*H1Basis_varPhi(j,Lb-La)*(1+Na+Nb)
         END DO
       END DO
@@ -1739,6 +1764,7 @@ CONTAINS
           La = H1Basis_WedgeL(edgedir(1,i), u(k), v(k))
           Na = H1Basis_WedgeH(edgedir(1,i), w(k))
           Nb = H1Basis_WedgeH(edgedir(2,i), w(k))
+           if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = La*H1Basis_Phi(j, Nb-Na)
         END DO
       END DO
@@ -1780,6 +1806,7 @@ CONTAINS
           vPhi=H1Basis_varPhi(j,Lb-La)
           dVPhi=H1Basis_dVarPhi(j,Lb-La)
           NaNb=1+Na+Nb
+          if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           ! fval(k, nbasis+j-1) = c*La*Lb*H1Basis_varPhi(j,Lb-La)*(1+Na+Nb)
           grad(k, nbasis+j-1,1) = c*dLa(1)*Lb*vPhi*NaNb + &
                 c*La*dLb(1)*vPhi*NaNb + c*La*Lb*dVPhi*(dLb(1)-dLa(1))*NaNb
@@ -1811,6 +1838,7 @@ CONTAINS
           Phi = H1Basis_Phi(j, Nb-Na)
           dPhi = H1Basis_dPhi(j,Nb-Na)
           
+          if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k, nbasis+j-1,1) = dLa(1)*Phi+La*dPhi*(dNb(1)-dNa(1))
           grad(k, nbasis+j-1,2) = dLa(2)*Phi+La*dPhi*(dNb(2)-dNa(2))
           grad(k, nbasis+j-1,3) = dLa(3)*Phi+La*dPhi*(dNb(3)-dNa(3)) 
@@ -1849,6 +1877,7 @@ CONTAINS
             Lc = H1Basis_WedgeL(facedir(3,i), u(l), v(l))
             Na = H1Basis_WedgeH(facedir(1,i), w(l))
 
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k+1) = c*(1+2*Na)*La*Lb*Lc* &
                                             H1Basis_LegendreP(j, Lb-La)* &
                                             H1Basis_LegendreP(k, 2*Lc-1)
@@ -1875,6 +1904,7 @@ CONTAINS
               Lb = H1Basis_WedgeL(facedir(2,i), u(l), v(l))
               Na = H1Basis_WedgeH(facedir(1,i), w(l))
               Nc = H1Basis_WedgeH(facedir(4,i), w(l))
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
               fval(l,nbasis+k-1) = La*Lb*H1Basis_varPhi(j, Lb-La)* &
                                          H1Basis_Phi(k, Nc-Na)
             END DO
@@ -1886,6 +1916,7 @@ CONTAINS
               Lb = H1Basis_WedgeL(facedir(4,i), u(l), v(l))
               Na = H1Basis_WedgeH(facedir(1,i), w(l))
               Nc = H1Basis_WedgeH(facedir(2,i), w(l))
+              if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
               fval(l,nbasis+k-1) = La*Lb*H1Basis_varPhi(k, Lb-La)* &
                                          H1Basis_Phi(j, Nc-Na)
             END DO
@@ -1934,6 +1965,7 @@ CONTAINS
             LegP2Lc1 = H1Basis_LegendreP(k, 2*Lc-1)
             cNa = c*(1+2*Na)
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k+1,1) = cNa*dLa(1)*Lb*Lc*LegPLbLa*LegP2Lc1 + &
                     cNa*La*dLb(1)*Lc*LegPLbLa*LegP2Lc1 + &
                     cNa*La*Lb*dLc(1)*LegPLbLa*LegP2Lc1 + &
@@ -1992,6 +2024,7 @@ CONTAINS
               vPhi = H1Basis_varPhi(j, Lb-La)
               Phi = H1Basis_Phi(k, Nc-Na)
 
+              if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
               ! fval(l,nbasis+k-1) = La*Lb*H1Basis_varPhi(j, Lb-La)* &
               !                            H1Basis_Phi(k, Nc-Na)
               grad(l,nbasis+k-1,1) = dLa(1)*Lb*vPhi*Phi+ &
@@ -2020,6 +2053,7 @@ CONTAINS
               vPhi = H1Basis_varPhi(k, Lb-La)
               Phi = H1Basis_Phi(j, Nc-Na)
 
+              if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
               ! fval(l,nbasis+k-1) = La*Lb*H1Basis_varPhi(k, Lb-La)* &
               !                            H1Basis_Phi(j, Nc-Na)
               grad(l,nbasis+k-1,1) = dLa(1)*Lb*vPhi*Phi+ &
@@ -2070,6 +2104,7 @@ CONTAINS
             L3_1 = 2d0*L3-1
 
             ! Get value of bubble function
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k-1) = L1*L2*L3*H1Basis_LegendreP(i,L2_L1)*&
                     H1Basis_LegendreP(j,L3_1)*H1Basis_Phi(k,w(l))
           END DO
@@ -2114,6 +2149,7 @@ CONTAINS
             Legj = H1Basis_LegendreP(j,L3_1)
             phiW = H1Basis_Phi(k,w(l))
             
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k-1,1) = ((-1d0/2)*L2*L3*Legi*Legj + &
                     L1*(1d0/2)*L3*Legi*Legj +&
                     L1*L2*L3*H1Basis_dLegendreP(i,L2_L1)*Legj)*phiW
@@ -2323,6 +2359,7 @@ CONTAINS
           Lb = H1Basis_WedgeL(node2, u(k), v(k))
           Na = fval(k,node1)
           Nb = fval(k,node2)
+          if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = Na*Nb*H1Basis_varPhi(j,Lb-La)
         END DO
       END DO
@@ -2341,6 +2378,7 @@ CONTAINS
           Lb = H1Basis_WedgeH(node2, w(k))
           Na = fval(k,node1)
           Nb = fval(k,node2)
+          if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = Na*Nb*H1Basis_varPhi(j, Lb-La)
         END DO
       END DO
@@ -2390,6 +2428,7 @@ CONTAINS
           dVPhi = H1Basis_dVarPhi(j,Lb-La)
           ! fval(k, nbasis+j-1) = c*La*Lb*H1Basis_varPhi(j,Lb-La)*(1+Na+Nb)
 
+          if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k, nbasis+j-1,:) = dNa*Nb*vPhi + Na*dNb*vPhi + Na*Nb*dvPhi*(dLb-dLa)
         END DO
       END DO
@@ -2417,6 +2456,7 @@ CONTAINS
           dNa = grad(k,node1,:)
           dNb = grad(k,node2,:)
 
+          if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k, nbasis+j-1,:) = dNa*Nb*vPhi + Na*dNb*vPhi + Na*Nb*dvPhi*(dLb-dLa)
         END DO
       END DO
@@ -2453,6 +2493,7 @@ CONTAINS
             Lc = H1Basis_WedgeL(facedir(3,i), u(l), v(l))
             Na = H1Basis_WedgeH(facedir(1,i), w(l))
 
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
             fval(l,nbasis+k+1) = c*(1+2*Na)*La*Lb*Lc* &
                                             H1Basis_LegendreP(j, Lb-La)* &
                                             H1Basis_LegendreP(k, 2*Lc-1)
@@ -2490,6 +2531,7 @@ CONTAINS
               Na = fval(l,node1)
               Nb = fval(l,node3)
 
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
               fval(l,nbasis+k+1) = Na*Nb*H1Basis_LegendreP(j, Lb-La)*H1Basis_LegendreP(k,Lhc-Lha)
             END DO
           ELSE
@@ -2505,6 +2547,7 @@ CONTAINS
               Na = fval(l,node1)
               Nb = fval(l,node3)
 
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
               fval(l,nbasis+k+1) = Na*Nb*H1Basis_LegendreP(k, Lb-La)*H1Basis_LegendreP(j,Lhc-Lha)
             END DO
           END IF
@@ -2554,6 +2597,7 @@ CONTAINS
             LegP2Lc1 = H1Basis_LegendreP(k, 2*Lc-1)
             cNa = c*(1+2*Na)
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
             grad(l,nbasis+k+1,1) = cNa*dLa(1)*Lb*Lc*LegPLbLa*LegP2Lc1 + &
                     cNa*La*dLb(1)*Lc*LegPLbLa*LegP2Lc1 + &
                     cNa*La*Lb*dLc(1)*LegPLbLa*LegP2Lc1 + &
@@ -2629,6 +2673,7 @@ CONTAINS
               dLegj = H1Basis_dLegendreP(j,Lb-La)*(dLb-dLa)
               dLegk = H1Basis_dLegendreP(k,Lhc-Lha)*(dLhc-dLha)
 
+              if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
               grad(l,nbasis+k+1,:) = dNa*Nb*Legj*Legk + Na*dNb*Legj*Legk + &
                      Na*Nb*dLegj*Legk + Na*Nb*Legj*dLegk
             END DO
@@ -2653,6 +2698,7 @@ CONTAINS
               dLegj = H1Basis_dLegendreP(k,Lb-La)*(dLb-dLa)
               dLegk = H1Basis_dLegendreP(j,Lhc-Lha)*(dLhc-dLha)
 
+              if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
               grad(l,nbasis+k+1,:) = dNa*Nb*Legj*Legk + Na*dNb*Legj*Legk + &
                      Na*Nb*dLegj*Legk + Na*Nb*Legj*dLegk
             END DO
@@ -2691,6 +2737,7 @@ CONTAINS
             t = 2*L3-1
 
             ! Get value of bubble function
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
             fval(l,nbasis+k+1) = L1*L2*L3*H1Basis_LegendreP(i,s)*&
                     H1Basis_LegendreP(j,t)*H1Basis_Phi(k+2,w(l))
           END DO
@@ -2746,6 +2793,7 @@ CONTAINS
             dLegj = H1Basis_dLegendreP(j,t)*dt
             dLegk = H1Basis_dPhi(k+2,w(l))*[0,0,1]
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
             grad(l,nbasis+k+1,:) = dL1*L2*L3*Legi*Legj*Legk + L1*dL2*L3*Legi*Legj*Legk + &
                     L1*L2*dL3*Legi*Legj*Legk + L1*L2*L3*dLegi*Legj*Legk + &
                     L1*L2*L3*Legi*dLegj*Legk + L1*L2*L3*Legi*Legj*dLegk
@@ -2994,6 +3042,7 @@ CONTAINS
           Nb = fval(k,node2)
           La = H1Basis_PyramidTL(node1,u(k),v(k),w(k))
           Lb = H1Basis_PyramidTL(node2,u(k),v(k),w(k))
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k,nbasis+j-1) = Na*Nb*H1Basis_varPhi(j,Lb-La)
         END DO
       END DO
@@ -3044,6 +3093,7 @@ CONTAINS
           Phi = H1Basis_varPhi(j,Lb-La)
           dPhi = H1Basis_dvarPhi(j,Lb-La)*(dLb-dLa)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k,nbasis+j-1,:) = dNa*Nb*Phi + Na*dNb*Phi + Na*Nb*dPhi
         END DO
       END DO
@@ -3071,6 +3121,7 @@ CONTAINS
           Phi = H1Basis_varPhi(j,Lb-La)
           dPhi = H1Basis_dvarPhi(j,Lb-La)*(dLb-dLa)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k,nbasis+j-1,:) = dNa*Nb*Phi + Na*dNb*Phi + Na*Nb*dPhi
         END DO
       END DO
@@ -3112,6 +3163,7 @@ CONTAINS
             La = H1Basis_PyramidL(node1,u(l),v(l))
             Lb = H1Basis_PyramidL(node2,u(l),v(l))
             Lc = H1Basis_PyramidL(node4,u(l),v(l))
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
             fval(l,nbasis+k+1) = Pa*Pb*H1Basis_LegendreP(j,Lb-La)*H1Basis_LegendreP(k,Lc-La)
           END DO
         END DO
@@ -3134,6 +3186,7 @@ CONTAINS
             La = H1Basis_PyramidTL(node1,u(l),v(l),w(l))
             Lb = H1Basis_PyramidTL(node2,u(l),v(l),w(l))
             Lc = H1Basis_PyramidTL(node3,u(l),v(l),w(l))
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
             fval(l,nbasis+k+1) = Pa*Pb*Pc*H1Basis_LegendreP(j,Lb-La)*H1Basis_LegendreP(k,2*Lc-1)
           END DO
         END DO
@@ -3192,6 +3245,7 @@ CONTAINS
             dLegi = H1Basis_dLegendreP(j,Lb-La)*(dLb-dLa)
             dLegj = H1Basis_dLegendreP(k,Lc-La)*(dLc-dLa)
  
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
             grad(l,nbasis+k+1,:) = dPa*Pb*Legi*Legj + Pa*dPb*Legi*Legj + &
                                    Pa*Pb*dLegi*Legj + Pa*Pb*Legi*dLegj
           END DO
@@ -3231,6 +3285,7 @@ CONTAINS
             dLegi = H1Basis_dLegendreP(j,Lb-La)*(dLb-dLa)
             dLegj = H1Basis_dLegendreP(k,2*Lc-1)*2*dLc
  
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
             grad(l,nbasis+k+1,:) = dPa*Pb*Pc*Legi*Legj + Pa*dPb*Pc*Legi*Legj + &
                                    Pa*Pb*dPc*Legi*Legj + Pa*Pb*Pc*dLegi*Legj + &
                                    Pa*Pb*Pc*Legi*dLegj
@@ -3271,6 +3326,7 @@ CONTAINS
              Legi = H1Basis_LegendreP(i,u(l))
              Legj = H1Basis_LegendreP(j,v(l))
              Legk = H1Basis_LegendreP(k,2*s-1)
+            if (l<0 .or. l>size(fval,1) .or. nbasis<0 .or. nbasis>size(fval,2)) stop
              fval(l,nbasis) = Pa*Pb*Pc*Legi*Legj*Legk
           END DO
         END DO
@@ -3321,6 +3377,7 @@ CONTAINS
              dLegj(2) = H1Basis_dLegendreP(j,v(l))
              dLegk(3) = H1Basis_dLegendreP(k,2*s-1)*2/SQRT(2._dp)
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis<0 .or. nbasis>size(grad,2)) stop
              grad(l,nbasis,:) = dPa*Pb*Pc*Legi*Legj*Legk + Pa*dPb*Pc*Legi*Legj*Legk + &
                                 Pa*Pb*dPc*Legi*Legj*Legk + Pa*Pb*Pc*dLegi*Legj*Legk + &
                                 Pa*Pb*Pc*Legi*dLegj*Legk + Pa*Pb*Pc*Legi*Legj*dLegk
@@ -3606,6 +3663,7 @@ CONTAINS
           Lb=H1Basis_BrickL(edgedir(2,i), u(k), v(k), w(k))
           CALL H1Basis_BrickEdgeL(i, u(k), v(k), w(k), Aa, Ba)
           
+            if (k<0 .or. k>size(fval,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = c*H1Basis_Phi(j, Lb-La)*Aa*Ba
         END DO
       END DO
@@ -3647,6 +3705,7 @@ CONTAINS
           Phi = H1Basis_Phi(j, Lb-La)
           dPhi = H1Basis_dPhi(j, Lb-La)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis+j-1<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k,nbasis+j-1,1) = c*dPhi*(dLb(1)-dLa(1))*Aa*Ba +&
                   c*Phi*dAa(1)*Ba +&
                   c*Phi*Aa*dBa(1)
@@ -3690,6 +3749,7 @@ CONTAINS
             Lc=H1Basis_BrickL(facedir(3,i), u(l), v(l), w(l))
             Ld=H1Basis_BrickL(facedir(4,i), u(l), v(l), w(l))
             
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l, nbasis+k-1) = (a*(La+Lb+Lc+Ld)-1)*H1Basis_Phi(j, Lb-La) &
                                                      *H1Basis_Phi(k, Ld-La)
           END DO
@@ -3736,6 +3796,7 @@ CONTAINS
             PhiLdLa=H1Basis_Phi(k, Ld-La)
             LaLbLcLd=a*(La+Lb+Lc+Ld)-1
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l, nbasis+k-1, 1)=a*(dLa(1)+dLb(1)+dLc(1)+dLd(1))*PhiLbLa*PhiLdLa + &
                   LaLbLcLd*H1Basis_dPhi(j,Lb-La)*(dLb(1)-dLa(1))*PhiLdLa + &
                   LaLbLcLd*PhiLbLa*H1Basis_dPhi(k, Ld-La)*(dLd(1)-dLa(1))
@@ -3773,6 +3834,7 @@ CONTAINS
         DO k=2,pmax-i-j
           !_ELMER_OMP_SIMD
           DO l=1,nvec
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k-1) = H1Basis_Phi(i,u(l))*H1Basis_Phi(j,v(l))*H1Basis_Phi(k,w(l))
           END DO
         END DO
@@ -3806,6 +3868,7 @@ CONTAINS
             phiU = H1Basis_Phi(i,u(l))
             phiV = H1Basis_Phi(j,v(l))
             phiW = H1Basis_Phi(k,w(l))
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k-1,1) = H1Basis_dPhi(i,u(l))*phiV*phiW
             grad(l,nbasis+k-1,2) = phiU*H1Basis_dPhi(j,v(l))*phiW
             grad(l,nbasis+k-1,3) = phiU*phiV*H1Basis_dPhi(k,w(l))
@@ -3852,6 +3915,7 @@ CONTAINS
           Nb = fval(k, node2)
           La = Lp(k, node1)
           Lb = Lp(k, node2)
+            if (k<0 .or. k>size(fval,1) .or. nbasis<0 .or. nbasis+j-1>size(fval,2)) stop
           fval(k, nbasis+j-1) = Na*Nb*H1Basis_varPhi(j, Lb-La)
         END DO
       END DO
@@ -3905,6 +3969,7 @@ CONTAINS
           Phi = H1Basis_varPhi(j, Lb-La)
           dPhi = H1Basis_dvarPhi(j, Lb-La)
 
+            if (k<0 .or. k>size(grad,1) .or. nbasis<0 .or. nbasis+j-1>size(grad,2)) stop
           grad(k,nbasis+j-1,1) = dPhi*(dLb(1)-dLa(1))*Na*Nb + &
                   Phi*dNa(1)*Nb + Phi*Na*dNb(1)
 
@@ -3957,6 +4022,7 @@ CONTAINS
             La = Lp(l,node1)
             Lb = Lp(l,node2)
             Ld = Lp(l,node4)
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(fval,2)) stop
             fval(l, nbasis+k+1) = Na*Nb*H1Basis_LegendreP(j, Lb-La)*H1Basis_LegendreP(k, Ld-La)
           END DO
         END DO
@@ -4022,6 +4088,7 @@ CONTAINS
             dNa = grad(l,node1,:)
             dNb = grad(l,node3,:)
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k+1<0 .or. nbasis+k+1>size(grad,2)) stop
             grad(l, nbasis+k+1, :) = dNa*Nb*PhiU*PhiV + Na*dNb*PhiU*PhiV + &
                 Na*Nb*dPhiU*(dLb-dLa)*PhiV + Na*Nb*PhiU*dPhiV*(dLd-dLa)
           END DO
@@ -4052,6 +4119,7 @@ CONTAINS
         DO k=2,pmax
           !_ELMER_OMP_SIMD
           DO l=1,nvec
+            if (l<0 .or. l>size(fval,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(fval,2)) stop
             fval(l,nbasis+k-1) = H1Basis_Phi(i,u(l))*H1Basis_Phi(j,v(l))*H1Basis_Phi(k,w(l))
           END DO
         END DO
@@ -4086,6 +4154,7 @@ CONTAINS
             phiV = H1Basis_Phi(j,v(l))
             phiW = H1Basis_Phi(k,w(l))
 
+            if (l<0 .or. l>size(grad,1) .or. nbasis+k-1<0 .or. nbasis+k-1>size(grad,2)) stop
             grad(l,nbasis+k-1,1) = H1Basis_dPhi(i,u(l))*phiV*phiW
             grad(l,nbasis+k-1,2) = phiU*H1Basis_dPhi(j,v(l))*phiW
             grad(l,nbasis+k-1,3) = phiU*phiV*H1Basis_dPhi(k,w(l))
