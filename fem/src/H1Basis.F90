@@ -2009,7 +2009,7 @@ CONTAINS
               ! La*Lb*H1Basis_dVarPhi(j, Lb-La)*(dLb(3)-dLa(3))*Phi
             END DO
           ELSE
-            !_ELMER_OMP_SIMD PRIVATE(La,Lb,Na,Nc)
+            !_ELMER_OMP_SIMD PRIVATE(La,Lb,Na,Nc,vPhi,Phi)
             DO l=1,nvec
               ! Numbering permuted, switch indices j,k and nodes 2 and 4
               La = H1Basis_WedgeL(facedir(1,i), u(l), v(l))
@@ -2404,7 +2404,7 @@ CONTAINS
       dLa = H1Basis_dWedgeH(node1)
       dLb = H1Basis_dWedgeH(node2)
       DO j=2,pmax(i)
-        !_ELMER_OMP_SIMD PRIVATE(La, Na, Nb, dNa, dNb, Phi, dPhi)
+        !_ELMER_OMP_SIMD PRIVATE(La, Lb, Na, Nb, dNa, dNb, vPhi, dvPhi)
         DO k=1,nvec
           La = H1Basis_WedgeH(node1, w(k))
           Lb = H1Basis_WedgeH(node2, w(k))
@@ -3950,7 +3950,7 @@ CONTAINS
       node4 = facedir(4,i)
       DO j=0,pmax(i)-2
         DO k=0,pmax(i)-2
-          !_ELMER_OMP_SIMD PRIVATE(Na,Nb,La, Lb, Lc, Ld)
+          !_ELMER_OMP_SIMD PRIVATE(Na,Nb,La, Lb, Ld)
           DO l=1,nvec
             Na = fval(l,node1)
             Nb = fval(l,node3)
@@ -4003,7 +4003,7 @@ CONTAINS
 
       DO j=0,pmax(i)-2
         DO k=0,pmax(i)-2
-          !_ELMER_OMP_SIMD PRIVATE(La, Lb, Lc, Ld, PhiU, PhiV, Na, Nb, dNa, dNb)
+          !_ELMER_OMP_SIMD PRIVATE(La, Lb, Ld, PhiU, PhiV, Na, Nb, dNa, dNb)
           DO l=1,nvec
 
             La = Lp(l,node1)
