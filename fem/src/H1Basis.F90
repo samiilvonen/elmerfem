@@ -734,7 +734,6 @@ CONTAINS
             Lb_Lai = H1Basis_PowInt((Lb-La), i)
             Lc_1n = H1Basis_PowInt((2D0*Lc-1), j-1)
             
-            if ( size(grad,1) < k ) stop
             ! Calculate value of function from general form
             grad(k,nbasis+j,1) = -c*Lb*Lc*Lb_Lai*Lc_1n + La*c*Lc*Lb_Lai*Lc_1n + &
                     La*Lb*Lc*i*(H1Basis_PowInt((Lb-La),i-1))*Lc_1n
@@ -764,7 +763,6 @@ CONTAINS
             a=H1Basis_LegendreP(i,Lb_La)
             b=H1Basis_LegendreP(j-1,Lc_1)
 
-            if ( size(grad,1) < k ) stop
             grad(k,nbasis+j,1) = dLa(1)*Lb*Lc*a*b + La*dLb(1)*Lc*a*b + &
                     La*Lb*dLc(1)*a*b + &
                     La*Lb*Lc*H1Basis_dLegendreP(i,Lb_La)*(dLb(1)-dLa(1))*b + &
