@@ -68,9 +68,8 @@ Solver 1
   Slave Prec Update = String "e update"
 
   MG Smoother = csgs
-!  MG Smoother Normalize Guess = Logical True 
   MG Post Smoothing Iterations = 2
-  MG Smoother Relaxation Factor = Real $2.0/3.0
+  MG Smoother Relaxation Factor = Real 1.0
 End
 
 Solver 2
