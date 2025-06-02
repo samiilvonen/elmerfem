@@ -705,7 +705,7 @@ CONTAINS
     REAL(KIND=dp) :: PiMat(2,6), ri
 !------------------------------------------------------------------------------
     IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
-      CALL Fatal('NodalToNedelecInterpolation', 'Mesh edges not associated!')
+      CALL Fatal('NedelecToNodalResidual', 'Mesh edges not associated!')
     END IF
 
     IF (PRESENT(cdim)) THEN
@@ -728,7 +728,7 @@ CONTAINS
     
     ndofs = 6   ! This is correct for the 3-D monolithic version only!
     
-    IF (ndofs /= dim * VectorElementRes % DOFs) CALL Fatal('NodalToNedelecInterpolation', &
+    IF (ndofs /= dim * VectorElementRes % DOFs) CALL Fatal('NedelecToNodalResidual', &
         'Coordinate system dimension and DOF counts are not as expected')
     
     IF (.NOT. ALLOCATED(Ind)) THEN
