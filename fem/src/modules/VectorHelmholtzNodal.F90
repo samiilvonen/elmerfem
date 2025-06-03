@@ -316,7 +316,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   END DO ! compi
 
   EdgeSolVar => NULL()
-  sname = ListGetString( Params,'Edge Solution Name',Found)
+  sname = ListGetString( Params,'Edge Update Name',Found)
   IF(Found) THEN
     EdgeSolVar => VariableGet( Mesh % Variables, sname )
     IF(.NOT. ASSOCIATED(EdgeSolVar)) THEN

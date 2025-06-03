@@ -66,8 +66,8 @@ Solver 1
   Exported Variable 2 = -dofs 2 e update
   Prec Solvers(1) = Integer 2
   Additive Prec Solvers(1) = Integer 3	
-  Slave Prec Residual = String "e res"
-  Slave Prec Update = String "e update"
+  Preconditioning Residual = String "e res"
+  Preconditioning Update = String "e update"
 
   MG Smoother = csgs
   MG Post Smoothing Iterations = 2
@@ -86,7 +86,7 @@ Solver 2
   Preconditioning Solver = Logical True
   Monolithic Solver = Logical True
   Edge Residual Name = String "e res"
-  Edge Solution Name = String "e update"
+  Edge Update Name = String "e update"
 
   Linear System Symmetric = False
   Linear System Scaling = True
@@ -117,7 +117,7 @@ Solver 3
 
   Preconditioning Solver = Logical True
   Edge Residual Name = String "e res"
-  Edge Solution Name = String "e update"
+  Edge Update Name = String "e update"
 
   Linear System Symmetric = False
   Linear System Scaling = True

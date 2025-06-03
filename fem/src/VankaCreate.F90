@@ -1062,10 +1062,16 @@
 
 
 !-------------------------------------------------------------------------------
-!> Assumes another solver being used for the preconditioning.
+!> This assumes that another solver is used for the preconditioning.
 !> Given a residual "v" this solves Au=v (usually in an approximate manner),
 !> where A is the matrix of the solver specified by using the keyword
-!> "Prec Solvers".  
+!> "Prec Solvers". The preconditioning solver must be able to read as input
+!> the residual variable (whose name is here specified with the keyword
+!> "Preconditioning Residual") and produce the correction variable (whose name 
+!> is here specified as the value of the keyword "Preconditioning Update").
+!> If the discretizations are incompatible, a transformation of the equations
+!> must also be made outside this subroutine so that the equation "Au=v" can
+!> be thought.  
 !-------------------------------------------------------------------------------
   SUBROUTINE SlavePrec(u,v,ipar)
 !-------------------------------------------------------------------------------
@@ -1092,9 +1098,9 @@
     Mesh => Solver % Mesh 
     Amat => Solver % Matrix
     
-    str = ListGetString( Params,'Slave Prec Residual',UnfoundFatal=.TRUE.)
-    pVar => VariableGet( Mesh % Variables, str )
-    IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrec','Could not find: '//TRIM(str))
+    str = ListGetString( Params,'Preconditioning Residual',UnfoundFatal=.TRUE.)
+    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )
+
     n = SIZE(pVar % Values)
     b => pVar % Values
 
@@ -1111,9 +1117,9 @@
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
 
-    str = ListGetString( Params,'Slave Prec Update',UnfoundFatal=.TRUE.)
-    pVar => VariableGet( Mesh % Variables, str )
-    IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrec','Could not find: '//TRIM(str))
+    str = ListGetString( Params,'Preconditioning Update',UnfoundFatal=.TRUE.)
+    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )
+
     n = SIZE(pVar % Values)
     x => pVar % Values
 
@@ -1190,9 +1196,9 @@
     Mesh => Solver % Mesh
     Amat => Solver % Matrix
 
-    str = ListGetString( Params,'Slave Prec Residual',UnfoundFatal=.TRUE.)
-    pVar => VariableGet( Mesh % Variables, str )
-    IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrecComplex','Could not find: '//TRIM(str))
+    str = ListGetString( Params,'Preconditioning Residual', UnfoundFatal=.TRUE.)
+    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )
+
     n = SIZE(pVar % Values)   
     IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
       CALL Fatal('SlavePrecComplex','Residual should have the same count of DOFs as primary variable!')
@@ -1216,9 +1222,9 @@
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
     
-    str = ListGetString( Params,'Slave Prec Update',UnfoundFatal=.TRUE.)
-    pVar => VariableGet( Mesh % Variables, str )    
-    IF(.NOT. ASSOCIATED(pVar)) CALL Fatal('SlavePrec','Could not find: '//TRIM(str))
+    str = ListGetString( Params,'Preconditioning Update', UnfoundFatal=.TRUE.)
+    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )    
+
     IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
       CALL Fatal('SlavePrecComplex','Update should have the same count of DOFs as primary variable!')
     END IF

@@ -419,7 +419,7 @@ SUBROUTINE DCRComplexSolver( Model,Solver,dt,TransientSimulation )
    CALL DefaultFinish()
 
    EdgeSolVar => NULL()
-   sname = ListGetString(Params, 'Edge Solution Name', Found)
+   sname = ListGetString(Params, 'Edge Update Name', Found)
    IF (Found) THEN
      EdgeSolVar => VariableGet( Mesh % Variables, sname, ThisOnly = .TRUE., UnfoundFatal = .TRUE. )
      CALL Info('DCRComplexSolve', 'Projecting nodal solution to vector element space', Level=6)
