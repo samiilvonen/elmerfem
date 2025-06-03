@@ -3953,14 +3953,10 @@ CONTAINS
     END IF
 
     ! Generate projector that allows enforcing of total flux when using Robin BC's
-!$OMP critical
     CALL GenerateRobinProjectors( CurrentModel, Solver )
-!$OMP end critical
     
     ! Combine the individual projectors into one massive projector
-!$OMP critical
     CALL GenerateConstraintMatrix( CurrentModel, Solver )
-!$OMP end critical
     
     IF( GetLogical(Params,'Linear System Solver Disabled',Found) ) THEN
       CALL Info('DefaultSolve','Solver disabled, exiting early!',Level=10)
@@ -3976,34 +3972,20 @@ CONTAINS
     
     CALL Info('DefaultSolve','Calling SolveSystem for linear solution',Level=20)
 
-!$OMP critical
     A => Solver % Matrix
-!$OMP end critical
-!$OMP critical
     x => Solver % Variable    
-!$OMP end critical
-!$OMP critical
     b => A % RHS
-!$OMP end critical
-!$OMP critical
     SOL => x % Values
-!$OMP end critical
 
     ! Debugging stuff activated only when "Max Output Level" >= 20
     IF( InfoActive( 20 ) ) THEN
-!$OMP critical
       CALL VectorValuesRange(A % Values,SIZE(A % Values),'A')       
-!$OMP end critical
-!$OMP critical
       CALL VectorValuesRange(A % rhs,SIZE(A % rhs),'b')       
-!$OMP end critical
     END IF
       
 10  CONTINUE
 
-!$OMP critical
     CALL SolveSystem(A,ParMatrix,b,SOL,x % Norm,x % DOFs,Solver)
-!$OMP end critical
     
     IF( InfoActive( 20 ) ) THEN
       CALL VectorValuesRange(x % Values,SIZE(x % values),'x')       
