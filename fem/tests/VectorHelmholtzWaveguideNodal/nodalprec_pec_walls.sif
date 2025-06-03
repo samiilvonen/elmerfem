@@ -68,7 +68,7 @@ Solver 1
   Preconditioning Update = String "e update"
 
   MG Smoother = csgs
-  MG Post Smoothing Iterations = 2
+  MG Post Smoothing Iterations = 7
   MG Smoother Relaxation Factor = Real 1.0
 End
 
