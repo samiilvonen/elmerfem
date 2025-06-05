@@ -800,7 +800,7 @@ CONTAINS
        END SELECT
 
        IF( CalcFrictionHeating ) THEN
-         q_f = MuCoeff * Speed
+         q_f = MuCoeff * h * Speed**2
        END IF
          
        IF( CalcPressureHeating ) THEN
@@ -876,6 +876,8 @@ CONTAINS
 
          IF(UseHeating) THEN
            ! Additional source term from friction melting.
+           ! Continuity equation is weighted by gap so the BC term need not be divided by it
+           ! as is the case for momentum equation.
            F(1:mdim+1) = F(1:mdim+1) + s * Basis(p) * (q_f + q_p ) / MeltHeat 
          END IF
        END DO
