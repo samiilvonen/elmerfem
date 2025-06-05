@@ -8586,7 +8586,8 @@ CONTAINS
      INTEGER :: i,j,k,l,n,nn,ii(ParEnv % PEs), ierr, status(MPI_STATUS_SIZE)
 
      IF( ParEnv % PEs<=1 ) RETURN
-
+     IF( A % ParallelInfo % NothingShared ) RETURN
+     
      ALLOCATE( fneigh(ParEnv % PEs), ineigh(ParEnv % PEs) )
 
      nn = 0
@@ -14665,8 +14666,8 @@ END FUNCTION SearchNodeL
       CALL Info(Caller,'Assuming real valued linear system',Level=8)
     END IF
 
-    Parallel = Solver % Parallel
-    
+    Parallel = Solver % Parallel 
+      
 !------------------------------------------------------------------------------
 !   If parallel execution, check for parallel matrix initializations
 !------------------------------------------------------------------------------
@@ -14674,6 +14675,9 @@ END FUNCTION SearchNodeL
       IF( .NOT. ASSOCIATED(A % ParMatrix) ) THEN
         CALL Info(Caller,'Creating parallel matrix structures',Level=8)
         CALL ParallelInitMatrix( Solver, A )
+        IF(A % ParallelInfo % NothingShared ) THEN
+          CALL Info(Caller,'No dofs shared in paralell matrix!',Level=6)
+        END IF
       ELSE
         CALL Info(Caller,'Using previously created parallel matrix structures!',Level=15)
       END IF      
@@ -14917,10 +14921,10 @@ END FUNCTION SearchNodeL
     IF(.NOT.GotIt) ComputeChangeScaled = .FALSE.
 
     IF(ComputeChangeScaled) THEN
-       ALLOCATE(NonlinVals(SIZE(x)))
-       NonlinVals = x
-       IF (ASSOCIATED(Solver % Variable % Perm)) & 
-           CALL RotateNTSystemAll(NonlinVals, Solver % Variable % Perm, DOFs)
+      ALLOCATE(NonlinVals(SIZE(x)))
+      NonlinVals = x
+      IF (ASSOCIATED(Solver % Variable % Perm)) & 
+          CALL RotateNTSystemAll(NonlinVals, Solver % Variable % Perm, DOFs)
     END IF
 
     IF( AndersonAcc .AND. AndersonScaled ) THEN
@@ -14993,8 +14997,8 @@ END FUNCTION SearchNodeL
 
     IF(ListGetLogical(Params, 'Linear System Use Rocalution', Found)) &
       Method = 'rocalution'
-    
-    IF ( .NOT. Parallel ) THEN
+
+    IF ( .NOT. Parallel .OR. A % ParallelInfo % NothingShared ) THEN
       IF(ListGetLogical(Params, 'Linear System Use Hypre', Found)) Method = 'hypre'
 
       CALL Info(Caller,'Serial linear System Solver: '//TRIM(Method),Level=8)

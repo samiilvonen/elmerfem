@@ -59,7 +59,7 @@
       SaveValues => A % Values
       A % Values => A % ILUValues
 
-      IF (ParEnv % Pes <= 1 ) THEN
+      IF (ParEnv % Pes <= 1 .OR. A % ParallelInfo % NothingShared ) THEN
         IF( ASSOCIATED( A % ILUCols ) ) THEN
           pCols => A % Cols
           pRows => A % Rows
@@ -150,7 +150,7 @@
        TotValues = A % Values
      END IF
 
-     IF ( ParEnv  % PEs>1 ) THEN
+     IF ( ParEnv  % PEs>1 .AND. .NOT. A % ParallelInfo % NothingShared ) THEN
        ALLOCATE(cnt(0:ParEnv % PEs))
        cnt = 0
        DO i=1,A % NumberOfRows
