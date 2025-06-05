@@ -491,16 +491,13 @@ CONTAINS
      DO i=1,SIZE(ed)
        inds => ed(i)  % dofIndeces
        x = MATMUL(ed(i) % stiff, u(inds))
-#if 0
-       DO j=1,SIZE(inds)
-!$omp atomic
-         v(inds(j)) = v(inds(j)) + x(j)
-       END DO
-#else
+!      DO j=1,SIZE(inds)
+!!omp atomic
+!        v(inds(j)) = v(inds(j)) + x(j)
+!      END DO
 !$omp critical
        v(inds) = v(inds) + x
 !$omp end critical
-#endif
      END DO
 !$omp end parallel do
 !------------------------------------------------------------------------------
