@@ -59,9 +59,9 @@ Solver 1
   Linear system abort not converged = false
   Linear System Max Iterations = 100
   Linear System Complex = True
-  Linear System Preconditioning = "slave"
+  Linear System Preconditioning = "auxiliary space solver"
 
-! Needed for preconditioner "slave"
+! Needed for auxiliary space preconditioning
   Exported Variable 1 = -dofs 2 e res
   Exported Variable 2 = -dofs 2 e update
   Prec Solvers(1) = Integer 2
@@ -70,7 +70,7 @@ Solver 1
   Preconditioning Update = String "e update"
 
   MG Smoother = csgs
-  MG Post Smoothing Iterations = 2
+  MG Post Smoothing Iterations = 7
   MG Smoother Relaxation Factor = Real 1.0
 
   Additive Preconditioning = Logical False

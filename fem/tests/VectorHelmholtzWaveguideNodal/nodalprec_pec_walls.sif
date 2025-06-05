@@ -58,9 +58,9 @@ Solver 1
   Linear system abort not converged = false
   Linear System Max Iterations = 100
   Linear System Complex = True
-  Linear System Preconditioning = "slave"
+  Linear System Preconditioning = "auxiliary space solver"
 
-! Needed for preconditioner "slave"
+! Needed for auxiliary space preconditioning
   Exported Variable 1 = -dofs 2 e res
   Exported Variable 2 = -dofs 2 e update
   Prec Solvers(1) = Integer 2
