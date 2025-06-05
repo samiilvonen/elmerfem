@@ -18947,7 +18947,7 @@ CONTAINS
     INTEGER :: nnodes,gnodes,gelements,ierr,nlev,ilev,&
         nParMesh,nParExt,OrigPart,ElemCode,bodyid, newbcs
     LOGICAL :: isParallel, SingleIn, Found, TopBC, BotBC, &
-        CollectExtrudedBCs, SeparateSlices, InternalBC
+        CollectExtrudedBCs, SeparateSlices, CreateInternalBCs, InternalBC
     INTEGER,ALLOCATABLE :: ChildBCs(:)
     REAL(KIND=dp)::CurrCoord 
     REAL(KIND=dp), POINTER :: ActiveCoord(:)
@@ -19019,6 +19019,7 @@ CONTAINS
 
     Mesh_out % SingleMesh = .FALSE.
     SeparateSlices = .FALSE.
+    CreateInternalBCs = .FALSE.
     
     ExtrudedCoord = ListGetInteger( CurrentModel % Simulation,'Extruded Coordinate Index', &
         Found, minv=1,maxv=3 )
@@ -19033,7 +19034,7 @@ CONTAINS
     END IF
 
     CollectExtrudedBCs = ListGetLogical( CurrentModel % Simulation,'Extruded BCs Collect',Found )
-      
+    
     IF (isParallel) THEN
       PI_in  => Mesh_in % ParallelInfo
       PI_out => Mesh_out % ParallelInfo
@@ -19042,7 +19043,9 @@ CONTAINS
       IF(.NOT. ASSOCIATED( PI_out ) ) CALL Fatal(Caller,'PI_out not associated!')
             
       SeparateSlices = ListGetLogical( CurrentModel % Simulation,'Extruded Mesh Slices Separate',Found )
-
+      CreateInternalBCs = ListGetLogical( CurrentModel % Simulation,'Extruded BCs Internal',Found ) 
+      IF(.NOT. Found) CreateInternalBCs = SeparateSlices 
+      
       ALLOCATE(PI_out % NeighbourList(nnodes))
       ALLOCATE(PI_out % GInterface(nnodes))
       ALLOCATE(PI_out % GlobalDOFs(nnodes))
@@ -19162,7 +19165,7 @@ CONTAINS
     n = Mesh_in % NumberOfBulkElements + Mesh_in % NumberOfBoundaryElements
     totalnumberofelements = n*nlev
 
-    IF( SeparateSlices ) THEN
+    IF( CreateInternalBCs ) THEN
       totalnumberofelements = &
           totalnumberofelements + 2 * Mesh_in % NumberOfBulkElements 
     ELSE
@@ -19306,7 +19309,7 @@ CONTAINS
       newbcs = 2 * max_body
     END IF
 
-    IF( SeparateSlices ) THEN
+    IF( CreateInternalBCs ) THEN
       CALL Info(Caller,'Internal bottom boundary: '//I2S(max_bid+newbcs+1),Level=6)
       CALL Info(Caller,'Internal top boundary: '//I2S(max_bid+newbcs+2),Level=6)
     END IF
@@ -19316,7 +19319,7 @@ CONTAINS
            
     ! Add bottom boundary:
     ! --------------------
-    IF( ParEnv % PEs == 1 .OR. ParEnv % MyPe < nParMesh .OR. SeparateSlices ) THEN  
+    IF( ParEnv % PEs == 1 .OR. ParEnv % MyPe < nParMesh .OR. CreateInternalBCs ) THEN  
       InternalBC = (ParEnv % PEs > 1 .AND. ParEnv % MyPe >= nParMesh )
       DO i=1,Mesh_in % NumberOfBulkElements
         cnt=cnt+1
@@ -19360,7 +19363,7 @@ CONTAINS
     
     ! Add top boundary:
     ! -----------------
-    IF( ParEnv % PEs == 1 .OR. ParEnv % MyPe >= ParEnv % PEs - nParMesh .OR. SeparateSlices ) THEN
+    IF( ParEnv % PEs == 1 .OR. ParEnv % MyPe >= ParEnv % PEs - nParMesh .OR. CreateInternalBCs ) THEN
       InternalBC = (ParEnv % PEs > 1 .AND. ParEnv % MyPe < ParEnv % PEs - nParMesh )
       DO i=1,Mesh_in % NumberOfBulkElements
         cnt=cnt+1

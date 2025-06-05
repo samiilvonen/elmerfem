@@ -727,8 +727,6 @@ CONTAINS
          Matrix % ParMatrix => ParInitMatrix( Matrix, Matrix % ParallelInfo, SkipActiveCheck)
        END BLOCK
 
-       CALL SortI( n,Ind, Matrix % ParallelInfo % Gorder )
-
 
        ! We can make many routines quicker if we know there is nothing to share.
        ! Still we might want to operate in parallel using parallel norms etc. 
