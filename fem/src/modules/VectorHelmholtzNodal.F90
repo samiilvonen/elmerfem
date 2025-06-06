@@ -139,11 +139,11 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   INTEGER :: i, n, nb, nd, t, active, dim, RelOrder
   INTEGER :: iter, maxiter, compi, compn, compj, dofs
   LOGICAL :: Found, VecAsm, InitHandles, &
-      PrecUse, PiolaVersion, SecondOrder, SecondFamily, UseEdgeResidual, &
+      PrecUse, PiolaVersion, SecondOrder, SecondFamily, &
       Monolithic, Segregated 
   TYPE(ValueList_t), POINTER :: Params, EdgeSolverParams
   TYPE(Mesh_t), POINTER :: Mesh
-  TYPE(Variable_t), POINTER :: EF, EiVar, EdgeLoadVar, EdgeSolVar
+  TYPE(Variable_t), POINTER :: EF, EiVar, EdgeResVar, EdgeSolVar
   REAL(KIND=dp) :: mu0inv, eps0, rob0, omega
   CHARACTER(LEN=MAX_NAME_LEN) :: sname
   COMPLEX(KIND=dp), PARAMETER :: im = (0._dp,1._dp)   
@@ -176,35 +176,23 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   Segregated = .NOT. Monolithic
 
   PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found ) 
-  UseEdgeResidual = .FALSE.
   
   IF( PrecUse ) THEN
-!    IF(Monolithic) THEN
-!      CALL Fatal(Caller,'You cannot combine monolithic and preconditioning use!')
-!    END IF
-    EdgeLoadVar => NULL()  
+    EdgeResVar => NULL()  
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
     sname = ListGetString( Params,'Edge Residual Name',Found)
     IF(Found) THEN
-      EdgeLoadVar => VariableGet( Mesh % Variables, sname )
-      IF(.NOT. ASSOCIATED( EdgeLoadVar ) ) CALL Fatal(Caller,'Could not find field: '//TRIM(sname))
+      EdgeResVar => VariableGet( Mesh % Variables, sname )
+      IF(.NOT. ASSOCIATED( EdgeResVar ) ) CALL Fatal(Caller,'Could not find field: '//TRIM(sname))
 
-      EdgeSolverParams => GetSolverParams(EdgeLoadVar % Solver)
-      
-      SecondOrder = ListGetLogical(EdgeSolverParams, 'Quadratic Approximation', Found)
-      IF( SecondOrder ) THEN
-        PiolaVersion = .TRUE.
-        SecondFamily = .FALSE.
-        CALL Fatal(Caller, 'The lowest-order basis assumed') 
-      ELSE
-        SecondFamily = ListGetLogical(EdgeSolverParams, "Second Kind Basis", Found)
-        PiolaVersion = ListGetLogical(EdgeSolverParams, 'Use Piola Transform', Found ) .OR. &
-            SecondFamily    
-      END IF
-      
-      UseEdgeResidual = .TRUE.
+      EdgeSolverParams => GetSolverParams(EdgeResVar % Solver)
+
+      CALL EdgeElementStyle(EdgeSolverParams, PiolaVersion, SecondFamily, SecondOrder, Check = .TRUE.)
+      IF (SecondOrder) CALL Fatal(Caller, 'The lowest-order edge basis assumed') 
+
     ELSE
       CALL Warn(Caller, 'Give Edge Residual Name to enable the use as a preconditioner')
+      PrecUse = .FALSE.
     END IF
   ELSE
     EF => VariableGet( Mesh % Variables,'ElField')
@@ -251,15 +239,15 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     END DO
     
     CALL DefaultFinishBulkAssembly()
-    IF( UseEdgeResidual ) THEN
+    IF( PrecUse ) THEN
       !
-      ! Now EdgeLoadVar represents the residual with respect
+      ! Now EdgeResVar represents the residual with respect
       ! to the basis for H(curl). We need to apply a transformation so that
       ! we may solve the residual correction equation by using the nodal basis.
       !
       IF (Monolithic) THEN
-        CALL NedelecToNodalResidual(Solver % Matrix % RHS, EdgeLoadVar, cdim=3, &
-            SecondFamily = SecondFamily)        
+        CALL NedelecToNodalResidual(Solver % Matrix % RHS, EdgeResVar, cdim=3, &
+            SecondFamily = SecondFamily, PiolaVersion = PiolaVersion)        
       ELSE
         CALL EdgeToNodeProject()
       END IF
@@ -277,8 +265,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       IF(ActiveBoundaryElement(Element)) THEN
         n  = GetElementNOFNodes(Element)
         nd = GetElementNOFDOFs(Element)
-        nb = GetElementNOFBDOFs(Element)
-        CALL LocalMatrixBC(  Element, n, nd+nb, nb, InitHandles )
+        CALL LocalMatrixBC(  Element, n, nd, InitHandles )
       END IF
     END DO
 
@@ -453,7 +440,7 @@ CONTAINS
         STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
       END DO
 
-      IF(.NOT. UseEdgeResidual ) THEN
+      IF(.NOT. PrecUse ) THEN
         CurrAtIP = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found )                 
         IF( Found ) THEN
           IF( Monolithic ) THEN
@@ -483,10 +470,10 @@ CONTAINS
 
 ! Assembly of the matrix entries arising from the Neumann and Robin conditions.
 !------------------------------------------------------------------------------
-  SUBROUTINE LocalMatrixBC( Element, n, nd, nb, InitHandles )
+  SUBROUTINE LocalMatrixBC( Element, n, nd, InitHandles )
 !------------------------------------------------------------------------------
     IMPLICIT NONE
-    INTEGER :: n, nd, nb
+    INTEGER :: n, nd
     TYPE(Element_t), POINTER :: Element
     LOGICAL, INTENT(INOUT) :: InitHandles
 !------------------------------------------------------------------------------
@@ -548,7 +535,7 @@ CONTAINS
         muinvAtIp = mu0inv
       END IF
 
-      IF( .NOT. UseEdgeResidual ) THEN
+      IF( .NOT. PrecUse ) THEN
         L = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
             ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
@@ -614,11 +601,11 @@ CONTAINS
     LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(Element_t), POINTER :: Edge
+    TYPE(Element_t), POINTER :: Edge, Face
     LOGICAL :: SecondKindBasis
     INTEGER, ALLOCATABLE, SAVE :: Ind(:)
-    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi
-    REAL(KIND=dp) :: PiMat(2,6), x(6), D
+    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0
+    REAL(KIND=dp) :: PiMat(2,6), FacePiMat(2,12), x(12), D
 !------------------------------------------------------------------------------
     IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
       CALL Fatal('NodalToNedelecInterpolation', 'Mesh edges not associated!')
@@ -649,9 +636,8 @@ CONTAINS
       ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
     END IF
     
-    ! Here we assume that all DOFs are associated with edges, so it suffices
-    ! to loop over all the edges
-    !
+    ! Here we need separate loops over edges, faces and elements so that all DOFs are handled
+    ! 
     DO j=1, Mesh % NumberOfEdges      
       Edge => Mesh % Edges(j)
 
@@ -668,7 +654,7 @@ CONTAINS
       k1 = NodalVar % Perm(i1)
       k2 = NodalVar % Perm(i2)
 
-      x(:) = 0.0_dp 
+      x(1:6) = 0.0_dp 
       DO dofi=1, VectorElementVar % DOFs
         DO i=1,dim
           x(i) = NodalVar % Values(6*(k1-1) + 2*(i-1) + dofi)
@@ -682,27 +668,68 @@ CONTAINS
         END DO
       END DO
     END DO
+
+    IF (ASSOCIATED(Mesh % Faces)) THEN
+      DO j=1, Mesh % NumberOfFaces      
+        Face => Mesh % Faces(j)
+        IF (Face % BDOFs < 1) CYCLE
+        
+        nd = GetElementDOFs(Ind, Face, VectorElementVar % Solver)
+
+        ! Count the offset for picking the true face DOFs
+        !
+        i0 = 0
+        DO k=1,Face % Type % NumberOfEdges
+          Edge => Solver % Mesh % Edges(Face % EdgeIndexes(k))
+          EDOFs = Edge % BDOFs
+          IF (EDOFs < 1) CYCLE
+          i0 = i0 + EDOFs
+        END DO
+
+        CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
+
+        x(1:12) = 0.0_dp
+        DO dofi=1, VectorElementVar % DOFs
+          DO i=1,Face % Type % NumberOfNodes
+            k1 = NodalVar % Perm(Face % NodeIndexes(i))
+            DO k=1,dim
+              x(3*(i-1)+k) = NodalVar % Values(6*(k1-1) + 2*(k-1) + dofi)
+            END DO
+          END DO
+
+          DO i=1,Face % BDOFs
+            D = SUM(FacePiMat(i,1:12) * x(1:12))
+            k = VectorElementVar % Perm(Ind(i+i0)) 
+            VectorElementVar % Values(VectorElementVar % DOFs*(k-1)+dofi) = D     
+          END DO
+        END DO
+      END DO
+    END IF
+
+    ! Add loop over elements
+    
 !------------------------------------------------------------------------------
   END SUBROUTINE NodalToNedelecInterpolation
 !------------------------------------------------------------------------------
     
 !------------------------------------------------------------------------------
   SUBROUTINE NedelecToNodalResidual(RHSVector, VectorElementRes, cdim, &
-      SecondFamily)
+      SecondFamily, PiolaVersion)
 !------------------------------------------------------------------------------
     IMPLICIT NONE
     REAL(KIND=dp), INTENT(INOUT) :: RHSVector(:) 
     TYPE(Variable_t), POINTER, INTENT(IN) :: VectorElementRes
     INTEGER, OPTIONAL :: cdim         !< The number of spatial coordinates 
     LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
+    LOGICAL, OPTIONAL :: PiolaVersion
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(Element_t), POINTER :: Edge
+    TYPE(Element_t), POINTER :: Edge, Face
     TYPE(GaussIntegrationPoints_t) :: IP
     LOGICAL :: SecondKindBasis, stat
     INTEGER, ALLOCATABLE, SAVE :: Ind(:)
-    INTEGER :: dim, istat, EDOFs, i, j, k, m, p, q, nd, dofi, ndofs
-    REAL(KIND=dp) :: PiMat(2,6), ri
+    INTEGER :: dim, istat, EDOFs, i, j, k, m, p, q, nd, dofi, ndofs, i0
+    REAL(KIND=dp) :: PiMat(2,6), FacePiMat(2,12), ri
 !------------------------------------------------------------------------------
     IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
       CALL Fatal('NedelecToNodalResidual', 'Mesh edges not associated!')
@@ -735,8 +762,8 @@ CONTAINS
       ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
     END IF
     
-    ! Here we assume that all DOFs are associated with edges, so it suffices
-    ! to loop over all the edges
+    ! Here we make separate loops over edges, faces and 
+    ! element interiors so that all DOFs are handled finally 
     !
     DO j=1, Mesh % NumberOfEdges      
       Edge => Mesh % Edges(j)
@@ -762,6 +789,50 @@ CONTAINS
         END DO
       END DO
     END DO
+
+    IF (ASSOCIATED(Mesh % Faces)) THEN
+      DO j=1, Mesh % NumberOfFaces      
+        Face => Mesh % Faces(j)
+        nd = GetElementDOFs(Ind, Face, VectorElementRes % Solver)
+
+        ! Count the offset for picking the true face DOFs
+        !
+        i0 = 0
+        DO k=1,Face % Type % NumberOfEdges
+          Edge => Solver % Mesh % Edges(Face % EdgeIndexes(k))
+          EDOFs = Edge % BDOFs
+          IF (EDOFs < 1) CYCLE
+          i0 = i0 + EDOFs
+        END DO
+
+        IF (Face % BDOFs /= nd - i0) CALL Fatal('NedelecToNodalResidual', &
+            'Nodal DOFs are not yet supported')
+
+        IF (Face % BDOFs < 1) CYCLE
+        
+        CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
+
+        DO dofi=1, VectorElementRes % DOFs
+          DO k=1,dim
+            DO i=1,Face % Type % NumberOfNodes
+              ri = 0.0_dp    
+              DO p=1, Face % BDOFs
+                q = VectorElementRes % Perm(Ind(p+i0))
+                ri = ri + FacePiMat(p,3*(i-1)+k) * &
+                    VectorElementRes % Values(VectorElementRes % DOFs*(q-1)+dofi)
+              END DO
+              m = Solver % Variable % Perm(Face % NodeIndexes(i))
+              RHSVector(ndofs*(m-1) + 2*(k-1) + dofi) = &
+                  RHSVector(ndofs*(m-1)+ 2*(k-1) + dofi) + ri
+            END DO
+          END DO
+        END DO
+        
+      END DO
+    END IF
+
+    ! Add loop over elements to handle elementwise bubbles 
+
 !------------------------------------------------------------------------------
   END SUBROUTINE NedelecToNodalResidual
 !------------------------------------------------------------------------------
@@ -844,7 +915,7 @@ CONTAINS
             EdgeWeight(j) = EdgeWeight(j) + Weight 
           ELSE
             Edge => Mesh % Edges(j)
-            k = EdgeLoadVar % Perm(n0 + j)
+            k = EdgeResVar % Perm(n0 + j)
           
             i1 = Edge % NodeIndexes(1)
             i2 = Edge % NodeIndexes(2)
@@ -859,7 +930,7 @@ CONTAINS
             
             weight = IP % s(ipi) / EdgeWeight(j)            
             c = Wbasis(i,compi) * &
-                s1 * CMPLX(EdgeLoadVar % Values(2*k-1), EdgeLoadVar % Values(2*k))           
+                s1 * CMPLX(EdgeResVar % Values(2*k-1), EdgeResVar % Values(2*k))           
             FORCE(1:nd) = FORCE(1:nd) + Basis(1:nd) * weight * c  
           END IF
         END DO
