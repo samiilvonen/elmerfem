@@ -844,7 +844,7 @@ MODULE Interpolation
 !> Create a matrix representation of the Nedelec interpolation operator which 
 !> operates on a gradient field expressed in terms of the nodal basis functions
 !> and gives the values of DOFs for obtaining its vector element (Nedelec)
-!> interpolant. The current implementation assumes that all DOFs are associated
+!> interpolant. This subroutine assumes that DOFs are associated
 !> with edges, so that the geometric domain of the finite element given as input
 !> is supposed to be one-dimensional.  
 !------------------------------------------------------------------------------
@@ -930,7 +930,132 @@ MODULE Interpolation
 !------------------------------------------------------------------------------
   END SUBROUTINE NodalGradientToNedelecPiMatrix
 !------------------------------------------------------------------------------
-  
+
+!------------------------------------------------------------------------------  
+!> This subroutine is analogous to the subroutine NodalGradientToNedelecPiMatrix,
+!> but here the matrix representation of the interpolation operator is created for
+!> the DOFs associated with the element faces.
+!------------------------------------------------------------------------------
+  SUBROUTINE NodalGradientToNedelecPiMatrix_Faces(PiMat, Face, Mesh, dim, BasisDegree)
+!------------------------------------------------------------------------------
+    REAL(KIND=dp), INTENT(OUT) :: PiMat(2,4)      !< The interpolation operator as a matrix 
+    TYPE(Element_t), POINTER, INTENT(IN) :: Face  !< The element for which the operator is created
+    TYPE(Mesh_t), POINTER, INTENT(IN) :: Mesh     !< The Face should belong to the mesh given
+    INTEGER, INTENT(IN) :: dim                    !< The number of components of the vector field  
+    INTEGER, OPTIONAL, INTENT(IN) :: BasisDegree  !< The order of basis     
+!------------------------------------------------------------------------------
+    TYPE(Nodes_t), SAVE :: Nodes, EdgeNodes
+    TYPE(Element_t), POINTER, SAVE :: Edge => NULL()
+    TYPE(GaussIntegrationPoints_t) :: IP
+    LOGICAL :: Parallel, SecondOrder, stat
+
+    INTEGER :: FDOFs, istat, i, j, k, p, i1, i2, j1, j2, n
+    INTEGER :: FaceIndices(4), SquareFaceMap(4)
+    REAL(KIND=dp) :: t(3), WorkPiMat(2,4), D1, D2
+    REAL(KIND=dp) :: Basis(4), detJ, s, fun(3), u, v, grad0(4,3)
+    
+    CHARACTER(*), PARAMETER :: Caller = 'NodalGradientToNedelecPiMatrix_Faces'
+!------------------------------------------------------------------------------
+    IF (.NOT. (Face % Type % ElementCode / 100 /= 3 .OR. &
+        Face % Type % ElementCode / 100 /= 4)) THEN
+      CALL Fatal(Caller, 'A 2-dimensional element expected')
+    END IF
+    
+    IF (Face % Type % ElementCode / 100 == 3) THEN
+      CALL Fatal(Caller, 'Cannot handle triangular faces yet')
+    END IF
+        
+    IF (.NOT. ASSOCIATED(Mesh % Faces)) THEN
+      CALL Fatal(Caller, 'Mesh faces are not associated!')
+    END IF
+
+    IF ( PRESENT(BasisDegree) ) THEN
+      SecondOrder = BasisDegree > 1
+      IF (SecondOrder) CALL Fatal(Caller, 'Cannot handle higher-order basis yet')
+    ELSE
+      SecondOrder = .FALSE.
+    END IF
+    
+    n = Face % Type % NumberOfNodes
+    FDOFs = 2
+    
+    CALL CopyElementNodesFromMesh(Nodes, Mesh, n, Face % NodeIndexes)
+
+    IF (.NOT. ASSOCIATED(EdgeNodes % x)) THEN
+      ALLOCATE(EdgeNodes % x(2), EdgeNodes % y(2), EdgeNodes % z(2), stat = istat)
+    END IF
+
+    IF (.NOT. ASSOCIATED(Edge)) THEN
+      ALLOCATE(Edge, stat=istat)
+      Edge % Type => GetElementType(202, .FALSE.)
+    END IF
+    
+    IP = GaussPoints(Edge, EdgeBasis = .TRUE.)
+    WorkPiMat(:,:) = 0.0_dp
+
+    ! For the lowest-order case it sufficies to evaluate the gradient at
+    ! the mid-point of the face 
+    !
+    stat = ElementInfo(Face, Nodes, 0.0_dp, 0.0_dp, 0.0_dp, DetJ, Basis, grad0)
+    
+    ! First create the projection matrix for the basis in the default order
+    !
+    DO j=1,FDOFs
+      !
+      ! Create a virtual edge related to the definition of the face DOF
+      !
+      SELECT CASE(j)
+      CASE(1)
+        EdgeNodes % x(2) = 0.5_dp * (Nodes % x(3) + Nodes % x(2))
+        EdgeNodes % y(2) = 0.5_dp * (Nodes % y(3) + Nodes % y(2))
+        EdgeNodes % z(2) = 0.5_dp * (Nodes % z(3) + Nodes % z(2))
+        EdgeNodes % x(1) = 0.5_dp * (Nodes % x(4) + Nodes % x(1))
+        EdgeNodes % y(1) = 0.5_dp * (Nodes % y(4) + Nodes % y(1))
+        EdgeNodes % z(1) = 0.5_dp * (Nodes % z(4) + Nodes % z(1))
+      CASE(2)
+        EdgeNodes % x(2) = 0.5_dp * (Nodes % x(3) + Nodes % x(4)) 
+        EdgeNodes % y(2) = 0.5_dp * (Nodes % y(3) + Nodes % y(4))
+        EdgeNodes % z(2) = 0.5_dp * (Nodes % z(3) + Nodes % z(4))        
+        EdgeNodes % x(1) = 0.5_dp * (Nodes % x(2) + Nodes % x(1))
+        EdgeNodes % y(1) = 0.5_dp * (Nodes % y(2) + Nodes % y(1))
+        EdgeNodes % z(1) = 0.5_dp * (Nodes % z(2) + Nodes % z(1))
+      END SELECT
+      
+      t(1) = EdgeNodes % x(2) - EdgeNodes % x(1)
+      t(2) = EdgeNodes % y(2) - EdgeNodes % y(1)
+      t(3) = EdgeNodes % z(2) - EdgeNodes % z(1)
+      
+      t = t/SQRT(SUM(t**2))      
+
+      DO p=1,IP % n
+        stat = ElementInfo(Edge, EdgeNodes, IP % u(p), IP % v(p), IP % w(p), DetJ, Basis)
+        s = IP % s(p) * DetJ        
+
+        DO i=1,Face % Type % NumberOfNodes
+          fun(:) = grad0(i,:)
+          WorkPiMat(j,i) = WorkPiMat(j,i) + s * SUM(fun*t)  
+        END DO
+      END DO
+    END DO
+
+    ! Finally change the order/signs 
+    !
+    SquareFaceMap(:) = (/ 1,2,3,4 /)          
+    FaceIndices(1:n) = Face % NodeIndexes(SquareFaceMap(1:n))
+
+    Parallel = ParEnv % PEs > 1
+    IF (Parallel) FaceIndices(1:n) = Mesh % ParallelInfo % GlobalDOFs(FaceIndices(1:n)) 
+
+    CALL SquareFaceDofsOrdering(I1,I2,D1,D2,FaceIndices)
+
+    PiMat(1,:) = D1 * WorkPiMat(I1,:)
+    PiMat(2,:) = D2 * WorkPiMat(I2,:)
+!------------------------------------------------------------------------------
+  END SUBROUTINE NodalGradientToNedelecPiMatrix_Faces
+!------------------------------------------------------------------------------
+
+
+    
 !-------------------------------------------------------------------------------
 END MODULE Interpolation
 !-------------------------------------------------------------------------------
