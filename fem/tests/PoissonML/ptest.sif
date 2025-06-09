@@ -10,7 +10,6 @@ Simulation
   Simulation Type = Steady
   Output Intervals(1) = 1
   Steady State Max Iterations = 1
-  Post File = a.ep
 ! Output File = "ptest.dat"
 End
 
@@ -19,7 +18,7 @@ Body 1
   Body Force = 1
 End
 
-Body Force 1 :: Source = Real 100000000000
+Body Force 1 :: Source = Real 1
 Equation 1 :: Active Solvers(1) = 1
 
 Solver 1

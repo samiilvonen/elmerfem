@@ -365,7 +365,7 @@ CONTAINS
       CALL rsuma(n,r,-alpha,q)    ! r = r - alpha*q
 
       residual = rnrm(n,r)        ! residual = SUM(r*r)
-      IF(MOD(iter,1)==0) WRITE (*, '(I8, E11.4)') iter, SQRT(residual/bnrm**2)
+      IF(MOD(iter,25)==0) WRITE (*, '(I8, E11.4)') iter, SQRT(residual/bnrm**2)
       IF (residual < eps2) EXIT
     END DO
 
