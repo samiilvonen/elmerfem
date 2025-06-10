@@ -18331,7 +18331,7 @@ CONTAINS
 
     ExtrudedCoord = ListGetInteger( CurrentModel % Simulation,'Extruded Coordinate Index', &
         Found, minv=1,maxv=3 )
-    IF(.NOT. Found) ExtrudedCoord = Mesh_in % MeshDim + 1 
+    IF(.NOT. Found) ExtrudedCoord = MIN(3,Mesh_in % MeshDim + 1)
     CALL Info(Caller,'Extrusion in direction of dimension: '//I2S(ExtrudedCoord),Level=12)
     
     IF( ExtrudedCoord == 1 ) THEN
@@ -18849,7 +18849,7 @@ CONTAINS
     Mesh_out % MaxElementDOFs  = Mesh_out % MaxElementNodes
     Mesh_out % Stabilize = Mesh_in % Stabilize
 
-    Mesh_out % MeshDim = Mesh_in % MeshDim + 1
+    Mesh_out % MeshDim = MIN(3, Mesh_in % MeshDim + 1)
     CurrentModel % Dimension = MIN( CurrentModel % Dimension+1, 3 )
    
     DEALLOCATE( BCLayers ) 
