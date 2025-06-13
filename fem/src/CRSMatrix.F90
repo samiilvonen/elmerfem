@@ -1884,7 +1884,7 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
      INTEGER, POINTER  CONTIG :: Cols(:),Rows(:)
      REAL(KIND=dp), POINTER  CONTIG :: Values(:)
 
-     INTEGER :: i,j,k,n
+     INTEGER :: i,j,k,n,m
      REAL(KIND=dp) :: rsum
 #ifdef HAVE_MKL
 	INTERFACE
@@ -1903,13 +1903,14 @@ SUBROUTINE CRS_RowSumInfo( A, Values )
      n = A % NumberOfRows
      Rows   => A % Rows
      Cols   => A % Cols
-     Values => A % Values
-
-	! Use MKL to perform mvp if it is available
+     Values => A % Values     
+          
+     ! Use MKL to perform mvp if it is available
 #ifdef HAVE_MKL
-	CALL mkl_dcsrgemv('T', n, Values, Rows, Cols, u, v)
+     CALL mkl_dcsrgemv('T', n, Values, Rows, Cols, u, v)
 #else
-     v(1:n) = 0.0_dp
+     m = MAXVAL(Cols)
+     v(1:m) = 0.0_dp
      DO i=1,n
 !DIR$ IVDEP
        DO j=Rows(i),Rows(i+1)-1

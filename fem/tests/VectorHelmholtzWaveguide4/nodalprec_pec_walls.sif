@@ -84,6 +84,8 @@ Solver 2
   Edge Residual Name = String "e res"
   Edge Update Name = String "e update"
 
+  Use projection Matrix = Logical True
+
   Linear System Symmetric = False
   Linear System Scaling = True
   Linear System Solver = "Iterative"
