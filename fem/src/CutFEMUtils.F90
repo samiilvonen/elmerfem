@@ -50,6 +50,7 @@ MODULE CutFemUtils
   USE MeshUtils, ONLY : AllocateMesh, FindMeshEdges, MeshStabParams
   USE ModelDescription, ONLY : FreeMesh
   USE SolverUtils, ONLY : GaussPointsAdapt, SolveLinearSystem
+  USE ParallelUtils
   
   IMPLICIT NONE
 
@@ -80,9 +81,7 @@ MODULE CutFemUtils
 
   TYPE(Mesh_t), POINTER :: CutFEMOrigMesh => NULL(), CutFEMAddMesh => NULL()
   
-  
-  
-  
+    
 CONTAINS
 
 
@@ -137,6 +136,12 @@ CONTAINS
     IF(.NOT. ASSOCIATED(Mesh % edges)) THEN
       CALL Info(Caller,'Create element edges',Level=10)
       CALL FindMeshEdges( Mesh )
+     
+      ! We need global numbering for the edges that we use for the unique numbering of new nodes
+      IF( ParEnv % PEs > 1 ) THEN
+        CALL Info(Caller,'Numbering Mesh edges in parallel')
+        CALL SParEdgeNumbering(Mesh)
+      END IF
     END IF
 
     nn = Mesh % NumberOfNodes
@@ -234,6 +239,36 @@ CONTAINS
         IF(ABS(h2) < 1.0e-20) CutDof(NodeIndexes(2)) = .TRUE.
       END IF
     END DO
+
+    
+    IF(ParEnv % PEs > 1 ) THEN
+      BLOCK 
+        INTEGER, POINTER :: Perm(:)
+        INTEGER :: ni
+        REAL(KIND=dp), POINTER :: CutDofR(:)
+
+        ni = COUNT( CutDof(1:nn) .AND. Mesh % ParallelInfo % GInterface(1:nn) )
+        ni = ParallelReduction( ni ) 
+
+        IF( ni > 0 ) THEN
+          ALLOCATE(CutDofR(nn),Perm(nn))
+          CutDofR = 0.0_dp
+          DO i=1,nn
+            Perm(i) = i
+          END DO
+
+          WHERE( CutDof(1:nn) )
+            CutDofR = 1.0_dp
+          END WHERE
+          CALL ExchangeNodalVec( Mesh % ParallelInfo, Perm, CutDofR, op = 2)
+          DO i=1,nn
+            IF(CutDofR(i) > 0.5_dp ) CutDof(i) = .TRUE.
+          END DO
+          DEALLOCATE(CutDofR, Perm )
+        END IF
+      END BLOCK
+    END IF
+    
     
     ! Then mark the edges trying to avoid nearby cuts.  
     InsideCnt = 0
@@ -2064,6 +2099,11 @@ CONTAINS
 
     END DO
 
+#if 0
+    IF( ParEnv % PEs > 1 ) CALL CutFEMParallelMesh()
+#endif
+      
+    
     ! If we create interface only then we have original numbering and may use 
     IF(.NOT. AddMeshMode ) THEN 
       CALL InterpolateLevelsetVariables()
@@ -2075,7 +2115,82 @@ CONTAINS
     CALL Info(Caller,'Zero levelset mesh was created',Level=8)
 
   CONTAINS
-   
+
+#if 0 
+    ! We do not need to update the Mesh % ParallelInfo, only Matrix % ParallelInfo!
+    
+    SUBROUTINE CutFEMParallelMesh()
+
+      INTEGER :: istat,n0,n
+          
+      CALL Info(Caller,'Creating ParallelInfo for CutFEM mesh structures!',Level=10)      
+      IF(.NOT. ASSOCIATED(Mesh % ParallelInfo % GlobalDOFS) ) THEN
+        CALL Fatal(Caller,'Original mesh has no GlobalDOFs numbering!')
+      END IF
+      IF(.NOT. ASSOCIATED(Mesh % Edges) ) THEN
+        CALL Fatal(Caller,'Original mesh requires edges!')
+      END IF
+      
+      ! Use maximum nodal index as the offset for nodes defined on cut edges.
+      n0 = MAXVAL( Mesh % ParallelInfo % GlobalDOFs )
+      n0 = ParallelReduction(n0,2)
+
+      n = NewMesh % NumberOfNodes
+      CALL Info(Caller,'Allocating parallel structures for '//I2S(n)//' nodes',Level=10)
+
+      ALLOCATE(NewMesh % ParallelInfo % GlobalDOFs(n), STAT=istat )
+      IF ( istat /= 0 ) &
+          CALL Fatal( Caller, 'Unable to allocate NewMesh % ParallelInfo % NeighbourList' )
+      NewMesh % ParallelInfo % GlobalDOFs = 0
+      ALLOCATE(NewMesh % ParallelInfo % GInterface(n), STAT=istat )
+      IF ( istat /= 0 ) &
+          CALL Fatal( Caller, 'Unable to allocate NewMesh % ParallelInfo % NeighbourList' )
+      NewMesh % ParallelInfo % GInterface = .FALSE.
+
+      ALLOCATE(NewMesh % ParallelInfo % NeighbourList(n), STAT=istat )
+      IF ( istat /= 0 ) &
+          CALL Fatal( Caller, 'Unable to allocate NewMesh % ParallelInfo % NeighbourList' )
+      DO i=1,n
+        NULLIFY(NewMesh % ParallelInfo % NeighbourList(i) % Neighbours)
+      END DO      
+      
+      DO i=1,nn+ne
+        j = MeshPerm(i)
+        IF(j<=0) CYCLE
+        
+        IF(i<=nn) THEN
+          NewMesh % ParallelInfo % GInterface(j) = Mesh % ParallelInfo % GInterface(i)
+          NewMesh % ParallelInfo % GlobalDOFs(j) = Mesh % ParallelInfo % GlobalDOFs(i)
+          k = SIZE(Mesh % ParallelInfo % NeighbourList(i) % Neighbours)
+          ALLOCATE(NewMesh % ParallelInfo % NeighbourList(j) % Neighbours(k))
+          NewMesh % ParallelInfo % NeighbourList(j) % Neighbours = &
+              Mesh % ParallelInfo % NeighbourList(i) % Neighbours            
+        ELSE
+          NewMesh % ParallelInfo % GInterface(j) = Mesh % ParallelInfo % EdgeInterface(i-nn)
+          NewMesh % ParallelInfo % GlobalDOFs(j) = n0 + Mesh % Edges(i-nn) % GElementIndex         
+
+          k = SIZE(Mesh % ParallelInfo % EdgeNeighbourList(i-nn) % Neighbours)
+          PRINT *,'ass1 vals:',ParEnv % MyPe, k,j,Mesh % ParallelInfo % EdgeNeighbourList(i-nn) % Neighbours          
+          ALLOCATE(NewMesh % ParallelInfo % NeighbourList(j) % Neighbours(k))
+          NewMesh % ParallelInfo % NeighbourList(j) % Neighbours = &
+              Mesh % ParallelInfo % EdgeNeighbourList(i-nn) % Neighbours                                
+        END IF
+      END DO
+
+      
+      DO i = 1, NewMesh % NumberOfNodes
+        IF(.NOT. ASSOCIATED(NewMesh % ParallelInfo % NeighbourList(i) % Neighbours)) THEN
+          PRINT *,'nn:',nn,ne, MAXVAL(MeshPerm), NewMesh % NumberOfNodes, &
+              SIZE(MeshPerm)
+          CALL Fatal('CutFEMParallelMesh','Neighbours not associated: '//I2S(i))
+        END IF
+      END DO
+      
+    END SUBROUTINE CutFEMParallelMesh
+
+#endif        
+
+    
     ! We can easily interpolate any variable on the new nodes created on the edge. 
     ! if we know values on both nodes. 
     !-----------------------------------------------------------------------------
@@ -2174,6 +2289,9 @@ CONTAINS
         ALLOCATE(Enew % BoundaryInfo)
         Enew % BoundaryInfo % Constraint = BCTag
       END IF
+
+      ! This effects only parallel runs, but testing parallel costs more...      
+      Enew % PartIndex = ParEnv % MyPe
       
     END SUBROUTINE AddelementData
 
@@ -2196,8 +2314,16 @@ CONTAINS
     REAL(KIND=dp) :: val, Vx, Vy, dt, VPhi, PhiMax, BW
     CHARACTER(:), ALLOCATABLE :: str       
     LOGICAL :: Found, Nonzero
-    INTEGER :: i,j
+    INTEGER :: nVar,i,j
 
+    TYPE PolylineData_t
+      INTEGER :: nLines = 0, nNodes = 0
+      REAL(KIND=dp), ALLOCATABLE :: Vals(:,:)
+      REAL(KIND=dp) :: IsoLineBB(4), MeshBB(4)      
+    END TYPE PolylineData_t
+    TYPE(PolylineData_t),  ALLOCATABLE, TARGET, SAVE :: PolylineData(:)
+    
+    
     SAVE IsoMesh
 
     IsoMesh => CreateCutFEMMesh(Solver,Mesh,Solver % Variable % Perm,&
@@ -2253,6 +2379,12 @@ CONTAINS
     PhiMax = MAXVAL(ABS(PhiVar1D % Values)) 
     PhiMax = 1.01 * ( PhiMax + SQRT(Vx**2+Vy**2)*dt )
 
+    IF(.NOT. ALLOCATED(PolylineData)) THEN
+      ALLOCATE(PolylineData(ParEnv % PEs))
+    END IF
+    CALL PopulatePolyline()
+
+
     DO i=1, Mesh % NumberOfNodes
       j = PhiVar2D % Perm(i)
       IF(j==0) CYCLE
@@ -2268,14 +2400,174 @@ CONTAINS
 #else
       val = SignedDistance(i) 
 #endif
-      
+
       PhiVar2D % Values(j) = val
     END DO
 
+    ! Deallocate data, next time this will be different.
+    DO i=1,ParEnv % PEs 
+      IF(PolylineData(i) % nLines > 0) THEN
+        DEALLOCATE(PolylineData(i) % Vals)
+      END IF
+    END DO
+    
     Solver % Mesh % Next => IsoMesh
-
     
   CONTAINS
+
+    !------------------------------------------------------------------------------
+    !> Computes the signed distance to zero levelset. 
+    !------------------------------------------------------------------------------
+    SUBROUTINE PopulatePolyline()
+      !------------------------------------------------------------------------------      
+      REAL(KIND=dp) :: x0,y0,x1,y1,ss
+      INTEGER :: i,j,k,n,m,i0,i1,nCol
+      TYPE(Variable_t), POINTER :: Var1D
+      INTEGER :: iVar, MyPe, PEs, Phase
+      !------------------------------------------------------------------------------
+
+      nCol = 4
+      IF(nonzero) nCol = nCol+2
+
+      nVar = 0
+      DO k = 1,100    
+        str = ListGetString( Solver % Values,'isoline variable '//I2S(k), Found )
+        IF(.NOT. Found ) EXIT            
+        Var1D => VariableGet( IsoMesh % Variables, str, ThisOnly = .TRUE. )
+        IF(.NOT. ASSOCIATED(Var1D)) EXIT
+        nVar = k
+      END DO
+      nCol = nCol + 2*nVar
+
+      m = Isomesh % NumberOfBulkElements
+      MyPe = ParEnv % MyPe + 1
+      PEs = ParEnv % PEs
+
+      ! We may find use for bounding boxes later on. 
+#if 0
+      PolylineData(MyPe) % IsoLineBB(1) = MINVAL(IsoMesh % Nodes % x)
+      PolylineData(MyPe) % IsoLineBB(2) = MAXVAL(IsoMesh % Nodes % x)
+      PolylineData(MyPe) % IsoLineBB(3) = MINVAL(IsoMesh % Nodes % y)
+      PolylineData(MyPe) % IsoLineBB(4) = MAXVAL(IsoMesh % Nodes % y)
+
+      PolylineData(MyPe) % MeshBB(1) = MINVAL(Mesh % Nodes % x)
+      PolylineData(MyPe) % MeshBB(2) = MAXVAL(Mesh % Nodes % x)
+      PolylineData(MyPe) % MeshBB(3) = MINVAL(Mesh % Nodes % y)
+      PolylineData(MyPe) % MeshBB(4) = MAXVAL(Mesh % Nodes % y)
+#endif
+      
+      DO Phase=0,1
+        m = 0
+        DO i=1,IsoMesh % NumberOfBulkElements        
+          i0 = IsoMesh % Elements(i) % NodeIndexes(1)
+          i1 = IsoMesh % Elements(i) % NodeIndexes(2)
+          
+          x0 = x(i0); y0 = y(i0)
+          x1 = x(i1); y1 = y(i1)
+          
+          ss = (x0-x1)**2 + (y0-y1)**2
+          
+          ! This is too short for anything useful...
+          ! Particularly difficult it is to decide on left/right if the segment is a stub.
+          IF(ss < EPSILON(ss) ) CYCLE        
+          
+          m = m+1
+          IF(Phase==0) CYCLE
+          
+          PolylineData(MyPe) % Vals(m,1) = x0
+          PolylineData(MyPe) % Vals(m,2) = x1
+          PolylineData(MyPe) % Vals(m,3) = y0
+          PolylineData(MyPe) % Vals(m,4) = y1
+
+          j = 5
+          IF(nonzero) THEN
+            PolylineData(MyPe) % Vals(m,j) = PhiVar1D % Values(i0)
+            PolylineData(MyPe) % Vals(m,j+1) = PhiVar1D % Values(i1)
+            j = j+2
+          END IF
+
+          DO k = 1,nVar
+            str = ListGetString( Solver % Values,'isoline variable '//I2S(k), Found )
+            Var1D => VariableGet( IsoMesh % Variables, str, ThisOnly = .TRUE. )
+
+            PolylineData(MyPe) % Vals(m,j)   = Var1D % Values(i0)
+            PolylineData(MyPe) % Vals(m,j+1) = Var1D % Values(i1)
+            j = j+2
+          END DO
+        END DO
+
+        IF(Phase==0) THEN
+          CALL Info('LevelsetUpdate','Allocating PolylineData of size '//I2S(m)//' x '//I2S(nCol),Level=8)
+          PolylineData(MyPe) % nLines = m
+          PolylineData(MyPe) % nNodes = Mesh % NumberOfNodes
+          ALLOCATE(PolylineData(MyPe) % Vals(m,nCol))
+          PolylineData(MyPe) % Vals = 0.0_dp
+        END IF
+        
+      END DO
+
+       
+      IF(PEs > 1 ) THEN        
+        BLOCK
+          INTEGER, ALLOCATABLE :: nPar(:)
+          INTEGER :: comm, ierr, status(MPI_STATUS_SIZE)
+          
+          ALLOCATE(nPar(PEs))
+          comm = Solver % Matrix % Comm
+
+          nPar = 0
+          nPar(MyPe) = PolylineData(MyPe) % nLines
+          CALL MPI_ALLREDUCE(MPI_IN_PLACE, nPar, PEs, MPI_INTEGER, MPI_MAX, comm, ierr)
+          DO i=1,PEs
+            PolylineData(i) % nLines = nPar(i)
+          END DO
+          
+          nPar = 0
+          nPar(MyPe) = Mesh % NumberOfNodes
+          CALL MPI_ALLREDUCE(MPI_IN_PLACE, nPar, PEs, MPI_INTEGER, MPI_MAX, comm, ierr)
+          DO i=1,PEs
+            PolylineData(i) % nNodes = nPar(i)
+          END DO
+          CALL MPI_BARRIER( comm, ierr )
+          
+          IF( PolylineData(MyPe) % nNodes > 1) THEN
+            DO i=1,PEs            
+              IF(i==MyPe) CYCLE
+              m = PolylineData(i) % nLines
+              IF(m>0) ALLOCATE(PolylineData(i) % Vals(m,nCol))            
+            END DO
+          END IF
+                     
+          DO i=1,PEs
+            IF(i==MyPe) CYCLE              
+            IF(PolylineData(MyPe) % nLines == 0 .OR. PolylineData(i) % nNodes == 0 ) CYCLE
+
+            ! Sent data from partition MyPe to i           
+            k = PolylineData(MyPe) % nLines * nCol
+            CALL MPI_BSEND( PolylineData(MyPe) % Vals, k, MPI_DOUBLE_PRECISION,i-1, &
+                1001, comm, ierr )
+          END DO
+            
+          DO i=1,PEs
+            IF(i==MyPe) CYCLE              
+            IF(PolylineData(i) % nLines == 0 .OR. PolylineData(MyPe) % nNodes == 0 ) CYCLE
+            
+            ! Recieve data from partition i to MyPe
+            k = PolylineData(i) % nLines * nCol
+            CALL MPI_RECV( PolylineData(i) % Vals, k, MPI_DOUBLE_PRECISION,i-1, &
+                1001, comm, status, ierr )
+          END DO
+
+          CALL MPI_BARRIER( comm, ierr )          
+        END BLOCK
+
+        k = SUM( PolylineData(1:PEs) % nLines ) 
+        CALL Info('LevelSetUpdate','Number of line segments in parallel system: '//I2S(k),Level=7)
+      END IF
+      
+    END SUBROUTINE PopulatePolyline
+    !------------------------------------------------------------------------------
+
 
     !------------------------------------------------------------------------------
     !> Computes the signed distance to zero levelset. 
@@ -2285,12 +2577,12 @@ CONTAINS
       INTEGER :: node
       REAL(KIND=dp) :: phip
       !------------------------------------------------------------------------------
-      REAL(KIND=dp) :: xp,yp,zp
+      REAL(KIND=dp) :: xp,yp
       REAL(KIND=dp) :: x0,y0,x1,y1,xm,ym,a,b,c,d,s,dir1,&
           dist2,mindist2,dist,mindist,smin,ss,phim
-      INTEGER :: i,i0,i1,j,k,n,sgn,m,imin
+      INTEGER :: i,i0,i1,j,k,n,sgn,m,imin,kmin
       TYPE(Variable_t), POINTER :: Var1D, Var2D
-      INTEGER :: iVar
+      INTEGER :: nCol, nLines
       !------------------------------------------------------------------------------
       mindist2 = HUGE(mindist2)
       mindist = HUGE(mindist)
@@ -2298,115 +2590,114 @@ CONTAINS
       
       xp = Mesh % Nodes % x(node)
       yp = Mesh % Nodes % y(node)
-      zp = 0.0_dp
-
       
       m = 0
-      
-      DO i=1,IsoMesh % NumberOfBulkElements
-        i0 = IsoMesh % Elements(i) % NodeIndexes(1)
-        i1 = IsoMesh % Elements(i) % NodeIndexes(2)
+      nCol = 5
+      IF(nonzero) nCol = 7
+            
+      DO k = 1, ParEnv % PEs
+        nLines = PolylineData(k) % nLInes
+        IF(nLines == 0) CYCLE
 
-        x0 = x(i0); y0 = y(i0)
-        x1 = x(i1); y1 = y(i1)
+        DO i=1,nLines
+          x0 = PolylineData(k) % Vals(i,1)
+          x1 = PolylineData(k) % Vals(i,2)
+          y0 = PolylineData(k) % Vals(i,3)
+          y1 = PolylineData(k) % Vals(i,4)
 
-        a = xp - x0
-        b = x0 - x1
-        d = y0 - y1
-        c = yp - y0
-        ss = b**2 + d**2
+          a = xp - x0
+          b = x0 - x1
+          d = y0 - y1
+          c = yp - y0
+          ss = b**2 + d**2
 
-        ! This is too short for anything usefull...
-        ! Particularly difficult it is to decide on left/right if the segment is a stub.
-        IF(ss < EPSILON(ss) ) CYCLE        
-        
-        s = MIN( MAX( -(a*b + c*d) / ss, 0.0d0), 1.0d0 )
-        xm = (1-s) * x0 + s * x1
-        ym = (1-s) * y0 + s * y1
-        dist2 = (xp - xm)**2 + (yp - ym)**2
+          s = MIN( MAX( -(a*b + c*d) / ss, 0.0d0), 1.0d0 )
+          xm = (1-s) * x0 + s * x1
+          ym = (1-s) * y0 + s * y1
+          dist2 = (xp - xm)**2 + (yp - ym)**2
 
-        IF(nonzero) THEN
-          ! We need true distances since the offset cannot be added otherwise.
-          dist2 = SQRT(dist2)
+          IF(nonzero) THEN
+            ! We need true distances since the offset cannot be added otherwise.
+            dist2 = SQRT(dist2)
 
-          ! The line segment including the zero levelset might not be exactly zero...
-          ! By definition we don't have permutation here!
-          phim = (1-s) * PhiVar1D % Values(i0) + s * PhiVar1D % Values(i1)
-          
-          ! In order to test when need to be close enough.
-          IF(dist2 > mindist2 + ABS(phim) ) CYCLE
+            ! The line segment including the zero levelset might not be exactly zero...
+            ! By definition we don't have permutation here!
+            phim = (1-s) * PolylineData(k) % Vals(i,5) + s * PolylineData(k) % Vals(i,6)
 
-          ! Dir is an indicator one which side of the line segment the point lies. 
-          ! We have ordered the edges soe that "dir1" should be consistent.
-          dir1 = (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0)
+            ! In order to test when need to be close enough.
+            IF(dist2 > mindist2 + ABS(phim) ) CYCLE
 
-          ! If the control point and found point lie on the same side they are inside. 
-          IF(dir1 < 0.0_dp ) THEN
-            sgn = -1
+            ! Dir is an indicator one which side of the line segment the point lies. 
+            ! We have ordered the edges soe that "dir1" should be consistent.
+            dir1 = (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0)
+
+            ! If the control point and found point lie on the same side they are inside. 
+            IF(dir1 < 0.0_dp ) THEN
+              sgn = -1
+            ELSE
+              sgn = 1
+            END IF
+
+            dist = sgn * dist2 + phim
+            ! Ok, close but no honey. 
+            IF( ABS(dist) > ABS(mindist) ) CYCLE
+
+            mindist = dist
           ELSE
-            sgn = 1
+            ! Here we can compare the squares saving one expensive operation.
+            IF(dist2 > mindist2 ) CYCLE
+
+            ! Dir is an indicator one which side of the line segment the point lies. 
+            ! We have ordered the edges soe that "dir1" should be consistent.
+            dir1 = (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0)
+
+            ! If the control point and found point lie on the same side they are inside. 
+            IF(dir1 < 0.0_dp ) THEN
+              sgn = -1
+            ELSE
+              sgn = 1
+            END IF
           END IF
 
-          dist = sgn * dist2 + phim
-          ! Ok, close but no honey. 
-          IF( ABS(dist) > ABS(mindist) ) CYCLE
-
-          mindist = dist
-        ELSE
-          ! Here we can compare the squares saving one expensive operation.
-          IF(dist2 > mindist2 ) CYCLE
-
-          ! Dir is an indicator one which side of the line segment the point lies. 
-          ! We have ordered the edges soe that "dir1" should be consistent.
-          dir1 = (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0)
-        
-          ! If the control point and found point lie on the same side they are inside. 
-          IF(dir1 < 0.0_dp ) THEN
-            sgn = -1
-          ELSE
-            sgn = 1
-          END IF
-        END IF
-        
-          
-        ! Save these values for interpolation.
-        m = m+1
-        mindist2 = dist2          
-        smin = s
-        imin = i
+          ! Save these values for interpolation.
+          m = m+1
+          mindist2 = dist2          
+          smin = s
+          imin = i
+          kmin = k
+        END DO
       END DO
-
+        
       IF(nonzero) THEN
         phip = mindist        
       ELSE
         phip = sgn * SQRT(mindist2)
       END IF
-        
+
       ! We can carry the fields with the zero levelset. This is like pure advection.
       ! We should make this less laborious my fecthing the pointers first...
-      IF( CutPerm(node) == 0 ) THEN                
+      IF( nVar > 0 .AND. CutPerm(node) == 0 ) THEN                
         i0 = IsoMesh % Elements(imin) % NodeIndexes(1)
         i1 = IsoMesh % Elements(imin) % NodeIndexes(2)
 
-        DO iVar = 1,100    
-          str = ListGetString( Solver % Values,'isoline variable '//I2S(iVar), Found )
-          IF(.NOT. Found ) EXIT    
+        DO i = 1,nVar
+          str = ListGetString( Solver % Values,'isoline variable '//I2S(i), Found )
 
           Var2D => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE. )
           IF(Var2D % Perm(node) == 0) CYCLE
-                    
-          Var1D => VariableGet( IsoMesh % Variables, str, ThisOnly = .TRUE. )
 
           ! Interpolate from the closest distance.
           ! This is done similarly as the interpolation of coordinates. 
           Var2D % Values(Var2D % Perm(node)) = &
-              (1-smin) * Var1D % Values(i0) + smin * Var1D % Values(i1)
+              (1-smin) * PolylineData(kmin) % Vals(imin,nCol) + &
+              smin * PolylineData(kmin) % Vals(imin,nCol+1) 
+          nCol = nCol+2
         END DO
       END IF
       
       !PRINT *,'phip:',phip, m      
       
-    END FUNCTION SignedDistance
+      END FUNCTION SignedDistance
     !------------------------------------------------------------------------------
 
   END SUBROUTINE LevelSetUpdate

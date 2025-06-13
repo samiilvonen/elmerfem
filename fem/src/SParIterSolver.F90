@@ -87,28 +87,36 @@ CONTAINS
     LOGICAL, OPTIONAL :: SkipActiveCheck
 
     TYPE (ParEnv_t), POINTER :: ParallelEnv
+    INTEGER :: pes
     !******************************************************************
 
+    pes = ParEnv % PEs
     ALLOCATE( SParMatrixDesc )
-
     SParMatrixDesc % ParEnv = ParEnv
+           
     ALLOCATE(SParMatrixDesc % ParEnv % Active(ParEnv % PEs))
     SParMatrixDesc % ParEnv % Active = ParEnv % Active
     SParMatrixDesc % ParEnv % IsNeighbour => Null()
     ParEnv => SParMatrixDesc % ParEnv
-
+    
+    IF( ParEnv % PEs /= pes ) THEN
+      WRITE(Message,'(A,I0,A,I0)') '#np changed during simulation from ',pes,' to ',ParEnv % PEs
+      CALL Fatal('ParInitMatrix',Message)
+    END IF
+    
     CALL ParEnvInit(SParMatrixDesc, ParallelInfo, SourceMatrix, &
-            SkipActiveCheck )
+        SkipActiveCheck )
 
     SParMatrixDesc % Matrix => SourceMatrix
     SParMatrixDesc % DOFs = 1
     SParMatrixDesc % ParallelInfo => ParallelInfo
-
+    
     ParEnv % ActiveComm = SourceMatrix % Comm
-
+    
     SParMatrixDesc % SplittedMatrix => &
                         SplitMatrix( SourceMatrix, ParallelInfo )
 
+    
   END FUNCTION ParInitMatrix
 
 
@@ -154,6 +162,9 @@ CONTAINS
     CHARACTER(:), ALLOCATABLE :: Prec
     REAL(kind=dp) :: st
   !******************************************************************
+
+    CALL Info('SplitMatrix','Splitting parallel matrix',Level=15)
+
     st = realtime()
     ALLOCATE( SplittedMatrix )
     SplittedMatrix % InsideMatrix => AllocateMatrix()
@@ -193,6 +204,8 @@ CONTAINS
   !
   !----------------------------------------------------------------------
 
+    CALL Info('SplitMatrix','Allocating split stuff for '//I2S(ParEnv % PEs)//' partitions!',Level=12)
+    
     ALLOCATE( OwnIfMRows(ParEnv % PEs) )
     ALLOCATE( OwnIfMCols(ParEnv % PEs) )
     ALLOCATE( NbsIfMRows(ParEnv % PEs) )
@@ -202,7 +215,7 @@ CONTAINS
     ALLOCATE( OwnOldCols(ParEnv % PEs) )
     ALLOCATE( NbsOldCols(ParEnv % PEs) )
     OwnIfMRows(:) = 0; OwnIfMCols(:) = 0; NbsIfMRows(:) = 0; NbsIfMCols(:) = 0
-
+    
     j = 0
     k = SIZE(ParallelInfo % NeighbourList) 
     DO i=1,k
@@ -212,9 +225,7 @@ CONTAINS
         j = j+1
       END IF
     END DO
-    IF( j > 0 ) THEN
-      CALL Info('SplitMatrix','Added mention to self in '//I2S(j)//' neighbours ouf of '//TRIM(I2S(k)))
-    END IF
+    IF(j>0) CALL Info('SplitMatrix','Added mention to self in '//I2S(j)//' neighbours ouf of '//TRIM(I2S(k)))
     
   !----------------------------------------------------------------------
   !
@@ -458,10 +469,9 @@ CONTAINS
               ! Connection is local-if
               !
               !----------------------------------------------------------
-
               currifi = ParallelInfo % NeighbourList(Colind) % Neighbours(1) + 1
-
-              NbsIfMatrix(currifi) % Cols(NbsIfMcols(currifi)) =  &
+              
+              NbsIfMatrix(currifi) % Cols(NbsIfMcols(currifi)) =  &  
                   ParallelInfo  % GlobalDOFs(ColInd)
               NbsIfMcols(currifi) = NbsIfMcols(currifi) + 1
               NbsOCOR(currifi) = 1
@@ -492,7 +502,6 @@ CONTAINS
               !----------------------------------------------------------
 
               currifi = ParallelInfo % NeighbourList(RowInd) % Neighbours(1) + 1
-
               OwnIfMatrix(currifi) % Cols(OwnIfMcols(currifi)) =  &
                   ParallelInfo  % GlobalDOFs(ColInd)
               SplittedMatrix % GlueTable % Inds(j) = -currifi
@@ -507,8 +516,7 @@ CONTAINS
               !
               !----------------------------------------------------------
               currifi = ParallelInfo % NeighbourList(ColInd) % Neighbours(1) + 1
-
-              NbsIfMatrix(currifi) % Cols(NbsIfMcols(currifi)) =  &
+              NbsIfMatrix(currifi) % Cols(NbsIfMcols(currifi)) =  & 
                 ParallelInfo  % GlobalDOFs(ColInd)
               SplittedMatrix % GlueTable % Inds(j) = -(ParEnv % PEs + currifi)
               NbsOCOR(currifi) = 1
@@ -3075,7 +3083,11 @@ SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
   ResEPerNB = 0; RHSEPerNB = 0
 
   DO i = 1, SourceMatrix % NumberOfRows
-!    IF ( ParallelInfo % GInterface(i) ) THEN
+    IF(.NOT. ASSOCIATED(ParallelInfo % NeighbourList(i) % Neighbours)) THEN
+      CALL Fatal('CountNeighbourConns','Neighbours not associated: '//I2S(i))
+    END IF
+    
+    !    IF ( ParallelInfo % GInterface(i) ) THEN
         IF ( ParallelInfo % NeighbourList(i) % Neighbours(1) == ParEnv % MyPE ) THEN
            DO j = 1, SIZE( ParallelInfo % NeighbourList(i) % Neighbours )
                IF ( ParallelInfo % NeighbourList(i) % Neighbours(j)/=ParEnv % MyPE ) THEN
@@ -3089,7 +3101,7 @@ SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
         END IF
 !    END IF
   END DO
-
+  
   !----------------------------------------------------------------------
   !
   ! Allocate some buffers for communication

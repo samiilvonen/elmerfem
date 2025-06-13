@@ -3812,10 +3812,10 @@ CONTAINS
        
        ! We do not need the old meshes. When we reach a new timestep
        ! they have already been saved. 
-       IF(ASSOCIATED(Solver % Mesh % Next % Next ) ) THEN
-         CALL FreeMesh(Solver % Mesh % Next % Next )
-       END IF
        IF(ASSOCIATED(Solver % Mesh % Next ) ) THEN
+         IF(ASSOCIATED(Solver % Mesh % Next % Next ) ) THEN
+           CALL FreeMesh(Solver % Mesh % Next % Next )
+         END IF
          CALL FreeMesh(Solver % Mesh % Next)
        END IF
        
