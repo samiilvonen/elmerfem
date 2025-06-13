@@ -181,8 +181,19 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   UseProjMatrix = .FALSE.
   
   IF( PrecUse ) THEN
-    EdgeResVar => NULL()  
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
+
+    EdgeSolVar => NULL()
+    sname = ListGetString(Params, 'Edge Update Name', Found)
+    IF (Found) THEN
+      EdgeSolVar => VariableGet(Mesh % Variables, sname)
+      IF (.NOT. ASSOCIATED(EdgeSolVar)) CALL Fatal(Caller, 'Could not found field: '//TRIM(sname))
+    ELSE
+      CALL Warn(Caller, 'Give Edge Update Name to enable the use as a preconditioner')
+      PrecUse = .FALSE.
+    END IF
+    
+    EdgeResVar => NULL()  
     sname = ListGetString( Params,'Edge Residual Name',Found)
     IF(Found) THEN
       EdgeResVar => VariableGet( Mesh % Variables, sname )
@@ -197,14 +208,10 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       CALL Warn(Caller, 'Give Edge Residual Name to enable the use as a preconditioner')
       PrecUse = .FALSE.
     END IF
+    IF (PrecUse) UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
   ELSE
     EF => VariableGet( Mesh % Variables,'ElField')
   END IF
-
-  IF(PrecUse) THEN
-    UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
-  END IF
-    
   
   IF(.NOT. ASSOCIATED(EF) ) THEN
     CALL Fatal(Caller,'Variable for Electric field not found!')
@@ -229,11 +236,6 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   END IF
 
   IF( UseProjMatrix ) THEN
-    sname = ListGetString( Params,'Edge Update Name',Found)
-    EdgeSolVar => VariableGet( Mesh % Variables, sname )
-    IF(.NOT. ASSOCIATED(EdgeSolVar)) THEN
-      CALL Fatal(Caller,'Edge solution not found: '//TRIM(sname))
-    END IF
     CALL Info(Caller,'Creating projection matrix from nodal solution to vector element space', Level=6)
     IF(.NOT. ASSOCIATED(Proj)) THEN
       Proj => AllocateMatrix()
@@ -243,9 +245,9 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       CALL List_AddToMatrixElement(Proj % ListMatrix,1,1, 0.0_dp)
       CALL NodalToNedelecInterpolation(EF, EdgeSolVar, cdim=3, &
           SecondFamily = SecondFamily, Proj = Proj )
-      ! Revert to CRS matrix which is much faster.
+      ! Change to CRS matrix which is much faster.
       CALL List_toCRSMatrix(Proj)
-      CALL Info(Caller,'Created Projection Matrix node->edge and edge->node')
+      CALL Info(Caller,'Created Projection Matrix: H1 -> H(curl)', Level=6)
     END IF
   END IF
     
@@ -277,9 +279,9 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       !
       IF (Monolithic) THEN
         IF( UseProjMatrix ) THEN
-          CALL Info(Caller,'Using Projection Matrix edge->node')
-          PRINT *,'sizes:',MAXVAL(Proj % Cols),MINVAL(Proj % Cols),Proj % NumberOfRows, &
-              SIZE(EdgeResVar % Values), SIZE(Solver % Matrix % rhs)
+          CALL Info(Caller,'Using Transposed Projection Matrix: H(curl) -> H1', Level=6)
+!          PRINT *,'sizes:',MAXVAL(Proj % Cols),MINVAL(Proj % Cols),Proj % NumberOfRows, &
+!              SIZE(EdgeResVar % Values), SIZE(Solver % Matrix % rhs)
           CALL CRS_TransposeMatrixVectorMultiply(Proj, EdgeResVar % Values, Solver % Matrix % rhs )           
         ELSE
           CALL NedelecToNodalResidual(Solver % Matrix % RHS, EdgeResVar, cdim=3, &
@@ -340,17 +342,11 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     END IF
   END DO ! compi
 
-  EdgeSolVar => NULL()
-  sname = ListGetString( Params,'Edge Update Name',Found)
-  IF(Found) THEN
-    EdgeSolVar => VariableGet( Mesh % Variables, sname )
-    IF(.NOT. ASSOCIATED(EdgeSolVar)) THEN
-      CALL Fatal(Caller,'Edge solution not found: '//TRIM(sname))
-    END IF
+  IF (PrecUse) THEN
     CALL Info(Caller,'Projecting nodal solution to vector element space', Level=6)
 
     IF( UseProjMatrix ) THEN
-      CALL Info(Caller,'Using Projection Matrix node->edge')
+      CALL Info(Caller,'Using Projection Matrix: H1 -> H(curl)',Level=6)
       CALL CRS_MatrixVectorMultiply(Proj, EF % Values, EdgeSolVar % Values ) 
     ELSE
       CALL NodalToNedelecInterpolation(EF, EdgeSolVar, cdim=3, &
@@ -632,8 +628,10 @@ CONTAINS
 !> Apply the Nedelec interpolation to a vector field represented in terms of
 !> the Lagrange (nodal) basis functions. The result of the interpolation is
 !> returned by substituting the values of the DOFs into the FE variable
-!> describing the vector element field. The current implementation assumes that
-!> all DOFs are associated with edges.
+!> describing the vector element field. Alternatively, one may create
+!> the interpolation operator as a global matrix without performing
+!> the interpolation. The current implementation assumes that no DOFs are
+!> associated with the element interiors.
 !------------------------------------------------------------------------------
   SUBROUTINE NodalToNedelecInterpolation(NodalVar, VectorElementVar, cdim, &
       SecondFamily, Proj )
@@ -643,13 +641,14 @@ CONTAINS
     TYPE(Variable_t), POINTER, INTENT(INOUT) :: VectorElementVar
     INTEGER, OPTIONAL :: cdim         !< The number of spatial coordinates 
     LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
-    TYPE(Matrix_t), OPTIONAL :: Proj
+    TYPE(Matrix_t), OPTIONAL :: Proj  !< Used for the global representation
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes
     TYPE(Element_t), POINTER :: Edge, Face
     LOGICAL :: SecondKindBasis
     INTEGER, ALLOCATABLE, SAVE :: Ind(:)
-    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, vdofs, edgej, facej
+    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, k0, &
+        vdofs, edgej, facej
     REAL(KIND=dp) :: PiMat(2,6), FacePiMat(2,12), x(12), D
 !------------------------------------------------------------------------------
     IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
@@ -705,9 +704,10 @@ CONTAINS
         IF( PRESENT(Proj) ) THEN
           DO j=1,EDOFs
             k = VectorElementVar % Perm(Ind(j))               
+            k0 = vdofs*(k-1)+dofi
             DO i=1,dim
-              CALL List_AddToMatrixElement(Proj % ListMatrix, vdofs*(k-1)+dofi,6*(k1-1)+2*(i-1)+dofi, PiMat(j,i) )
-              CALL List_AddToMatrixElement(Proj % ListMatrix, vdofs*(k-1)+dofi,6*(k2-1)+2*(i-1)+dofi, PiMat(j,3+i) )
+              CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k1-1)+2*(i-1)+dofi, PiMat(j,i) )
+              CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k2-1)+2*(i-1)+dofi, PiMat(j,3+i) )
             END DO
           END DO
         ELSE          
@@ -749,10 +749,11 @@ CONTAINS
           IF( PRESENT(Proj) ) THEN
             DO j=1,Face % BDOFs
               k2 = VectorElementVar % Perm(Ind(j+i0))               
+              k0 = vdofs*(k2-1)+dofi
               DO i=1,Face % TYPE % NumberOfNodes
                 k1 = NodalVar % Perm(Face % NodeIndexes(i))
                 DO k=1,dim                                  
-                  CALL List_AddToMatrixElement(Proj % ListMatrix, vdofs*(k2-1)+dofi,6*(k1-1)+2*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
+                  CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k1-1)+2*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
                 END DO
               END DO
             END DO
