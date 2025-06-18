@@ -63,14 +63,14 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
   TYPE(Nodes_t) :: ElementNodes
   TYPE(Element_t),POINTER :: Element, Parent
-  TYPE(ValueList_t), POINTER :: Params, Material, Equation, BC 
+  TYPE(ValueList_t), POINTER :: Params, Material, Equation, BC, BodyForce
 
   INTEGER, PARAMETER :: Compressibility_None = 1, Compressibility_Weak = 2, &
       Compressibility_GasIsothermal = 3, Compressibility_GasAdiabatic = 4, &
       Compressibility_Artificial = 5
   INTEGER, PARAMETER :: Viscosity_Newtonian = 1, Viscosity_Rarefied = 2
 
-  INTEGER :: iter, i, j, k, l, n, nd, t, istat, mat_id, eq_id, body_id, mat_idold, &
+  INTEGER :: iter, i, j, k, l, n, nd, t, istat, mat_id, ent_id, body_id, mat_idold, &
       NoIterations, ViscosityType, CompressibilityType
   INTEGER, POINTER :: NodeIndexes(:), PressurePerm(:)
 
@@ -83,7 +83,7 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
       ACScale
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), MASS(:,:), FORCE(:), TimeForce(:), &
       Viscosity(:), GapHeight(:), NormalVelocity(:), Velocity(:,:), &
-      Admittance(:), Impedance(:), ElemPressure(:), PrevElemPressure(:),  &
+      Admittance(:), Impedance(:), ElemPressure(:), PrevElemPressure(:),  ExtPressure(:), &
       ElemDensity(:),ElemArtif(:),ExtPres(:),FluxPres(:),VeloPres(:),CoeffPres(:), &
       ElemPseudoPressure(:), PseudoPressure(:)
   TYPE(Variable_t), POINTER :: SensVar, SaveVar
@@ -92,7 +92,7 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
   CHARACTER(*), PARAMETER :: Caller = 'ReynoldsSolver'
 
   SAVE ElementNodes, Viscosity, GapHeight, ElemArtif, ElemDensity, Velocity, NormalVelocity, &
-      Admittance, FORCE, STIFF, MASS, TimeForce, ElemPressure, PrevElemPressure, &
+      Admittance, FORCE, STIFF, MASS, TimeForce, ElemPressure, PrevElemPressure, ExtPressure, &
       AllocationsDone, ExtPres, FluxPres, VeloPres, CoeffPres, PseudoPressure, GotPseudoPressure, &
       ElemPseudoPressure
 
@@ -177,6 +177,7 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
         TimeForce( 2*N ), &
         ElemPressure(n), &
         PrevElemPressure(n), &
+        ExtPressure(n), &
         ElemPseudoPressure(n), &
         STAT=istat )
     IF ( istat /= 0 ) CALL FATAL(Caller,'Memory allocation error')
@@ -331,12 +332,19 @@ CONTAINS
 
       body_id =  Element % Bodyid
 
-      eq_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation')
-      Equation => Model % Equations(eq_id) % Values
+      ent_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation')
+      Equation => Model % Equations(ent_id) % Values
 
       mat_id = GetInteger( Model % Bodies( body_id ) % Values, 'Material')
       Material => Model % Materials(mat_id) % Values
 
+      ent_id = GetInteger( Model % Bodies( ent_id ) % Values, 'Body Force')
+      IF(ent_id>0) THEN
+        BodyForce => Model % BodyForces(ent_id) % Values
+      ELSE
+        BodyForce => NULL()
+      END IF
+        
 !------------------------------------------------------------------------------
 !       Get velocities
 !------------------------------------------------------------------------------        
@@ -388,6 +396,12 @@ CONTAINS
       IF(GotMinGap) GapHeight(1:n) = MAX(GapHeight(1:n),MinGap) 
       
       Admittance(1:n) = GetReal( Material, 'Flow Admittance', GotIt)
+      IF(ASSOCIATED(BodyForce)) THEN
+        ExtPressure(1:n) = GetReal( Material, 'External FilmPressure', GotIt)
+      ELSE
+        ExtPressure(1:n) = 0.0_dp
+      END IF
+        
       Viscosity(1:n) = GetReal( Material, 'Viscosity')
       
       IF(mat_id /= mat_idold) THEN                  
@@ -493,7 +507,7 @@ CONTAINS
     REAL(KIND=dp) :: U, V, W, S, MS, MM, MA, L, A, B, HR, SL(3), SLR, SLL(3), F
     REAL(KIND=dp) :: Normal(3), Velo(3), NormalVelo, TangentVelo(3), Damp, Pres, PrevPres, &
         TotPres, GradPres(3), AbsGradPres, dPdt, Gap, Visc, mfp, Kn, Density, DensityDer, &
-        PseudoPres
+        PseudoPres, ExtPres
     LOGICAL :: Stat, GotAC
     INTEGER :: i,p,q,t,DIM, NBasis, CoordSys
     TYPE(GaussIntegrationPoints_t) :: IntegStuff
@@ -567,10 +581,11 @@ CONTAINS
       END IF
 
       Damp = SUM(Basis(1:n) * Admittance(1:n))
+      ExtPres = SUM(Basis(1:n) * ExtPressure(1:n))
       Pres = SUM(Basis(1:n) * ElemPressure(1:n))
       Gap = SUM(Basis(1:n) * GapHeight(1:n))
-      TotPres = ReferencePressure + Pres
-
+      TotPres = ReferencePressure + Pres      
+      
       ! If we compute sensitivity of solution we need various derivatives of pressure
       !--------------------------------------------------------------------------------
       IF( SensMode > 0 ) THEN
@@ -684,6 +699,8 @@ CONTAINS
 !      The Reynolds equation
 !------------------------------------------------------------------------------
       DO p=1,NBasis
+        F = 0.0_dp
+
         DO q=1,NBasis
           A = (MA + HR) * Basis(q) * Basis(p)           
           DO i=1,DIM
@@ -700,9 +717,8 @@ CONTAINS
           END IF
         END DO
          
-        F = 0.0_dp
         IF( SensMode == 0 ) THEN
-          F = L + SLR
+          F = L + SLR + HR * ExtPres
           IF(GotAC) F = F + MA * PseudoPres
         ELSE IF( SensMode == 1 ) THEN
           IF( TransientSimulation ) THEN
@@ -998,7 +1014,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
 
   INTEGER, PARAMETER :: Viscosity_Newtonian = 1, Viscosity_Rarefied = 2
 
-  INTEGER :: iter, i, j, k, l, n, nd, t, istat, eq_id, body_id, mat_id, mat_idold,&
+  INTEGER :: iter, i, j, k, l, n, nd, t, istat, ent_id, body_id, mat_id, mat_idold,&
       ViscosityType, dim
   INTEGER :: Component, Components, Mode
   INTEGER, POINTER :: NodeIndexes(:), PressurePerm(:)
@@ -1173,8 +1189,8 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
         body_id =  Element % Bodyid
 	IF( body_id <= 0 ) CYCLE        
 
-        eq_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation')
-        Equation => Model % Equations(eq_id) % Values
+        ent_id = ListGetInteger( Model % Bodies(body_id) % Values,'Equation')
+        Equation => Model % Equations(ent_id) % Values
         
         mat_id = GetInteger( Model % Bodies( body_id ) % Values, 'Material')
         Material => Model % Materials(mat_id) % Values
