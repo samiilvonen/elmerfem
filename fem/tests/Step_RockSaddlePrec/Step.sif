@@ -11,7 +11,7 @@ Simulation
   Coordinate Mapping(3) = 1 2 3
 
   Simulation Type = Steady
-  Steady State Max Iterations = 20
+  Steady State Max Iterations = 1
 
   Output Intervals = 1
  Post File = "Step.vtu"
@@ -100,5 +100,5 @@ Boundary Condition 3
    Velocity 2 = 0
 End
 
-Solver 1 :: Reference Norm = Real 0.42691131
+Solver 1 :: Reference Norm = Real 0.209817735
 RUN
