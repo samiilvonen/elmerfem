@@ -618,7 +618,9 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
           schurComplement.SetDataPtrCSR(&Srows, &Scols, &Svals, "SchurComplement", Srows[*schur_n], *schur_n, *schur_n);
           schurComplement.Info();
           schurComplement.MoveToAccelerator();
+#ifdef HAVE_SETSCHURCOMPLEMENT
           prec_dj.SetSchurComplement(schurComplement);
+#endif
           delete Srows, Scols, Svals;
 	}
 
