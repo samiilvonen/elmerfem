@@ -15538,17 +15538,20 @@ END FUNCTION SearchNodeL
     ! local variables:
     ! ----------------
     LOGICAL :: found, isParallel 
-    INTEGER :: nonlin_update, i, j, k,l,n, gn, me
+    INTEGER :: nonlin_update, i, j, k,l, m, n, p,q,gn, me
 
     TYPE(Matrix_t), POINTER ::Rmatrix
 
-    INTEGER, POINTER ::  aPerm(:), iLperm(:), gOffset(:)
+    INTEGER, POINTER ::  aPerm(:), iLperm(:), gOffset(:), iRows(:), iCols(:)
+    REAL(KIND=dp), POINTER :: iVals(:)
     REAL(KIND=dp), ALLOCATABLE :: dBuf(:)
     INTEGER, ALLOCATABLE :: Owner(:), SendTo(:), iBuf(:), tOffset(:), rRows(:), rSize(:)
 
     INTEGER :: status(MPI_STATUS_SIZE),ierr,lrow,you,rcnt,proc
 
     INTEGER :: buf_size, procs
+
+    TYPE(Matrix_arr_t), POINTER :: iMatrix(:)
 
     ! Define these to get somewhat shorter MPI subroutine calls:
     ! -----------------------------------------------------------
@@ -15568,6 +15571,8 @@ END FUNCTION SearchNodeL
       INTEGER, ALLOCATABLE :: Size(:), Rows(:)
     END TYPE SendStuff_t
     TYPE(SendStuff_t), ALLOCATABLE :: SendStuff(:)
+
+    REAL(KIND=dp)  :: rt
 
     Params => Solver % Values
 
@@ -15622,6 +15627,7 @@ END FUNCTION SearchNodeL
     isParallel = procs>1
 
     IF(isParallel) THEN
+            rt = RealTime()
       me    =  Parenv % MyPe
       xmpi_comm = ELMER_COMM_WORLD
 
@@ -15651,15 +15657,24 @@ END FUNCTION SearchNodeL
         Rmatrix % Format = MATRIX_LIST
         Rmatrix % ListMatrix => List_AllocateMatrix(own_n)
 
+        ALLOCATE(iMatrix(0:ParEnv % PEs-1))
+        DO proc=0,ParEnv % PEs-1
+          iMatrix(proc) % M => AllocateMatrix()
+          iMatrix(proc) % M % Format = MATRIX_LIST
+          iMatrix(proc) % M % ListMatrix => List_AllocateMatrix(own_n)
+        END DO
+
         A % RocParams % Rmatrix => Rmatrix
         A % RocParams % CntPerm => aPerm
         A % RocParams % LocPerm => iLperm
         A % RocParams % gOffset => gOffset
+        A % RocParams % iMatrix => iMatrix
       ELSE
         Rmatrix => A % RocParams % Rmatrix
         aPerm   => A % RocParams % CntPerm
         iLPerm  => A % RocParams % LocPerm
         gOffset => A % RocParams % gOffset
+        iMatrix => A % RocParams % iMatrix
       END IF
 
       ! Complete the matrix rows such that each partition has full rows of the 'owned' dofs
@@ -15670,7 +15685,7 @@ END FUNCTION SearchNodeL
 
         ! Create inside matrix + count rows with values to send for each neighbour
         ! -------------------------------------------------------------------------
-        ALLOCATE(SendTo(procs))
+        ALLOCATE(SendTo(0:procs-1))
         iLPerm = 0
         LRow = 0
         SendTo = 0
@@ -15679,21 +15694,27 @@ END FUNCTION SearchNodeL
           IF ( you == me ) THEN
             lRow = lRow + 1
             iLPerm(lRow) = i
-            DO j=A % Rows(i+1)-1, A % Rows(i),-1
-              CALL AddToMatrixElement(Rmatrix, lRow, aPerm(A  % Cols(j)), A % Values(j))
-            END DO
+            IF ( Rmatrix % Format == MATRIX_LIST ) THEN
+              l = A % Rows(i+1) - A % Rows(i)
+              dbuf = A % Values(A % Rows(i):A % Rows(i+1)-1)
+              ibuf = aPerm(A % Cols(A % Rows(i):A % Rows(i+1)-1))
+              CALL List_AddMatrixRow(Rmatrix % ListMatrix, lRow, l, &
+                       ibuf, dbuf, SortedInput=.FALSE.)
+            ELSE
+              DO j=A % Rows(i+1)-1, A % Rows(i),-1
+                CALL AddToMatrixElement(Rmatrix, lRow, aPerm(A  % Cols(j)), A % Values(j))
+              END DO
+            ENDIF
           ELSE
-            SendTo(you+1) = SendTo(you+1)+1
+            SendTo(you) = SendTo(you)+1
           END IF
         END DO
 
-        ALLOCATE(SendStuff(ParEnv % Pes))
-        DO i=1,ParEnv % PEs
-          IF( i-1==me ) CYCLE
-          IF(.NOT.ParEnv % IsNeighbour(i))  CYCLE
-
-          ALLOCATE( SendStuff(i) % Rows(SendTo(i)) )
-          ALLOCATE( SendStuff(i) % Size(SendTo(i)) )
+        ALLOCATE(SendStuff(0:procs-1))
+        DO proc=0,procs-1
+          IF( proc==me .OR. .NOT. ParEnv % IsNeighbour(proc+1) ) CYCLE
+          ALLOCATE( SendStuff(proc) % Rows(SendTo(proc)) )
+          ALLOCATE( SendStuff(proc) % Size(SendTo(proc)) )
         END DO
  
         ! Count number of columns of each neighbour's rows to be sent
@@ -15703,9 +15724,9 @@ END FUNCTION SearchNodeL
         DO i=1,a % NumberOfRows
           you = A % ParallelInfo % NeighbourList(i) % Neighbours(1)
           IF ( you /= me ) THEN
-            SendTo(you+1) = SendTo(you+1)+1
-            SendStuff(you+1) % Size(Sendto(you+1))  = A % Rows(i+1)-A % Rows(i)
-            SendStuff(you+1) % Rows(Sendto(you+1))  = i
+            SendTo(you) = SendTo(you)+1
+            SendStuff(you) % Size(Sendto(you))  = A % Rows(i+1)-A % Rows(i)
+            SendStuff(you) % Rows(Sendto(you))  = i
             buf_size = buf_size + A % Rows(i+1) - A % Rows(i)
           END IF
         END DO
@@ -15713,25 +15734,28 @@ END FUNCTION SearchNodeL
 
         ! Send data to neighbours
         ! -----------------------
-        DO i=1,ParEnV % PEs
-          IF(i-1==me .OR. .NOT. ParEnv % IsNeighbour(i)) CYCLE
+        DO proc=0,procs-1
+          IF(proc==me .OR. .NOT. ParEnv % IsNeighbour(proc+1)) CYCLE
 
-          CALL MPI_BSEND(SendTo(i),1,xmpi_int,i-1,1200,xmpi_comm,ierr)
-          IF(Sendto(i)==0) CYCLE
+          CALL MPI_BSEND(SendTo(proc),1,xmpi_int,proc,1200,xmpi_comm,ierr)
+          IF(Sendto(proc)==0) CYCLE
 
-          ibuf = aPerm(SendStuff(i) % Rows)
-          CALL MPI_BSEND(ibuf,SendTo(i),xmpi_int,i-1,1201,xmpi_comm,ierr)
+          ibuf = aPerm(SendStuff(proc) % Rows)
+          CALL MPI_BSEND(ibuf,SendTo(proc),xmpi_int,proc,1201,xmpi_comm,ierr)
 
-          ibuf = SendStuff(i) % Size
-          CALL MPI_BSEND(ibuf,SendTo(i),xmpi_int,i-1,1202,xmpi_comm,ierr)
+          ibuf = SendStuff(proc) % Size
+          CALL MPI_BSEND(ibuf,SendTo(proc),xmpi_int,proc,1202,xmpi_comm,ierr)
 
-          DO j=1,SendTo(i)
-            k = SendStuff(i) % Rows(j)
-            l = SendStuff(i) % Size(j)
-            dBuf =  A % Values(A % Rows(k):A % Rows(k+1)-1)
-            iBuf =  aPerm(A % Cols(A % Rows(k):A % Rows(k+1)-1))
-            CALL MPI_BSEND(iBuf,l,xmpi_int,i-1,1203,xmpi_comm,ierr)
-            CALL MPI_BSEND(dBuf,l,xmpi_dbl,i-1,1204,xmpi_comm,ierr)
+          DO j=1,SendTo(proc)
+            k = SendStuff(proc) % Rows(j)
+            l = SendStuff(proc) % Size(j)
+            dBuf = A % Values(A % Rows(k):A % Rows(k+1)-1)
+            iBuf = aPerm(A % Cols(A % Rows(k):A % Rows(k+1)-1))
+            CALL SortF(l, ibuf, dbuf)
+            CALL MPI_BSEND(dBuf,l,xmpi_dbl,proc,1203,xmpi_comm,ierr)
+            IF (Rmatrix % Format == MATRIX_LIST ) THEN
+              CALL MPI_BSEND(iBuf,l,xmpi_int,proc,1204,xmpi_comm,ierr)
+            END IF
           END DO
         END DO
 
@@ -15764,27 +15788,82 @@ END FUNCTION SearchNodeL
               DEALLOCATE(iBuf,dBuf)
               ALLOCATE( iBuf(rSize(j)), dBuf(rSize(j)) )
             END IF
+            CALL MPI_RECV(dBuf,rSize(j),xmpi_dbl,proc,1203,xmpi_comm,status,ierr)
 
-            CALL MPI_RECV(iBuf,rSize(j),xmpi_int,proc,1203,xmpi_comm,status,ierr)
-            CALL MPI_RECV(dBuf,rSize(j),xmpi_dbl,proc,1204,xmpi_comm,status,ierr)
+            IF ( RMatrix % Format == MATRIX_LIST ) THEN
+              CALL MPI_RECV(iBuf,rSize(j),xmpi_int,proc,1204,xmpi_comm,status,ierr)
 
-            DO l=1,rSize(j)
-              CAll AddToMatrixElement(Rmatrix,k-gOffset(me),iBuf(l),dBuf(l))
-            END DO
+!             CALL List_AddMatrixRow(Rmatrix % ListMatrix,k-gOffset(me), &
+!                      rSize(j),iBuf,dBuf,SortedInput=.TRUE.)
+
+              CALL List_AddMatrixRow(iMatrix(proc) % M % ListMatrix,k-gOffset(me), &
+                       rSize(j),iBuf,dBuf,SortedInput=.TRUE.)
+
+!             DO l=1,rSize(j)
+!               CAll AddToMatrixElement(Rmatrix,k-gOffset(me),iBuf(l),dBuf(l))
+!               CAll AddToMatrixElement(iMatrix(proc) % M,k-gOffset(me),iBuf(l),dBuf(l))
+!             END DO
+            ELSE
+              p = k-Goffset(me)
+              q = 0
+              DO l=iMatrix(proc) % M % Rows(p), iMatrix(proc) % M % Rows(p+1)-1
+                q = q + 1
+                m = iMatrix(proc) % M % Cols(l)
+                Rmatrix % Values(m) = RMatrix % Values(m) + dBuf(q)
+              END DO
+            END IF
           END DO
         END DO
         ! ----------
+!       CALL MPI_BARRIER(A % Comm,ierr)
 
-        CALL MPI_BARRIER(A % Comm,ierr)
- 
-        IF(Rmatrix % Format == MATRIX_LIST) CALL List_toCRSMatrix(Rmatrix)
+        IF(Rmatrix % Format == MATRIX_LIST) THEN
+
+          DO proc=0,procs-1
+            IF ( proc==me .OR. .NOT. ParEnv % IsNeighbour(proc+1)) CYCLE
+
+            CALL List_toCRSMatrix(iMatrix(proc) % M)
+            DO i=1,iMatrix(proc) % M % NumberOfRows
+              iRows => iMatrix(proc) % M % Rows
+              iCols => iMatrix(proc) % M % Cols
+              iVals => iMatrix(proc) % M % Values
+
+              l = iRows(i+1) - iRows(i)
+              IF (l>0) THEN
+                CALL List_AddMatrixRow( Rmatrix % ListMatrix,i,l, &
+                   iCols(iRows(i):iRows(i+1)-1), iVals(iRows(i):iRows(i+1)-1), SortedInput=.TRUE.)
+              END IF
+            END DO
+          END DO
+
+          CALL List_toCRSMatrix(Rmatrix)
+
+          DO proc=0,procs-1
+            IF ( iMatrix(proc) % M % NumberOfRows <= 0 ) CYCLE
+
+            iRows => iMatrix(proc) % M % Rows
+            iCols => iMatrix(proc) % M % Cols
+
+            DO i=1,iMatrix(proc) % M % NumberOfRows
+              l = RMatrix % Rows(i)
+              DO j=iRows(i), iRows(i+1)-1
+                DO WHILE(Rmatrix % Cols(l) /= iCols(j))
+                   l=l+1 
+                END DO
+                iCols(j) = l
+              END DO
+            END DO
+          END DO
+        END IF
         n = Rmatrix % NumberOfRows
         gn = ParallelReduction(n);
+
+        print*,'ct time: ', realtime()-rt
       END IF
 
 
-      !  the linear solver
-      ! ----------------------
+      !  the linear equation solver
+      ! ---------------------------
       BLOCK
         REAL(KIND=dp), ALLOCATABLE :: pb(:),px(:), r(:)
         REAL(KIND=dp) :: bnrm
@@ -15825,21 +15904,21 @@ END FUNCTION SearchNodeL
 
       ! Cleanup, remains to be reconsidered for optimizations
       ! -----------------------------------------------------
-      CALL FreeMatrix(Rmatrix);
-      DEALLOCATE(APerm,ILperm,gOffset)
+      !CALL FreeMatrix(Rmatrix);
+      !DEALLOCATE(APerm,ILperm,gOffset)
 
-      A % RocParams % Rmatrix => Null()
-      A % RocParams % CntPerm => Null()
-      A % RocParams % LocPerm => Null()
-      A % RocParams % gOffset => Null()
+      !A % RocParams % Rmatrix => Null()
+      !A % RocParams % CntPerm => Null()
+      !A % RocParams % LocPerm => Null()
+      !A % RocParams % gOffset => Null()
     ELSE
       ! Serial case: call the linear solver
       ! -----------------------------------
       BLOCK
         TYPE(Variable_t), POINTER :: SchurV
         TYPE(Matrix_t), POINTER :: Schur 
-        INTEGER :: dofs, idum(1)
         REAL(KIND=dp) :: ddum(1)
+        INTEGER :: i, j, k, l, dofs, idum(1)
 
         Schur => NULL()
         dofs = Solver % Variable % DOFs
@@ -15859,7 +15938,7 @@ END FUNCTION SearchNodeL
           CALL FreeMatrix( Schur)
         ELSE
           CALL ROCSerialSolve( n, A % Rows-1, A % Cols-1, A % Values, b, x, &
-             nonlin_update, imethod, prec, maxiter, tol, 0, idum, idum, ddum, dofs)
+              nonlin_update, imethod, prec, maxiter, tol, 0, idum, idum, ddum, dofs)
         END IF
       END BLOCK
     END IF
