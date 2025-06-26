@@ -5928,7 +5928,7 @@ END BLOCK
 
       REAL(KIND=dp) :: gfactor
 
-      IF ((eta .NE. 0.0_dp) .AND. (etaOld .NE. 0.0_dp)) THEN 
+      IF ((eta /= 0.0_dp) .AND. (etaOld /= 0.0_dp)) THEN 
         gfactor = ((epsilon/eta)**beta1) * ((epsilon/etaOld)**beta2)
         CALL TimeStepLimiter(dtOld, dt, gfactor)
       ELSE 
