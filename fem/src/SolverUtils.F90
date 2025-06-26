@@ -15858,7 +15858,7 @@ END FUNCTION SearchNodeL
         n = Rmatrix % NumberOfRows
         gn = ParallelReduction(n);
 
-        print*,'ct time: ', realtime()-rt
+!       print*,'ct time: ', realtime()-rt
       END IF
 
 
