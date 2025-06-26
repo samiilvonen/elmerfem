@@ -15537,7 +15537,7 @@ END FUNCTION SearchNodeL
 
     ! local variables:
     ! ----------------
-    LOGICAL :: found, isParallel 
+    LOGICAL :: Found, isParallel, Refactorize
     INTEGER :: nonlin_update, i, j, k,l, m, n, p,q,gn, me
 
     TYPE(Matrix_t), POINTER ::Rmatrix
@@ -15579,8 +15579,8 @@ END FUNCTION SearchNodeL
     ! Extract some controls to ROCalution from the simulation control info:
     ! ---------------------------------------------------------------------
     nonlin_update = 1
-    IF ( .NOT. ListGetLogical( Params, 'Linear System Refactorize', Found ) ) &
-      nonlin_update = 0;
+    Refactorize = ListGetLogical( Params, 'Linear System Refactorize', Found )
+    IF ( Found .AND. .NOT. Refactorize ) nonlin_update = 0
 
     SELECT CASE(ListGetString(Params,'Linear System Iterative Method',Found))
       CASE('cg')
@@ -15777,9 +15777,9 @@ END FUNCTION SearchNodeL
           CALL MPI_RECV(rRows,rcnt,xmpi_int,proc,1201,xmpi_comm,status,ierr)
           CALL MPI_RECV(rSize,rcnt,xmpi_int,proc,1202,xmpi_comm,status,ierr)
           DO j=1,rcnt
-            k = rRows(j)
+            k = rRows(j) - gOffset(me)
 
-            IF ( k<= gOffset(me) .OR. k> gOffset(me+1) ) THEN
+            IF ( k<=0 .OR. k>gOffset(me+1)-gOffset(me) ) THEN
               PRINT*,Parenv % MyPE,proc, 'not mine then ?', rRows(j), gOffset(me), gOffset(me+1)
               CYCLE
             END IF
@@ -15792,21 +15792,11 @@ END FUNCTION SearchNodeL
 
             IF ( RMatrix % Format == MATRIX_LIST ) THEN
               CALL MPI_RECV(iBuf,rSize(j),xmpi_int,proc,1204,xmpi_comm,status,ierr)
-
-!             CALL List_AddMatrixRow(Rmatrix % ListMatrix,k-gOffset(me), &
-!                      rSize(j),iBuf,dBuf,SortedInput=.TRUE.)
-
-              CALL List_AddMatrixRow(iMatrix(proc) % M % ListMatrix,k-gOffset(me), &
+              CALL List_AddMatrixRow(iMatrix(proc) % M % ListMatrix,k, &
                        rSize(j),iBuf,dBuf,SortedInput=.TRUE.)
-
-!             DO l=1,rSize(j)
-!               CAll AddToMatrixElement(Rmatrix,k-gOffset(me),iBuf(l),dBuf(l))
-!               CAll AddToMatrixElement(iMatrix(proc) % M,k-gOffset(me),iBuf(l),dBuf(l))
-!             END DO
             ELSE
-              p = k-Goffset(me)
               q = 0
-              DO l=iMatrix(proc) % M % Rows(p), iMatrix(proc) % M % Rows(p+1)-1
+              DO l=iMatrix(proc) % M % Rows(k), iMatrix(proc) % M % Rows(k+1)-1
                 q = q + 1
                 m = iMatrix(proc) % M % Cols(l)
                 Rmatrix % Values(m) = RMatrix % Values(m) + dBuf(q)
@@ -15814,8 +15804,8 @@ END FUNCTION SearchNodeL
             END IF
           END DO
         END DO
+
         ! ----------
-!       CALL MPI_BARRIER(A % Comm,ierr)
 
         IF(Rmatrix % Format == MATRIX_LIST) THEN
 
@@ -15855,11 +15845,12 @@ END FUNCTION SearchNodeL
             END DO
           END DO
         END IF
-        n = Rmatrix % NumberOfRows
-        gn = ParallelReduction(n);
 
 !       print*,'ct time: ', realtime()-rt
       END IF
+
+      n = Rmatrix % NumberOfRows
+      gn = ParallelReduction(n);
 
 
       !  the linear equation solver
