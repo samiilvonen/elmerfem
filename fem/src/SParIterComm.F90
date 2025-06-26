@@ -1639,7 +1639,7 @@ CONTAINS
 
          DO m = 2,SIZE(Facen(l) % Neighbours)
             mm = Facen(l) %  Neighbours(m)
-            IF( mm+1 .NE. i ) CYCLE
+            IF( mm+1 /= i ) CYCLE
             gindices(k) = facen(l) % n
             gindices(k+1) = gdofs(parentnodes(l,1))
             gindices(k+2) = gdofs(parentnodes(l,2))
@@ -2270,7 +2270,7 @@ tstart = realtime()
 
            DO m = 2,SIZE( Mesh % ParallelInfo % NeighbourList(l) % Neighbours )
               mm = Mesh % ParallelInfo % NeighbourList(l) % Neighbours(m)
-              IF( mm+1 .NE. i ) CYCLE
+              IF( mm+1 /= i ) CYCLE
               gindices(k) = Mesh % ParallelInfo % GlobalDOFs(l)
               gindices(k+1) = Mesh % ParallelInfo % GlobalDOFs(parentnodes(l,1))
               gindices(k+2) = Mesh % ParallelInfo % GlobalDOFs(parentnodes(l,2))

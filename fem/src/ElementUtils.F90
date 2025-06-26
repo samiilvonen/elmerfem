@@ -3227,7 +3227,7 @@ CONTAINS
      REAL(KIND=dp) :: CharLen(2)
 
      CharLen = ElementCharacteristicLengths(Model, Element)
-     IF (CharLen(1) .LE. 0) THEN
+     IF (CharLen(1) <= 0) THEN
        AspectRatio = HUGE(AspectRatio)
      ELSE
        AspectRatio = CharLen(2)/CharLen(1)

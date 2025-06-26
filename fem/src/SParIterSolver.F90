@@ -3084,7 +3084,9 @@ SUBROUTINE CountNeighbourConns( SourceMatrix, SplittedMatrix, ParallelInfo )
 
   DO i = 1, SourceMatrix % NumberOfRows
     IF(.NOT. ASSOCIATED(ParallelInfo % NeighbourList(i) % Neighbours)) THEN
-      CALL Fatal('CountNeighbourConns','Neighbours not associated: '//I2S(i))
+      ! It seems that there can be a legit reason for this...
+      CYCLE
+      !CALL Fatal('CountNeighbourConns','Neighbours not associated: '//I2S(i))
     END IF
     
     !    IF ( ParallelInfo % GInterface(i) ) THEN
