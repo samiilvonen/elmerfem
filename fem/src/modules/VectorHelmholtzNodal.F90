@@ -141,7 +141,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   INTEGER :: iter, maxiter, compi, compn, compj, dofs
   LOGICAL :: Found, VecAsm, InitHandles, &
       PrecUse, PiolaVersion, SecondOrder, SecondFamily, &
-      Monolithic, Segregated, UseProjMatrix
+      Monolithic, Segregated, UseProjMatrix, CurlCurlForm
   TYPE(ValueList_t), POINTER :: Params, EdgeSolverParams
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Variable_t), POINTER :: EF, EiVar, EdgeResVar, EdgeSolVar
@@ -179,6 +179,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
 
   PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found ) 
   UseProjMatrix = .FALSE.
+  CurlCurlForm = .FALSE.
   
   IF( PrecUse ) THEN
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
@@ -208,7 +209,10 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       CALL Warn(Caller, 'Give Edge Residual Name to enable the use as a preconditioner')
       PrecUse = .FALSE.
     END IF
-    IF (PrecUse) UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
+    IF (PrecUse) THEN
+      UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
+      CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
+    END IF
   ELSE
     EF => VariableGet( Mesh % Variables,'ElField')
   END IF
@@ -253,7 +257,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     
   
   DO compi=1,compn
-    IF( .NOT. Monolithic ) THEN
+    IF( Segregated ) THEN
       CALL Info(Caller,'Solving for component '//I2S(compi),Level=6)
     END IF
       
@@ -408,7 +412,7 @@ CONTAINS
     COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
     REAL(KIND=dp) :: weight, DetJ, CondAtIp
     COMPLEX(KIND=dp) :: muinvAtIp, EpsAtIp, CurrAtIp(3)
-    LOGICAL :: Stat,Found
+    LOGICAL :: Stat,Found, WithConductivity
     INTEGER :: i,j,k,t,p,q,m,allocstat
     TYPE(GaussIntegrationPoints_t) :: IP
     TYPE(Nodes_t), SAVE :: Nodes
@@ -433,7 +437,14 @@ CONTAINS
     ! Allocate storage if needed
     IF (.NOT. ALLOCATED(Basis)) THEN
       m = Mesh % MaxElementDofs
-      ALLOCATE(Basis(m), dBasisdx(m,3), STIFF(m,m,3), FORCE(m,3), STAT=allocstat)      
+      IF (CurlCurlForm) THEN
+        k = 1
+        q = 3*m
+      ELSE
+        k = 3
+        q = m
+      END IF
+      ALLOCATE(Basis(m), dBasisdx(m,3), STIFF(q,q,k), FORCE(q,k), STAT=allocstat)      
       IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
     END IF
 
@@ -450,24 +461,13 @@ CONTAINS
           IP % W(t), detJ, Basis, dBasisdx )
       Weight = IP % s(t) * DetJ
 
-      ! diffusion term (D*grad(u),grad(v)):
-      ! -----------------------------------      
       muinvAtIp = ListGetElementComplex( MuCoeff_h, Basis, Element, Found, GaussPoint = t )      
       IF( Found ) THEN
         muinvAtIp = muinvAtIp * mu0inv
       ELSE
         muinvAtIp = mu0inv
       END IF
-      STIFF(1:nd,1:nd,1) = STIFF(1:nd,1:nd,1) + Weight * &
-          MuinvAtIp * MATMUL( dBasisdx(1:nd,:), TRANSPOSE( dBasisdx(1:nd,:) ) )
-
-      CondAtIp = ListGetElementReal( CondCoeff_h, Basis, Element, Found, GaussPoint = t )      
-      IF( Found ) THEN
-        DO p=1,nd
-          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - im * Weight * Omega * CondAtIP * Basis(p) * Basis(1:nd)
-        END DO
-      END IF
-              
+      
       EpsAtIp = ListGetElementComplex( EpsCoeff_h, Basis, Element, Found, GaussPoint = t )      
       IF( Found ) THEN
         EpsAtIp = EpsAtIp * eps0
@@ -475,33 +475,96 @@ CONTAINS
         epsAtIp = eps0
       END IF        
 
-      ! This is the same for each component with isotropic materials!
-      DO p=1,nd
-        STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
-      END DO
+      CondAtIp = ListGetElementReal( CondCoeff_h, Basis, Element, WithConductivity, GaussPoint = t )
+      
+      IF (CurlCurlForm) THEN
+        DO p=1,nd
+          DO j=1,dim
+            DO q=1,nd
+              STIFF(dim*(p-1)+j,dim*(q-1)+j,1) = STIFF(dim*(p-1)+j,dim*(q-1)+j,1) - &
+                  Weight * Omega**2 * epsAtIP * Basis(q) * Basis(p)
 
-      IF(.NOT. PrecUse ) THEN
-        CurrAtIP = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found )                 
-        IF( Found ) THEN
-          IF( Monolithic ) THEN
-            DO i=1,dofs
-              FORCE(1:nd,i) = FORCE(1:nd,i) + Weight * CurrAtIp(i) * Basis(1:nd)
+              IF (WithConductivity) THEN
+                STIFF(dim*(p-1)+j,dim*(q-1)+j,1) = STIFF(dim*(p-1)+j,dim*(q-1)+j,1) - &
+                    im * Weight * Omega * CondAtIP * Basis(q) * Basis(p)
+              END IF
+              
+              IF (j==1) THEN
+                STIFF(dim*(p-1)+j,dim*(q-1)+1,1) = STIFF(dim*(p-1)+j,dim*(q-1)+1,1) + Weight * MuinvAtIp * ( &
+                    dBasisdx(q,3) * dBasisdx(p,3) + dBasisdx(q,2) * dBasisdx(p,2) )
+                STIFF(dim*(p-1)+j,dim*(q-1)+2,1) = STIFF(dim*(p-1)+j,dim*(q-1)+2,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,1) * dBasisdx(p,2)
+                STIFF(dim*(p-1)+j,dim*(q-1)+3,1) = STIFF(dim*(p-1)+j,dim*(q-1)+3,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,1) * dBasisdx(p,3)
+              END IF
+
+              IF (j==2) THEN
+                STIFF(dim*(p-1)+j,dim*(q-1)+1,1) = STIFF(dim*(p-1)+j,dim*(q-1)+1,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,2) * dBasisdx(p,1)
+                STIFF(dim*(p-1)+j,dim*(q-1)+2,1) = STIFF(dim*(p-1)+j,dim*(q-1)+2,1) + Weight * MuinvAtIp * ( &
+                    dBasisdx(q,3) * dBasisdx(p,3) + dBasisdx(q,1) * dBasisdx(p,1) )
+                STIFF(dim*(p-1)+j,dim*(q-1)+3,1) = STIFF(dim*(p-1)+j,dim*(q-1)+3,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,2) * dBasisdx(p,3)
+              END IF
+
+              IF (j==3) THEN
+                STIFF(dim*(p-1)+j,dim*(q-1)+1,1) = STIFF(dim*(p-1)+j,dim*(q-1)+1,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,3) * dBasisdx(p,1)
+                STIFF(dim*(p-1)+j,dim*(q-1)+2,1) = STIFF(dim*(p-1)+j,dim*(q-1)+2,1) - Weight * MuinvAtIp * &
+                    dBasisdx(q,3) * dBasisdx(p,2)
+                STIFF(dim*(p-1)+j,dim*(q-1)+3,1) = STIFF(dim*(p-1)+j,dim*(q-1)+3,1) + Weight * MuinvAtIp * ( &
+                    dBasisdx(q,2) * dBasisdx(p,2) + dBasisdx(q,1) * dBasisdx(p,1) )
+              END IF
+
             END DO
-          ELSE
-            FORCE(1:nd,1) = FORCE(1:nd,1) + Weight * CurrAtIP(compi) * Basis(1:nd)
+          END DO
+        END DO
+        ! TO DO: add the integration of RHS if not used as a preconditioner
+      ELSE
+        
+        ! "diffusion" term (D*grad(u),grad(v)):
+        ! -----------------------------------      
+        STIFF(1:nd,1:nd,1) = STIFF(1:nd,1:nd,1) + Weight * &
+            MuinvAtIp * MATMUL( dBasisdx(1:nd,:), TRANSPOSE( dBasisdx(1:nd,:) ) )
+
+        IF( WithConductivity ) THEN
+          DO p=1,nd
+            STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - im * Weight * Omega * CondAtIP * Basis(p) * Basis(1:nd)
+          END DO
+        END IF
+
+        ! This is the same for each component with isotropic materials!
+        DO p=1,nd
+          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
+        END DO
+
+        IF(.NOT. PrecUse ) THEN
+          CurrAtIP = ListGetElementComplex3D( CurrDens_h, Basis, Element, Found )                 
+          IF( Found ) THEN
+            IF( Monolithic ) THEN
+              DO i=1,dofs
+                FORCE(1:nd,i) = FORCE(1:nd,i) + Weight * CurrAtIp(i) * Basis(1:nd)
+              END DO
+            ELSE
+              FORCE(1:nd,1) = FORCE(1:nd,1) + Weight * CurrAtIP(compi) * Basis(1:nd)
+            END IF
           END IF
         END IF
       END IF
     END DO
-    
-    IF( Monolithic ) THEN
-      DO i=2,dofs
-        STIFF(1:nd,1:nd,i) = STIFF(1:nd,1:nd,1)
-      END DO
-      ! Note that we use diagonal form for this!
-      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+
+    IF (CurlCurlForm) THEN
+      CALL DefaultUpdateEquations(STIFF(1:dim*nd,1:dim*nd,1),FORCE(1:dim*nd,1),UElement=Element)
     ELSE
-      CALL DefaultUpdateEquations(STIFF(:,:,1),FORCE(:,1),UElement=Element)
+      IF( Monolithic ) THEN
+        DO i=2,dofs
+          STIFF(1:nd,1:nd,i) = STIFF(1:nd,1:nd,1)
+        END DO
+        ! Note that we use diagonal form for this!
+        CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+      ELSE
+        CALL DefaultUpdateEquations(STIFF(:,:,1),FORCE(:,1),UElement=Element)
+      END IF
     END IF
 !------------------------------------------------------------------------------
   END SUBROUTINE LocalMatrix
@@ -519,10 +582,12 @@ CONTAINS
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: F,C,Ext, Weight, coeff
     REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3), DetJ,Coord(3),Normal(3)
-    COMPLEX(KIND=dp) :: STIFF(nd,nd,3), FORCE(nd,3)
+    REAL(KIND=dp) :: TestVec(3), TrialVec(3)
+!    COMPLEX(KIND=dp) :: STIFF(nd,nd,3), FORCE(nd,3)
+    COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
     COMPLEX(KIND=dp) :: muInvAtIp, TemGrad(3), L(3), B 
     LOGICAL :: Stat,Found,RobinBC,NT
-    INTEGER :: i,t,p,q
+    INTEGER :: i,j,k,m,p,q,t,allocstat
     TYPE(GaussIntegrationPoints_t) :: IP
     TYPE(ValueList_t), POINTER :: BC       
     TYPE(Nodes_t), SAVE :: Nodes
@@ -543,10 +608,23 @@ CONTAINS
     END IF
     
     CALL GetElementNodes( Nodes, UElement=Element )
+
+    IF (.NOT. ALLOCATED(STIFF)) THEN
+      m = Mesh % MaxElementDofs
+      IF (CurlCurlForm) THEN
+        k = 1
+        q = 3*m
+      ELSE
+        k = 3
+        q = m
+      END IF
+      ALLOCATE(STIFF(q,q,k), FORCE(q,k), STAT=allocstat)      
+      IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
+    END IF
     STIFF = 0._dp
     FORCE = 0._dp
 
-    Normal = NormalVector( Element, Nodes )
+    IF (.NOT. CurlCurlForm) Normal = NormalVector( Element, Nodes )
     NT = ListGetLogical( BC,'Normal-Tangential '//GetVarName(Solver % Variable), Found )
     IF(NT .AND. .NOT. Monolithic) THEN
       CALL Fatal(Caller,'Normal-tangential conditions require monolithic solver!')
@@ -592,31 +670,56 @@ CONTAINS
       END IF
 
       IF( Found ) THEN
-        DO i=1,dim
-          IF( NT ) THEN
-            IF(i==1) CYCLE
-            coeff = 1.0_dp
-          ELSE          
-            coeff = 1.0_dp - Normal(i)**2
-            IF(coeff <= 0.0_dp ) THEN
-              coeff = 0.0_dp
-            ELSE
-              coeff = SQRT(coeff)
-            END IF
-          END IF          
-          DO p = 1,nd
-            STIFF(p,1:nd,i) = STIFF(p,1:nd,i) - coeff * muinvAtIp * B * &
-                Basis(p) * Basis(1:nd) * detJ * IP % s(t)
+        IF (CurlCurlForm) THEN
+          Normal = Normalvector(Element, Nodes, IP % U(t), IP % V(t), .TRUE.)
+          DO p=1,nd
+            DO j=1,dim
+              TestVec = 0.0d0
+              TestVec(j) = Basis(p)
+              TestVec = CrossProduct(TestVec, Normal)
+              DO q=1,nd
+                DO i=1,dim
+                  TrialVec = 0.0d0
+                  TrialVec(i) = Basis(q)
+                  TrialVec = CrossProduct(TrialVec, Normal)
+
+                  STIFF(dim*(p-1)+j, dim*(q-1)+i,1) = STIFF(dim*(p-1)+j, dim*(q-1)+i,1) - &
+                      muinvAtIp * B * SUM(TestVec(:) * TrialVec(:)) * Weight 
+                END DO
+              END DO
+            END DO
           END DO
-        END DO
+        ELSE
+          DO i=1,dim
+            IF( NT ) THEN
+              IF(i==1) CYCLE
+              coeff = 1.0_dp
+            ELSE          
+              coeff = 1.0_dp - Normal(i)**2
+              IF(coeff <= 0.0_dp ) THEN
+                coeff = 0.0_dp
+              ELSE
+                coeff = SQRT(coeff)
+              END IF
+            END IF
+            DO p = 1,nd
+              STIFF(p,1:nd,i) = STIFF(p,1:nd,i) - coeff * muinvAtIp * B * &
+                  Basis(p) * Basis(1:nd) * Weight
+            END DO
+          END DO
+        END IF
       END IF
     END DO
-    
-    IF( Monolithic ) THEN
-      ! For normal-tangential coordinate system the slip 
-      CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+
+    IF (CurlCurlForm) THEN
+      CALL DefaultUpdateEquations(STIFF(1:dim*nd,1:dim*nd,1),FORCE(1:dim*nd,1),UElement=Element)      
     ELSE
-      CALL DefaultUpdateEquations(STIFF(:,:,compi),FORCE(:,compi),UElement=Element)
+      IF( Monolithic ) THEN
+        ! For normal-tangential coordinate system the slip 
+        CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
+      ELSE
+        CALL DefaultUpdateEquations(STIFF(:,:,compi),FORCE(:,compi),UElement=Element)
+      END IF
     END IF
       
 !------------------------------------------------------------------------------
