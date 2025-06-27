@@ -44,7 +44,8 @@
 MODULE CutFemUtils
   USE Types
   USE Lists
-  USE ElementUtils, ONLY : FreeMatrix, CopyElementNodesFromMesh
+  USE ElementUtils, ONLY : FreeMatrix
+  USE Interpolation, ONLY : CopyElementNodesFromMesh
   USE ElementDescription
   USE MatrixAssembly
   USE MeshUtils, ONLY : AllocateMesh, FindMeshEdges, MeshStabParams

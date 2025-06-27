@@ -50,7 +50,7 @@ MODULE MeshUtils
     USE Lists
     USe ListMatrix
     USE ElementUtils, ONLY : mGetBoundaryIndexesFromParent, &
-        NormalDirection, CreateMatrix, CopyElementNodesFromMesh, TangentDirections, &
+        NormalDirection, CreateMatrix, TangentDirections, &
         FreeMatrix
     IMPLICIT NONE
 
