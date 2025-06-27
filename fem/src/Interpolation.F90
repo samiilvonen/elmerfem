@@ -47,9 +47,11 @@ MODULE Interpolation
    USE SParIterGlobals
    USE CoordinateSystems
    USE ElementDescription, ONLY : GlobalToLocal, ElementInfo, GetElementType, &
-       SquareFaceDOFsOrdering
+       SquareFaceDOFsOrdering, EdgeElementStyle, mGetElementDOFs
    USE PElementMaps, ONLY : isActivePElement
    USE Integration, ONLY : GaussIntegrationPoints_t, GaussPoints
+   USE GeneralUtils, ONLY : AllocateMatrix
+   USE ListMatrix, ONLY : List_AddToMatrixElement, List_toCRSMatrix
 
    IMPLICIT NONE
    
@@ -839,6 +841,153 @@ MODULE Interpolation
 !------------------------------------------------------------------------------
   END SUBROUTINE NodalToNedelecPiMatrix_Faces
 !------------------------------------------------------------------------------
+
+!------------------------------------------------------------------------------
+!> This subroutine creates a global matrix representation of the Nedelec
+!> interpolation operator which operates on a vector field expressed in terms of
+!> the nodal basis functions and gives the values of DOFs for obtaining its vector
+!> element (Nedelec) interpolant.
+!------------------------------------------------------------------------------
+  SUBROUTINE NodalToNedelecInterpolation_GlobalMatrix(Mesh, NodalVar, &
+      VectorElementVar, GlobalPiMat, cdim)
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Variable_t), POINTER, INTENT(IN) :: NodalVar
+    TYPE(Variable_t), POINTER, INTENT(IN) :: VectorElementVar
+    TYPE(Matrix_t), POINTER :: GlobalPiMat  !< Used for the global representation
+    INTEGER, OPTIONAL :: cdim      !< The number of spatial coordinates
+!------------------------------------------------------------------------------
+    INTEGER, PARAMETER :: MaxEDOFs = 2
+    INTEGER, PARAMETER :: MaxFDOFs = 2
+
+    TYPE(Nodes_t), SAVE :: Nodes
+    TYPE(Element_t), POINTER :: Edge, Face
+    LOGICAL :: PiolaVersion, SecondKindBasis, SecondOrder
+    INTEGER, ALLOCATABLE, SAVE :: Ind(:)
+    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, k0, &
+        vdofs, edgej, facej
+    REAL(KIND=dp) :: PiMat(MaxEDOFs,6), FacePiMat(MaxFDOFs,12), x(12), D
+    CHARACTER(*), PARAMETER :: Caller = 'NodalToNedelecInterpolation_GlobalMatrix'
+!------------------------------------------------------------------------------
+    IF (.NOT. ASSOCIATED(NodalVar) .OR. .NOT. ASSOCIATED(VectorElementVar)) THEN
+      CALL Fatal(Caller, 'H1 or H(curl) variable is not associated')
+    END IF
+    
+    IF (ASSOCIATED(Mesh)) THEN
+      IF (.NOT. ASSOCIATED(Mesh % Edges)) CALL Fatal(Caller, 'Mesh edges not associated!')
+    ELSE
+      CALL Fatal(Caller, 'Mesh structure is not associated')
+    END IF
+
+    IF (ASSOCIATED(GlobalPiMat)) THEN
+      CALL Fatal(Caller, 'Matrix structure has already been created')
+    END IF
+
+    IF (PRESENT(cdim)) THEN
+      dim = cdim
+    ELSE
+      dim = 3
+    END IF
+    vdofs = VectorElementVar % DOFs
+
+    IF (NodalVar % DOFs /= dim * vdofs) CALL Fatal(Caller, &
+        'Coordinate system dimension and DOF counts are not as expected')
+    
+    CALL EdgeElementStyle(VectorElementVar % Solver % Values, PiolaVersion, SecondKindBasis, &
+        SecondOrder, Check = .TRUE.)
+
+    IF (SecondKindBasis) THEN
+      EDOFs = 2
+    ELSE
+      EDOFs = 1
+    END IF
+    
+    GlobalPiMat => AllocateMatrix()
+    GlobalPiMat % Format = MATRIX_LIST
+    
+    ! Add the extreme entry since otherwise the ListMatrix operations may be very slow:
+    CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, SIZE(VectorElementVar % Values), &
+        SIZE(NodalVar % Values), 0.0_dp)
+    CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, 1, 1, 0.0_dp)
+
+    IF (.NOT. ALLOCATED(Ind)) THEN
+      ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
+    END IF
+    
+    ! Here we need separate loops over edges, faces and elements so that all DOFs are handled
+    !
+    DO edgej=1, Mesh % NumberOfEdges
+      Edge => Mesh % Edges(edgej)
+
+      ! Create the matrix representation of the Nedelec interpolation operator
+      CALL NodalToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondKindBasis)
+
+      nd = mGetElementDOFs(Ind, Edge, VectorElementVar % Solver)
+
+      i1 = Edge % NodeIndexes(1)
+      i2 = Edge % NodeIndexes(2)
+      k1 = NodalVar % Perm(i1)
+      k2 = NodalVar % Perm(i2)
+
+      x(1:6) = 0.0_dp
+      DO dofi=1, vdofs
+        DO j=1,EDOFs
+          k = VectorElementVar % Perm(Ind(j))
+          k0 = vdofs*(k-1)+dofi
+          DO i=1,dim
+            CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 6*(k1-1)+2*(i-1)+dofi, PiMat(j,i) )
+            CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 6*(k2-1)+2*(i-1)+dofi, PiMat(j,3+i) )
+          END DO
+        END DO
+      END DO
+    END DO
+
+    IF (ASSOCIATED(Mesh % Faces)) THEN
+      DO facej=1, Mesh % NumberOfFaces
+        Face => Mesh % Faces(facej)
+        IF (Face % BDOFs < 1) CYCLE
+        
+        nd = mGetElementDOFs(Ind, Face, VectorElementVar % Solver)
+
+        ! Count the offset for picking the true face DOFs
+        !
+        i0 = 0
+        DO k=1,Face % Type % NumberOfEdges
+          Edge => Mesh % Edges(Face % EdgeIndexes(k))
+          EDOFs = Edge % BDOFs
+          IF (EDOFs < 1) CYCLE
+          i0 = i0 + EDOFs
+        END DO
+
+        CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
+
+        x(1:12) = 0.0_dp
+        DO dofi=1, vdofs
+          DO j=1,Face % BDOFs
+            k2 = VectorElementVar % Perm(Ind(j+i0))
+            k0 = vdofs*(k2-1)+dofi
+            DO i=1,Face % TYPE % NumberOfNodes
+              k1 = NodalVar % Perm(Face % NodeIndexes(i))
+              DO k=1,dim
+                CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 6*(k1-1)+2*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
+              END DO
+            END DO
+          END DO
+        END DO
+      END DO
+    END IF
+
+    ! TO DO: Add loop over elements
+    
+    ! Finally, change to CRS matrix format which is much faster:
+    CALL List_toCRSMatrix(GlobalPiMat)
+    
+    CALL Info(Caller, 'Created Projection Matrix: H1 -> H(curl)', Level=6)
+!------------------------------------------------------------------------------
+  END SUBROUTINE NodalToNedelecInterpolation_GlobalMatrix
+!------------------------------------------------------------------------------
+
   
 !------------------------------------------------------------------------------
 !> Create a matrix representation of the Nedelec interpolation operator which 

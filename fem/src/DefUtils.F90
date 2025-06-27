@@ -2186,13 +2186,13 @@ CONTAINS
   END FUNCTION GetElementNOFDOFs
 
 
-!> In addition to returning the number of degrees of freedom associated with 
-!> the element, the indexes of the degrees of freedom are also returned.
+!> In addition to returning the elementwise number of degrees of freedom
+!> the indexes of the degrees of freedom for a particular solver are also returned
 !-------------------------------------------------------------------------
   FUNCTION GetElementDOFs( Indexes, UElement, USolver, NotDG )  RESULT(NB)
-     TYPE(Element_t), OPTIONAL, TARGET :: UElement
-     TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
      INTEGER :: Indexes(:)
+     TYPE(Element_t), OPTIONAL, TARGET :: UElement
+     TYPE(Solver_t), OPTIONAL, TARGET :: USolver
      LOGICAL, OPTIONAL  ::  NotDG
      INTEGER :: NB
      

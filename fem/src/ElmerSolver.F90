@@ -916,7 +916,7 @@
          prevMesh => pMesh
          pMesh => pMesh % Next 
        END DO
-       CALL Info('CreateExtrduedMesh','Extruded mesh order is '//I2S(i),Level=25)
+       CALL Info('CreateExtrudedMesh','Extruded mesh order is '//I2S(i),Level=25)
 
        ExtrudedMesh % Next => Mesh_in % Next
        IF(ASSOCIATED(prevMesh)) THEN
