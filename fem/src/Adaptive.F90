@@ -46,7 +46,7 @@ MODULE Adaptive
 
   USE GeneralUtils
   USE SolverUtils, ONLY : VectorValuesRange
-  USE ElementUtils, ONLY : ElementArea, mGetElementDOFs
+  USE ElementUtils, ONLY : ElementArea
   USE ModelDescription
   USE MeshUtils, ONLY : AllocateMesh, AllocatePDefinitions, FindMeshEdges, &
       LoadMesh2, MeshStabParams, PrepareMesh, ReleaseMesh, &
@@ -58,7 +58,7 @@ MODULE Adaptive
   USE DefUtils, ONLY: GetMaterial, GetReal, GetBodyForce, GetSolverParams, GetLogical, &
       GetNofActive, GetActiveElement, GetElementNofBDOFs, GetBoundaryElement, &
       ActiveBoundaryElement, GetNofBoundaryElements, GetElementFamily, GetElementNodes
-  USE ElementDescription, ONLY: GetEdgeMap
+  USE ElementDescription, ONLY: GetEdgeMap, mGetElementDOFs
   USE MainUtils, ONLY : AddEquationSolution
   
   IMPLICIT NONE

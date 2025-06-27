@@ -49,7 +49,7 @@ MODULE MeshUtils
     USE ParallelUtils
     USE Lists
     USe ListMatrix
-    USE ElementUtils, ONLY : mGetBoundaryIndexesFromParent, mGetElementDofs, &
+    USE ElementUtils, ONLY : mGetBoundaryIndexesFromParent, &
         NormalDirection, CreateMatrix, CopyElementNodesFromMesh, TangentDirections, &
         FreeMatrix
     IMPLICIT NONE

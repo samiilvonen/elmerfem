@@ -11070,9 +11070,8 @@ END SUBROUTINE PickActiveFace
      TYPE(Solver_t),  OPTIONAL, TARGET :: USolver
      LOGICAL, OPTIONAL :: NotDG
      TYPE(Mesh_t), OPTIONAL, TARGET :: UMesh
+     INTEGER :: nd     
 !------------------------------------------------------------------------------
-     INTEGER :: nd
-
      TYPE(Solver_t),  POINTER :: Solver
      TYPE(Element_t), POINTER :: Element, Parent, Face
      TYPE(Mesh_t), POINTER :: Mesh
