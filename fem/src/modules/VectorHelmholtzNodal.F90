@@ -240,21 +240,11 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   END IF
 
   IF( UseProjMatrix ) THEN
-    CALL Info(Caller,'Creating projection matrix from nodal solution to vector element space', Level=6)
-    IF(.NOT. ASSOCIATED(Proj)) THEN
-      Proj => AllocateMatrix()
-      Proj % Format = MATRIX_LIST
-      ! Add the extreme entry since otherwise the ListMatrix operations may be very slow. 
-      CALL List_AddToMatrixElement(Proj % ListMatrix,SIZE(EdgeSolVar % Values), SIZE(EF % Values), 0.0_dp)
-      CALL List_AddToMatrixElement(Proj % ListMatrix,1,1, 0.0_dp)
-      CALL NodalToNedelecInterpolation(EF, EdgeSolVar, cdim=3, &
-          SecondFamily = SecondFamily, Proj = Proj )
-      ! Change to CRS matrix which is much faster.
-      CALL List_toCRSMatrix(Proj)
-      CALL Info(Caller,'Created Projection Matrix: H1 -> H(curl)', Level=6)
+    IF (.NOT. ASSOCIATED(Proj)) THEN
+      CALL Info(Caller,'Creating projection matrix to map a nodal solution into vector element space', Level=6)
+      CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, EF, EdgeSolVar, Proj, cdim=3)
     END IF
   END IF
-    
   
   DO compi=1,compn
     IF( Segregated ) THEN
@@ -744,7 +734,7 @@ CONTAINS
     TYPE(Variable_t), POINTER, INTENT(INOUT) :: VectorElementVar
     INTEGER, OPTIONAL :: cdim         !< The number of spatial coordinates 
     LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
-    TYPE(Matrix_t), OPTIONAL :: Proj  !< Used for the global representation
+    TYPE(Matrix_t), POINTER, OPTIONAL :: Proj  !< Used for the global representation
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes
     TYPE(Element_t), POINTER :: Edge, Face
@@ -776,7 +766,7 @@ CONTAINS
     ELSE
       EDOFs = 1  
     END IF
-    
+
     IF (NodalVar % DOFs /= dim * vdofs) CALL Fatal('NodalToNedelecInterpolation', &
         'Coordinate system dimension and DOF counts are not as expected')
     
@@ -839,7 +829,7 @@ CONTAINS
         !
         i0 = 0
         DO k=1,Face % Type % NumberOfEdges
-          Edge => Solver % Mesh % Edges(Face % EdgeIndexes(k))
+          Edge => Mesh % Edges(Face % EdgeIndexes(k))
           EDOFs = Edge % BDOFs
           IF (EDOFs < 1) CYCLE
           i0 = i0 + EDOFs
@@ -971,7 +961,7 @@ CONTAINS
         !
         i0 = 0
         DO k=1,Face % Type % NumberOfEdges
-          Edge => Solver % Mesh % Edges(Face % EdgeIndexes(k))
+          Edge => Mesh % Edges(Face % EdgeIndexes(k))
           EDOFs = Edge % BDOFs
           IF (EDOFs < 1) CYCLE
           i0 = i0 + EDOFs
