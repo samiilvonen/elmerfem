@@ -15694,15 +15694,28 @@ END FUNCTION SearchNodeL
           IF ( you == me ) THEN
             lRow = lRow + 1
             iLPerm(lRow) = i
+
+            l = A % Rows(i+1) - A % Rows(i)
+            dbuf = A % Values(A % Rows(i):A % Rows(i+1)-1)
+            ibuf = aPerm(A % Cols(A % Rows(i):A % Rows(i+1)-1))
+            CALL SortF(l, ibuf, dbuf)
+
             IF ( Rmatrix % Format == MATRIX_LIST ) THEN
-              l = A % Rows(i+1) - A % Rows(i)
-              dbuf = A % Values(A % Rows(i):A % Rows(i+1)-1)
-              ibuf = aPerm(A % Cols(A % Rows(i):A % Rows(i+1)-1))
               CALL List_AddMatrixRow(Rmatrix % ListMatrix, lRow, l, &
-                       ibuf, dbuf, SortedInput=.FALSE.)
+                       ibuf, dbuf, SortedInput=.TRUE. )
             ELSE
-              DO j=A % Rows(i+1)-1, A % Rows(i),-1
-                CALL AddToMatrixElement(Rmatrix, lRow, aPerm(A  % Cols(j)), A % Values(j))
+!             DO j=A % Rows(i+1)-1, A % Rows(i),-1
+!               CALL AddToMatrixElement(Rmatrix, lRow, aPerm(A  % Cols(j)), A % Values(j))
+!             END DO
+              l = 0
+              k = RMatrix % Rows(lRow)
+              DO j = A % Rows(i), A % Rows(i+1)-1
+                l = l + 1
+                DO WHILE( ibuf(l) /= RMatrix % Cols(k) )
+                  k = k + 1
+                END DO
+                RMatrix % Values(k) = dbuf(l)
+                k = k + 1
               END DO
             ENDIF
           ELSE
