@@ -546,20 +546,21 @@ CONTAINS
      INTEGER, POINTER :: Indexes(:)
      LOGICAL :: Found0
      
-     Solver => CurrentModel % Solver
-     IF ( PRESENT(USolver) ) Solver => USolver
-
-     x = 0.0d0
+     IF ( PRESENT(USolver) ) THEN
+       Solver => USolver
+     ELSE
+       Solver => CurrentModel % Solver
+     END IF
+       
+     x = 0.0_dp
      IF(PRESENT(Found)) Found = .FALSE.
 
-     IF(.NOT. PRESENT(UVariable)) THEN
-       Variable => Solver % Variable
-     ELSE
+     IF(PRESENT(UVariable)) THEN
        Variable => UVariable
-     END IF
-     
-     IF ( PRESENT(name) ) THEN
-        Variable => VariableGet( Solver % Mesh % Variables, name )
+     ELSE IF( PRESENT(name) ) THEN
+       Variable => VariableGet( Solver % Mesh % Variables, name )
+     ELSE
+       Variable => Solver % Variable
      END IF
      IF ( .NOT. ASSOCIATED( Variable ) ) RETURN
 

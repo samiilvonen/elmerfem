@@ -141,13 +141,12 @@ SUBROUTINE ThicknessSolver( Model,Solver,dt,TransientSimulation )
 
   Compute_dhdt = GetLogical( SolverParams, &
          'Compute DHDT', Found)
-  IF ( .NOT.Found ) Compute_dhdt=.False.
+  IF ( .NOT.Found ) Compute_dhdt=.FALSE.
 
   ApplyDirichlet = GetLogical( SolverParams, &
        'Apply Dirichlet', Found)
   IF ( .NOT.Found ) THEN
-     ApplyDirichlet = .FALSE.
-     CALL Info(SolverName, 'No keyword > Apply Dirichlet < found. No limitation of solution',Level=6 )
+     CALL Info(SolverName, 'No keyword > Apply Dirichlet < found. No limitation of solution',Level=12 )
   ELSE
      IF (ApplyDirichlet) THEN
         CALL Info(SolverName, 'Using Dirichlet method for limitation',Level=6 )
@@ -155,7 +154,7 @@ SUBROUTINE ThicknessSolver( Model,Solver,dt,TransientSimulation )
            CALL Warn(SolverName, 'Keyword > Apply Dirichlet < set, but > Nonlinear System Max Iterations < set to lower than 2')
         END IF
      ELSE
-        CALL Info(SolverName, 'No limitation of solution',Level=6 )
+        CALL Info(SolverName, 'No limitation of solution',Level=12 )
      END IF
   END IF
 
@@ -317,16 +316,12 @@ SUBROUTINE ThicknessSolver( Model,Solver,dt,TransientSimulation )
   !------------------------------------------------------------------------------
   !    Compute mass balance terms
   !------------------------------------------------------------------------------
-  ! backward compatible correction of misspelled kw
-  IF (ListCheckPresent(SolverParams,"Compute averaved mass balances")) &
-          CALL Fatal(SolverName,"replace <Compute averaved mass balances> with <.. averaged ..>")
-
   ComputeMassBalance=ListGetLogical(SolverParams,"Compute averaged mass balances", Found)
   IF (ComputeMassBalance) THEN
-    acabf => VariableGet( Model % Mesh % Variables,"acabf")
+    acabf => VariableGet( Model % Mesh % Variables,"acabf",UnfoundFatal=.TRUE.)
     IF (acabf % TYPE /= Variable_on_elements) &
            CALL FATAL(SolverName,"acabf type should be on_elements")
-    libmassbf => VariableGet( Model % Mesh % Variables,"libmassbf")
+    libmassbf => VariableGet( Model % Mesh % Variables,"libmassbf",UnfoundFatal=.TRUE.)
     IF (libmassbf % TYPE /= Variable_on_elements) &
            CALL FATAL(SolverName,"libmassbf type should be on_elements")
   ENDIF
@@ -382,7 +377,6 @@ SUBROUTINE ThicknessSolver( Model,Solver,dt,TransientSimulation )
                 'It is not possible to compute Thickness evolution if Flow Sol DOFs=',&
                 NSDOFs, ' . Aborting'
            CALL Fatal( SolverName, Message) 
-           STOP   
         END IF        
 
         ! get pointers on Equation, Material and body-Force section input
@@ -393,9 +387,7 @@ SUBROUTINE ThicknessSolver( Model,Solver,dt,TransientSimulation )
 
         IF (SEM) THEN
           MeltParam = ListGetString(Material, 'SSA Melt Param',Found, UnFoundFatal=.FALSE.)
-          IF (.NOT.Found) THEN
-            SEM = .FALSE.
-          END IF
+          IF (.NOT.Found) SEM = .FALSE.
         END IF
           
         ! get lower limit for solution 

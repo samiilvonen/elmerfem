@@ -11397,11 +11397,14 @@ END FUNCTION SearchNodeL
     REAL(KIND=dp) :: MinLim, MaxLim, MinV, MaxV, V
     LOGICAL :: UseAdapt, Found,ElementalRule
     INTEGER :: i,n,ElementalNp(8),prevVisited = -1
-    LOGICAL :: Debug, InitDone, pRef, IsBC, prevIsBC 
+    LOGICAL :: Debug, InitDone, pRef, IsBC, prevIsBC, AdaptSplit 
     INTEGER :: EdgeBasisDegree
+    REAL(KIND=dp) :: ElemPhi(27)
+    LOGICAL :: ElemCut(8)
+    TYPE(Nodes_t) :: ElemNodes
     
     SAVE prevSolver, UseAdapt, MinLim, MaxLim, IntegVar, AdaptOrder, AdaptNp, RelOrder, Np, &
-        ElementalRule, ElementalNp, prevVisited, pRef, prevIsBC 
+        ElementalRule, ElementalNp, prevVisited, pRef, prevIsBC, AdaptSplit, ElemPhi, ElemNodes
 
     IF( PRESENT( Solver ) ) THEN
       pSolver => Solver
@@ -11416,10 +11419,11 @@ END FUNCTION SearchNodeL
         ( prevVisited == pSolver % TimesVisited ) .AND. (.NOT. (IsBC .NEQV. PrevIsBC) )
     
     IF( .NOT. InitDone ) THEN
-      PrevIsBC = IsBC 
+      PrevIsBC = IsBC
 
       RelOrder = ListGetInteger( pSolver % Values,'Relative Integration Order',Found )
       AdaptNp = 0
+      AdaptSplit = .FALSE.
       Np = ListGetInteger( pSolver % Values,'Number of Integration Points',Found )
 
       ! Elemental explicit rule will dominate over all other rules
@@ -11438,8 +11442,14 @@ END FUNCTION SearchNodeL
         IF( IntegVar % TYPE /= Variable_on_nodes ) THEN
           CALL Fatal('GaussPointsAdapt','Wrong type of integration variable!')
         END IF
-        MinLim = ListGetCReal( pSolver % Values,'Adaptive Integration Lower Limit' )
-        MaxLim = ListGetCReal( pSolver % Values,'Adaptive Integration Upper Limit' )
+        AdaptSplit = ListGetLogical( pSolver % Values,'Adaptive Integration Split',Found )  
+        IF( AdaptSplit ) THEN
+          MinLim = ListGetCReal( pSolver % Values,'Adaptive Integration Split Limit', Found )
+          MaxLim = MinLim
+        ELSE
+          MinLim = ListGetCReal( pSolver % Values,'Adaptive Integration Lower Limit' )
+          MaxLim = ListGetCReal( pSolver % Values,'Adaptive Integration Upper Limit' )
+        END IF
         AdaptNp = ListGetInteger( pSolver % Values,'Adaptive Integration Points',Found )
         IF(.NOT. Found ) THEN
           AdaptOrder = ListGetInteger( pSolver % Values,'Adaptive Integration Order',Found )        
@@ -11511,13 +11521,102 @@ END FUNCTION SearchNodeL
       RelOrder = 0
       Np = 0
 
-      n = Element % TYPE % NumberOfNodes        
-      MinV = MINVAL( IntegVar % Values( IntegVar % Perm( Element % NodeIndexes(1:n) ) ) )
-      MaxV = MAXVAL( IntegVar % Values( IntegVar % Perm( Element % NodeIndexes(1:n) ) ) )
+      n = Element % TYPE % NumberOfNodes
       
+      ElemPhi(1:n) = IntegVar % Values( IntegVar % Perm( Element % NodeIndexes(1:n) ) )
+      MinV = MINVAL(ElemPhi(1:n))           
+      MaxV = MAXVAL(ElemPhi(1:n))
+
       IF( .NOT. ( MaxV < MinLim .OR. MinV > MaxLim ) ) THEN
-        RelOrder = AdaptOrder
-        Np = AdaptNp
+        IF( AdaptSplit ) THEN
+          ElemPhi(1:n) = ElemPhi(1:n) - MinLim 
+          IF(.NOT. ASSOCIATED(ElemNodes % x)) THEN
+            ALLOCATE(ElemNodes % x(2*n),ElemNodes % y(2*n), ElemNodes % z(2*n))
+          END IF
+          ElemNodes % x(1:n) = pSolver % Mesh % Nodes % x(Element % NodeIndexes(1:n) )
+          ElemNodes % y(1:n) = pSolver % Mesh % Nodes % y(Element % NodeIndexes(1:n) )
+          ElemNodes % z(1:n) = pSolver % Mesh % Nodes % z(Element % NodeIndexes(1:n) )
+            
+          ElemCut = .FALSE.
+          CALL CutSingleElement(Element, ElemNodes, ElemPhi, ElemCut )
+
+          IF(COUNT(ElemCut) > 1) THEN
+            BLOCK
+              LOGICAL :: IsCut, IsMore, stat
+              INTEGER :: SgnNode, CutCnt, LocalInds(4), m, t
+              TYPE(Element_t), TARGET, SAVE :: PieceElement
+              TYPE(Element_t), POINTER :: pElement
+              REAL(KIND=dp) :: Ssum0, Ssum, u, v, w, x, y, z, Basis(4), detJ
+              REAL(KIND=dp), ALLOCATABLE, SAVE :: IPtmp(:,:)
+              TYPE( GaussIntegrationPoints_t ) :: IP
+              TYPE( Nodes_t ), SAVE :: PieceNodes
+              
+              IF(.NOT. ASSOCIATED(PieceElement % NodeIndexes)) THEN
+                ALLOCATE(PieceElement % NodeIndexes(4),IpTmp(4,20), &
+                    PieceNodes % x(4), PieceNodes % y(4), PieceNodes % z(n) )
+              END IF
+              
+              IntegStuff = GaussPoints( Element, PReferenceElement = .FALSE. )
+              Ssum0 = SUM(IntegStuff % s(1:IntegStuff % n))
+
+              i = 0
+              DO CutCnt=1,10           
+                CALL SplitSingleElement(Element, ElemCut, ElemNodes, CutCnt, &
+                    IsCut, IsMore, LocalInds, SgnNode )
+                IF(.NOT. IsCut) CALL Fatal('','not cut?')
+                  
+                m = COUNT(LocalInds > 0)
+                IF(m<3 .OR. m>4) CALL Fatal('','Invalid m?')
+                
+                PieceElement % TYPE => GetElementType( 101*m )   
+                IP = GaussPoints( PieceElement, PReferenceElement = .FALSE. )
+
+                PieceNodes % x(1:m) = ElemNodes % x(LocalInds(1:m))
+                PieceNodes % y(1:m) = ElemNodes % y(LocalInds(1:m))
+                PieceNodes % z(1:m) = ElemNodes % z(LocalInds(1:m))
+                
+                DO t=1,IP % n        
+                  i = i+1
+                  stat = ElementInfo( PieceElement, PieceNodes, &
+                      IP % u(t), IP % v(t), IP % w(t), detJ, Basis )
+                  
+                  x = SUM(Basis(1:m)*PieceNodes % x(1:m))
+                  y = SUM(Basis(1:m)*PieceNodes % y(1:m))
+                  z = SUM(Basis(1:m)*PieceNodes % z(1:m))
+
+                  pElement => PieceElement
+                  CALL GlobalToLocal( u, v, w, x, y, z, pElement, ElemNodes ) 
+
+                  ! We need temporal space since IP and IntegStuff refer to the same arrays!
+                  IpTmp(1,i) = u
+                  IpTmp(2,i) = v
+                  IpTmp(3,i) = w
+                  IpTmp(4,i) = detJ * IP % s(t)
+                END DO
+
+                ! No more element needed to split the reference element.
+                IF(.NOT. IsMore) EXIT                                
+              END DO
+
+              IntegStuff % n = i
+              ssum = SUM(IPtmp(4,1:i))
+
+              IntegStuff % u(1:i) = IPtmp(1,1:i) 
+              IntegStuff % v(1:i) = IPtmp(2,1:i) 
+              IntegStuff % w(1:i) = IPtmp(3,1:i) 
+              IntegStuff % s(1:i) = IPtmp(4,1:i) * (ssum0 / ssum )
+              
+              IF(i>0) THEN
+                !PRINT *,'detJ orig:',CutCnt,i,ssum0,ssum,IP % n
+              END IF
+              RETURN
+              
+            END BLOCK
+          END IF
+        ELSE
+          RelOrder = AdaptOrder
+          Np = AdaptNp
+        END IF
       END IF
     END IF
 

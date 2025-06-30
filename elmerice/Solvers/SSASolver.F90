@@ -151,10 +151,9 @@
 
 !  Sub - element GL parameterisation
   SEP=GetLogical( Solver % Values, 'Sub-Element GL parameterization',GotIt)
-  IF (.NOT.GotIt) SEP=.False.
   IF (SEP) THEN
-     GLnIP=ListGetInteger( Solver % Values, &
-           'GL integration points number',UnFoundFatal=.TRUE. )
+    GLnIP=ListGetInteger( Solver % Values, &
+        'GL integration points number',Found)
   END IF
 
   sealevel = ListGetCReal( Model % Constants, 'Sea Level', Found )
@@ -220,7 +219,7 @@
   IF ( .NOT.GotIt ) NonlinearIter = 1
 
   NewtonTol = ListGetConstReal( Solver % Values, &
-       'Nonlinear System Newton After Tolerance', minv=0.0d0 )
+       'Nonlinear System Newton After Tolerance', minv=0.0_dp )
 
   NewtonIter = ListGetInteger( Solver % Values, &
        'Nonlinear System Newton After Iterations', GotIt )
@@ -237,18 +236,14 @@
     at0 = RealTime()
 
     CALL Info( SolverName, ' ', Level=4 )
-    CALL Info( SolverName, ' ', Level=4 )
-    CALL Info( SolverName, &
-         '-------------------------------------',Level=4 )
-    WRITE( Message, * ) 'SSA BASAL VELOCITY NON-LINEAR ITERATION', iter
+    CALL Info( SolverName, '----------------------------------------------',Level=4 )
+    IF( Newton ) THEN
+      WRITE( Message,'(A,I0)') 'SSA BASAL VELOCITY NON-LINEAR NEWTON ITERATION: ', iter
+    ELSE
+      WRITE( Message,'(A,I0)') 'SSA BASAL VELOCITY NON-LINEAR PICARD ITERATION: ', iter
+    END IF
     CALL Info( SolverName, Message, Level=4 )
-    If (Newton) Then
-      WRITE( Message, * ) 'Newton linearisation is used'
-      CALL Info( SolverName, Message, Level=4 )
-    Endif
-    CALL Info( SolverName, ' ', Level=4 )
-    CALL Info( SolverName, &
-         '-------------------------------------',Level=4 )
+    CALL Info( SolverName, '----------------------------------------------',Level=4 )
     CALL Info( SolverName, ' ', Level=4 )
 
 
@@ -259,7 +254,7 @@
     ! bulk assembly
 200 DO t=1,Solver % NumberOfActiveElements
       Element => GetActiveElement(t)
-      !IF (ParEnv % myPe .NE. Element % partIndex) CYCLE
+      !IF (ParEnv % myPe  /=  Element % partIndex) CYCLE
       n = GetElementNOFNodes()
 
       NodeIndexes => Element % NodeIndexes
@@ -301,13 +296,11 @@
       cn = ListGetConstReal( Material, 'Viscosity Exponent',Found)
       MinSRInv = ListGetConstReal( Material, 'Critical Shear Rate',Found)
       MinH = ListGetConstReal( Material, 'SSA Critical Thickness',Found)
-      If (.NOT.Found) MinH=EPSILON(MinH)
+      If (.NOT.Found) MinH = EPSILON(MinH)
 
-      NodalDensity=0.0_dp
       NodalDensity(1:n) = ListGetReal( Material, 'SSA Mean Density',n,NodeIndexes,Found,&
            UnFoundFatal=UnFoundFatal)
 
-      NodalViscosity=0.0_dp
       NodalViscosity(1:n) = ListGetReal( Material, 'SSA Mean Viscosity',n, NodeIndexes,Found,&
            UnFoundFatal=UnFoundFatal)
 
@@ -337,13 +330,13 @@
 
 
       BoundaryElement => GetBoundaryElement(t)
-      IF (STDOFS.NE.1) then
+      IF (STDOFS /= 1) then
         IF ( .NOT. ActiveBoundaryElement() ) CYCLE
       END IF
       IF ( GetElementFamily() == 1 ) CYCLE
 
       NodeIndexes => BoundaryElement % NodeIndexes
-      !IF (ParEnv % myPe .NE. BoundaryElement % partIndex) CYCLE
+      !IF (ParEnv % myPe  /=  BoundaryElement % partIndex) CYCLE
 
       n = GetElementNOFNodes()
       FORCE = 0.0_dp
@@ -389,7 +382,6 @@
         ! Read Density in the Material Section
         Material => GetMaterial(ParentElement)
 
-        NodalDensity=0.0_dp
         NodalDensity(1:n) = ListGetReal( Material, 'SSA Mean Density',n, NodeIndexes,Found,&
              UnFoundFatal=UnFoundFatal)
 
@@ -511,7 +503,6 @@
       MinH = ListGetConstReal( Material, 'SSA Critical Thickness',Found)
       If (.NOT.Found) MinH=EPSILON(MinH)
 
-      NodalDensity=0.0_dp
       NodalDensity(1:n) = ListGetReal( Material, 'SSA Mean Density',n,NodeIndexes,Found,&
            UnFoundFatal=UnFoundFatal)
 
@@ -522,7 +513,6 @@
       NodalU(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+1)
       NodalV = 0.0_dp
       IF (STDOFs == 2) NodalV(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+2)
-
 
       IF (ASSOCIATED(strbasemag)) THEN
         IF (strbasemag % Perm(Element % ElementIndex) > 0) &
@@ -559,9 +549,9 @@
          un=un+VariableValues(STDOFs*(i-1)+j)*VariableValues(STDOFs*(i-1)+j)
        End do
        un=sqrt(un)
-       IF (un.GT.0._dp) THEN
+       IF (un > 0._dp) THEN
          un_max=UnLimit/un
-         IF (un_max.LT.1.0_dp) THEN
+         IF (un_max < 1.0_dp) THEN
            Do j=1,STDOFs
              VariableValues(STDOFs*(i-1)+j)=VariableValues(STDOFs*(i-1)+j)*un_max
            End do
@@ -612,23 +602,27 @@ CONTAINS
 
     STIFF = 0.0_dp
     FORCE = 0.0_dp
-    Jac=0.0_dp
+    Jac = 0.0_dp
 
     ! Use Newton Linearisation
-    NewtonLin = (Newton.AND.(cm.NE.1.0_dp))
+    NewtonLin = (Newton.AND.(cm /= 1.0_dp))
 
     IF (SEP) THEN
-     GMSol => VariableGet( CurrentModel % Variables, 'GroundedMask',UnFoundFatal=.TRUE. )
-     CALL GetLocalSolution( NodalGM,UElement=Element,UVariable=GMSol)
-     PartlyGroundedElement=(ANY(NodalGM(1:n).GE.0._dp).AND.ANY(NodalGM(1:n).LT.0._dp))
-     IF (PartlyGroundedElement) THEN
-        IP = GaussPoints( Element , np=GLnIP )
-     ELSE
-        IP = GaussPoints( Element )
-     ENDIF
-   ELSE
-     IP = GaussPoints( Element )
-   ENDIF
+      IF( GLnIP == 0 ) THEN
+        IP = GaussPointsAdapt( Element, Solver)
+      ELSE        
+        GMSol => VariableGet( CurrentModel % Variables, 'GroundedMask',UnFoundFatal=.TRUE. )
+        CALL GetLocalSolution( NodalGM,UElement=Element,UVariable=GMSol)
+        PartlyGroundedElement=(ANY(NodalGM(1:n) > 0._dp) .AND. ANY(NodalGM(1:n) < 0._dp))
+        IF (PartlyGroundedElement) THEN
+          IP = GaussPoints( Element , np=GLnIP )
+        ELSE
+          IP = GaussPoints( Element )
+        ENDIF
+      END IF
+    ELSE
+      IP = GaussPoints( Element )
+    ENDIF
 
     DO t=1,IP % n
       stat = ElementInfo( Element, Nodes, IP % U(t), IP % V(t), &
@@ -653,7 +647,7 @@ CONTAINS
 
       !------------------------------------------------------------------------------
       ! In the non-linear case, effective viscosity       
-      IF (cm.NE.1.0_dp) THEN
+      IF (cm /= 1.0_dp) THEN
         Exx = SUM(LocalU(1:n)*dBasisdx(1:n,1))
         Eyy = 0.0_dp
         Exy = 0.0_dp
@@ -716,7 +710,7 @@ CONTAINS
             END DO
           END DO
 
-          IF (Newton.AND.(abs(Slip2).GT.0._dp)) THEN
+          IF (Newton.AND.(abs(Slip2) > 0._dp)) THEN
             DO i=1,STDOFs
               Do j=1,STDOFs
                 STIFF((STDOFs)*(p-1)+i,(STDOFs)*(q-1)+j) = STIFF((STDOFs)*(p-1)+i,(STDOFs)*(q-1)+j) +&
@@ -756,7 +750,7 @@ CONTAINS
                rho*g*h*gradS(i) * IP % s(t) * detJ * Basis(p) 
         END DO
 
-        IF (Newton.AND.(abs(Slip2).GT.0._dp)) THEN
+        IF (Newton.AND.(abs(Slip2) > 0._dp)) THEN
           DO i=1,STDOFs
             FORCE((STDOFs)*(p-1)+i) =   FORCE((STDOFs)*(p-1)+i) + &   
                  Slip2 * Velo(i) * ub * ub * IP % s(t) * detJ * Basis(p) 
@@ -957,7 +951,7 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
   ! Loop for viscosity and density
   DO COMP=1, 2
     ! No non-linear iteration, no time dependency  
-    VariableValues = 0.0d0
+    VariableValues = 0.0_dp
     Norm = Solver % Variable % Norm
 
     !Initialize the system and do the assembly:
@@ -966,7 +960,7 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
     ! bulk assembly
     DO t=1,Solver % NumberOfActiveElements
       Element => GetActiveElement(t)
-      IF (ParEnv % myPe .NE. Element % partIndex) CYCLE
+      IF (ParEnv % myPe  /=  Element % partIndex) CYCLE
       n = GetElementNOFNodes()
 
       NodeIndexes => Element % NodeIndexes
@@ -975,11 +969,9 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
       IF (COMP==1) THEN
         ! Read the Viscosity eta, 
         ! Same definition as NS Solver in Elmer - n=1/m , A = 1/ (2 eta^n) 
-        NodalVar = 0.0D0
         NodalVar(1:n) = ListGetReal( &
              Material, 'Viscosity', n, NodeIndexes, Found )
       ELSE IF (COMP==2) THEN
-        NodalVar = 0.0D0
         NodalVar(1:n) = ListGetReal( &
              Material, 'Density', n, NodeIndexes, Found )
       END IF
@@ -993,7 +985,7 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
       BoundaryElement => GetBoundaryElement(t)
       IF ( GetElementFamily() == 1 ) CYCLE
       NodeIndexes => BoundaryElement % NodeIndexes
-      IF (ParEnv % myPe .NE. BoundaryElement % partIndex) CYCLE
+      IF (ParEnv % myPe  /=  BoundaryElement % partIndex) CYCLE
       n = GetElementNOFNodes()
 
       ! Find the Parent element     
@@ -1049,8 +1041,6 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
           IntDens(IntDensPerm(i)) = VariableValues(Permutation(i)) 
           IF (Depth(DepthPerm(i))>0.0_dp) IntDens(IntDensPerm(i)) = &
                IntDens(IntDensPerm(i)) / Depth(DepthPerm(i))
-
-
         END IF
       END DO
     END IF
@@ -1076,8 +1066,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     dim = CoordinateSystemDimension()
 
@@ -1117,8 +1107,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     dim = CoordinateSystemDimension()
 
@@ -1334,7 +1324,7 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
 
 
     AllocationsDone = .TRUE.
-    CALL INFO( SolverName, 'Memory allocation done.',Level=5 )
+    CALL INFO( SolverName, 'Memory allocation done.',Level=10 )
   END IF
 
 
@@ -1349,7 +1339,7 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
   DO  COMP = 1, DIM +1 !temporary hack since problem with pressureDIM+1
 
     ! No non-linear iteration, no time dependency
-    VariableValues = 0.0d0
+    VariableValues = 0.0_dp
     Norm = Solver % Variable % Norm
 
     !Initialize the system and do the assembly:
@@ -1359,7 +1349,7 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
     DO t=1,Solver % NumberOfActiveElements
       Element => GetActiveElement(t)
       !below for testing purpose, having problems with setting passive!
-      IF (ParEnv % myPe .NE. Element % partIndex) CYCLE
+      IF (ParEnv % myPe  /=  Element % partIndex) CYCLE
       n = GetElementNOFNodes()
 
       NodeIndexes => Element % NodeIndexes
@@ -1381,14 +1371,13 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
       ! Same definition as NS Solver in Elmer - n=1/m , A = 1/ (2 eta^n)
       Material => GetMaterial()
 
-      NodalDensity = 0.0D0
       NodalDensity(1:n) = ListGetReal( &
            Material, 'Density', n, NodeIndexes, Found )
 
       ! Get the Nodal value of Depth, FreeSurfGrad1 and FreeSurfGrad2
       NodalDepth(1:n) = Depth(DepthPerm(NodeIndexes(1:n)))
       NodalSurfGrad1(1:n) = GradSurface1(GradSurface1Perm(NodeIndexes(1:n)))
-      NodalSurfGrad2 = 0.0D0
+      NodalSurfGrad2 = 0.0_dp
       IF (DIM==3) NodalSurfGrad2(1:n) = GradSurface2(GradSurface2Perm(NodeIndexes(1:n)))
 
       IF (COMP==1) THEN     ! u
@@ -1396,7 +1385,7 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
 
       ELSE IF (COMP==DIM) THEN  ! w
         NodalU(1:n) = Velocity((DIM+1)*(VeloPerm(NodeIndexes(1:n))-1)+1)
-        NodalV = 0.0D0
+        NodalV = 0.0_dp
         IF (DIM==3) NodalV(1:n) = Velocity((DIM+1)*(VeloPerm(NodeIndexes(1:n))-1)+2)
         CALL LocalMatrixW (  STIFF, FORCE, Element, n, NodalU, NodalV )
 
@@ -1412,22 +1401,22 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
     END DO
 
     ! Neumann conditions only for w and p
-    IF (COMP .GE. DIM) THEN
+    IF (COMP >= DIM) THEN
       DO t=1,Solver % Mesh % NUmberOfBoundaryElements
         Element => GetBoundaryElement(t)
         IF ( GetElementFamily() == 1 ) CYCLE
         NodeIndexes => Element % NodeIndexes
-        IF (ParEnv % myPe .NE. Element % partIndex) CYCLE
+        IF (ParEnv % myPe  /=  Element % partIndex) CYCLE
         n = GetElementNOFNodes()
-        STIFF = 0.0D00
-        FORCE = 0.0D00
+        STIFF = 0.0_dp
+        FORCE = 0.0_dp
 
         IF (COMP==DIM) THEN
           ! only for the surface nodes
           dd = SUM(ABS(Depth(Depthperm(NodeIndexes(1:n)))))
           IF (dd < 1.0e-6) THEN
             NodalU(1:n) = Velocity((DIM+1)*(VeloPerm(NodeIndexes(1:n))-1)+1)
-            NodalV = 0.0D0
+            NodalV = 0.0_dp
             IF (DIM==3) NodalV(1:n) = Velocity((DIM+1)*(VeloPerm(NodeIndexes(1:n))-1)+2)
             CALL LocalMatrixBCW (  STIFF, FORCE, Element, n, NodalU, NodalV )
           END IF
@@ -1468,8 +1457,7 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
 
   IF (SSACoupling) THEN
     !Glue solution together with fs-solution
-    WRITE( Message, * ) 'Glue FS-solution and SSA-solution together'
-    CALL Info( 'SSACoupler',Message, Level=4 )
+    CALL Info( SolverName, 'Glue FS-solution and SSA-solution together', Level=6 )
     j=0
 
     DO i = 1, SIZE(Coupled)/NSDOFs !goes through rows in flowsolution
@@ -1503,11 +1491,10 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     dim = CoordinateSystemDimension()
-
 
     IP = GaussPoints( Element )
     DO t=1,IP % n
@@ -1542,8 +1529,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     DIM = CoordinateSystemDimension()
 
@@ -1559,7 +1546,7 @@ CONTAINS
       END DO
 
       dU2dxz = SUM(VeloU(1:n)*ddBasisddx(1:n,1,dim))
-      dV2dyz = 0.0d0
+      dV2dyz = 0.0_dp
       IF (DIM==3) dV2dyz = SUM(VeloV(1:n)*ddBasisddx(1:n,2,3))
 
 
@@ -1586,8 +1573,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     dim = CoordinateSystemDimension()
 
@@ -1624,8 +1611,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     DIM = CoordinateSystemDimension()
 
@@ -1665,8 +1652,8 @@ CONTAINS
     SAVE Nodes
     !------------------------------------------------------------------------------
     CALL GetElementNodes( Nodes )
-    STIFF = 0.0d0
-    FORCE = 0.0d0
+    STIFF = 0.0_dp
+    FORCE = 0.0_dp
 
     dim = CoordinateSystemDimension()
 

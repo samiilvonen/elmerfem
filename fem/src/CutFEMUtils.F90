@@ -759,7 +759,353 @@ CONTAINS
 
   END SUBROUTINE CutInterfaceCheck
       
+#if 0 
+  ! Observe the cuts on one single element.
+  ! This could be used to improve on the integration rules if we know where the
+  ! element should be split.
+  !-----------------------------------------------------------------------------
+  SUBROUTINE CutSingleElement(Element, ElemNodes, ElemPhi, ElemCut )
 
+    TYPE(Element_t) :: Element
+    TYPE(Nodes_t) :: ElemNodes
+    REAL(KIND=dp) :: ElemPhi(:)
+    LOGICAL :: ElemCut(:)
+
+    INTEGER :: i,i2,n
+    REAL(KIND=dp) :: h1,h2,hprod,r
+    REAL(KIND=dp), PARAMETER :: Eps=1.0e-3
+    
+    n = Element % TYPE % ElementCode / 100
+    ElemCut(1:2*n) = .FALSE.
+    
+    h1 = MINVAL(ElemPhi(1:n))
+    h2 = MAXVAL(ElemPhi(1:n))
+    IF(h1*h2 >= 0.0_dp) RETURN
+
+    IF( (SIZE(ElemNodes % x) < 2*n) ) THEN
+      CALL Fatal('CutSingleElement','ElemNodes too small!')
+    END IF
+    
+    DO i=1, n
+      i2 = MODULO(i,n)+1
+      h1 = ElemPhi(i)
+      h2 = ElemPhi(i2)
+      hprod = h1*h2            
+
+      ! First mark the cutted nodes.        
+      IF( hprod < 0.0_dp ) THEN
+        r = ABS(h2)/(ABS(h1)+ABS(h2))        
+        IF( r <= Eps ) THEN
+          ElemCut(i2) = .TRUE.
+        ELSE IF((1.0-r < Eps) ) THEN
+          ElemCut(i) = .TRUE.
+        ELSE
+          ElemCut(n+i) = .TRUE.
+
+          ! We update nodes so that the element on-the-fly can point to then using NodeIndexes. 
+          ElemNodes % x(n+i) = (1-r) * ElemNodes % x(i2) + r * ElemNodes % x(i)
+          ElemNodes % y(n+i) = (1-r) * ElemNodes % y(i2) + r * ElemNodes % y(i)
+          ElemNodes % z(n+i) = (1-r) * ElemNodes % z(i2) + r * ElemNodes % z(i)
+        END IF
+      ELSE IF( ABS(hprod) < 1.0d-20 ) THEN
+        IF(ABS(h1) < 1.0e-20) CutDof(i) = .TRUE. 
+        IF(ABS(h2) < 1.0e-20) CutDof(i2) = .TRUE.
+      END IF
+    END DO
+
+  END SUBROUTINE CutSingleElement
+
+
+  ! Given a single element and a list of node and edge cuts create a list of
+  ! pieces coming from the split.
+  !---------------------------------------------------------------------------
+  SUBROUTINE SplitSingleElement(Element, ElemCut, ElemNodes, m, &
+      IsCut, IsMore, LocalInds, SgnNode )
+
+    TYPE(Element_t) :: Element
+    LOGICAL :: ElemCut(:)
+    TYPE(Nodes_t) :: ElemNodes
+    INTEGER :: m
+    LOGICAL :: IsCut, IsMore
+    INTEGER :: LocalInds(:)
+    INTEGER :: SgnNode
+    
+    
+    INTEGER :: n,n_split,n_cut,ElemType,SplitCase,iCase,subcase
+    INTEGER :: j,j2,j3,j4,mmax
+    REAL(KIND=dp) :: s1,s2
+    
+    SAVE :: subcase, j, j2, j3, j4, mmax, s1, s2
+
+    ElemType = Element % TYPE % ElementCode
+    n = ElemType / 100
+        
+    n_split = COUNT( ElemCut(n+1:2*n) )
+    n_cut = COUNT( ElemCut(1:n) )
+    
+    IsMore = .FALSE.   
+    IsCut = (n_split > 0)
+
+    ! Nothing to do, use original element.
+    IF(.NOT. IsCut) RETURN
+
+    ! This allows use case to deal with element types, edge splits and node splits at the same time. 
+    ! It is a matter of taste if this is ok or not...
+    SplitCase = 100 * ElemType + 10 * n_split + n_cut
+    iCase = 0
+    LocalInds = 0
+    
+    SELECT CASE( SplitCase ) 
+
+      
+    CASE( 30320, 30321 ) 
+      ! Triangle being cut on two edges.
+      IF( m == 1 ) THEN
+        ! Find the only edge that is not cut
+        DO j=1,3
+          IF( .NOT. ElemCut( n + j ) ) EXIT
+        END DO
+        j2 = MODULO(j,3)+1
+        j3 = MODULO(j+1,3)+1
+        mmax = 3
+        
+        ! There are two ways to split the triangle.
+        ! Choose the one with shorter diameter.
+        s1 = (ElemNodes % x(j) - ElemNodes % x(n + j2))**2 + &
+            (ElemNodes % y(j) - ElemNodes % y(n + j2))**2 + &
+            (ElemNodes % z(j) - ElemNodes % z(n + j2))**2 
+        s2 = (ElemNodes % x(j2) - ElemNodes % x(n + j3))**2 + &
+            (ElemNodes % y(j2) - ElemNodes % y(n + j3))**2 + &
+            (ElemNodes % z(j2) - ElemNodes % z(n + j3))**2 
+
+        LocalInds(1) = j
+        LocalInds(2) = j2                 
+        IF( s1 < s2 ) THEN
+          LocalInds(3) = n + j2
+        ELSE
+          LocalInds(3) = n + j3
+        END IF
+        SgnNode = 1
+        iCase = 1
+      ELSE IF(m==2) THEN
+        IF( s1 < s2 ) THEN
+          LocalInds(1) = j
+        ELSE
+          LocalInds(1) = j2       
+        END IF
+        LocalInds(2) = n + j2
+        LocalInds(3) = n + j3
+
+        SgnNode = 1
+        iCase = 2
+      ELSE IF(m==3) THEN
+        LocalInds(1) = n + j3
+        LocalInds(2) = n + j2
+        LocalInds(3) = j3
+
+        SgnNode = 3
+        iCase = 3
+      END IF
+
+    CASE( 30311 ) 
+      ! Triangle being cut on one edge and one node. 
+      IF( m == 1 ) THEN
+        ! Find the only edge that is cut
+        DO j=1,3
+          IF( ElemCut( n + j ) ) EXIT
+        END DO
+        j2 = MODULO(j,3)+1
+        j3 = MODULO(j+1,3)+1
+      END IF
+      
+      ! One cut result to splitted elements only if the opposing node is cut through
+      IF( ElemCut(j3) ) THEN
+        IF(m==1) THEN
+          LocalInds(1) = n + j
+          LocalInds(2) = j2
+          LocalInds(3) = j3
+          
+          SgnNode = 2
+          iCase = 4
+          mmax = 2
+        ELSE IF(m==2) THEN
+          LocalInds(1) = n + j
+          LocalInds(2) = j3
+          LocalInds(3) = j
+          
+          sgnNode = 3
+          iCase = 5
+        END IF
+      ELSE IF(ElemCut(j) .OR. ElemCut(j2)) THEN
+        LocalInds(1:3) = [1,2,3]          
+        
+        iCase = 6
+        SgnNode = j3          
+        mmax = 1
+      END IF
+
+    CASE( 40420, 40421 ) 
+      ! Quadrilateral being cut on two edges. 
+      
+      IF( m == 1 ) THEN
+        subcase = 0
+        IF( ElemCut(n+1) .AND. ElemCut(n+3) ) THEN
+          subcase = 1
+          j = 1
+          mmax = 2
+        ELSE IF( ElemCut(n+2) .AND. ElemCut(n+4) ) THEN
+          subcase = 1
+          j = 2
+          mmax = 2
+        ELSE
+          DO j=1,4
+            j2 = MODULO(j,4)+1
+            IF( ElemCut(n+j) .AND. ElemCut(n+j2) ) THEN
+              subcase = 2 
+              mmax = 3
+              EXIT
+            END IF
+          END DO
+        END IF
+        IF( subcase == 0 ) THEN
+          CALL Fatal('SplitSingleElement','This case not treated yet for 404!')
+        END IF
+      END IF
+
+      
+      IF( subcase == 1 ) THEN        
+        mmax = 2
+        
+        IF( m == 1 ) THEN
+          j2 = MODULO(j,4)+1
+          j3 = MODULO(j+1,4)+1
+          j4 = MODULO(j+2,4)+1
+          
+          LocalInds(1) = j
+          LocalInds(2) = n + j
+          LocalInds(3) = n + j3
+          LocalInds(4) = j4          
+          
+          SgnNode = 1
+          iCase = 7
+        ELSE IF(m==2) THEN
+          LocalInds(1) = j2
+          LocalInds(2) = j3
+          LocalInds(3) = n + j3
+          LocalInds(4) = n + j
+          
+          SgnNode = 1
+          iCase = 8
+        END IF
+
+      ELSE IF( subcase == 2 ) THEN
+        mmax = 4
+
+        IF( m == 1 ) THEN
+          j2 = MODULO(j,4)+1
+          j3 = MODULO(j+1,4)+1
+          j4 = MODULO(j+2,4)+1
+
+          LocalInds(1) = n + j
+          LocalInds(2) = j2
+          LocalInds(3) = n + j2
+
+          SgnNode = 2
+          iCase = 9
+        ELSE IF(m==2) THEN
+          LocalInds(1) = j
+          LocalInds(2) = n + j
+          LocalInds(3) = j4
+
+          SgnNode = 3
+          iCase = 10
+        ELSE IF(m==3) THEN
+          LocalInds(1) = n + j
+          LocalInds(2) = n + j2
+          LocalInds(3) = j4
+
+          SgnNode = 3
+          iCase = 11
+        ELSE IF(m==4) THEN
+          LocalInds(1) = n + j2
+          LocalInds(2) = j3
+          LocalInds(3) = j4
+
+          SgnNode = 3
+          iCase = 12
+        END IF
+
+      END IF
+
+    CASE( 40411 ) 
+      ! Quadrilateral being cut on one edge and one node.  
+
+      ! Find the only edge that is cut
+      DO j=1,4
+        IF( ElemCut( n + j ) ) EXIT
+      END DO
+      j2 = MODULO(j,4)+1
+      j3 = MODULO(j+1,4)+1
+      j4 = MODULO(j+2,4)+1
+
+      ! IF we cut node associated to the same edge, we don't really have a split element,
+      IF(ElemCut(j) .OR. ElemCut(j2)) THEN
+        LocalInds(1:4) = [1,2,3,4]
+        iCase = 13
+        SgnNode = j3          
+        mmax = 1
+      ELSE
+        mmax = 2
+        IF( ElemCut(j3) ) THEN
+          IF(m==1) THEN
+            LocalInds(1) = n + j
+            LocalInds(2) = j2
+            LocalInds(3) = j3
+            LocalInds(4) = j4
+
+            iCase = 14
+            SgnNode = 3
+          ELSE IF(m==2) THEN
+            LocalInds(1) = j
+            LocalInds(2) = n + j
+            LocalInds(3) = j4
+
+            iCase = 15
+            SgnNode = 1
+          END IF
+
+        ELSE IF( ElemCut(j4)) THEN
+          IF(m==1) THEN
+            LocalInds(1) = j
+            LocalInds(2) = n + j
+            LocalInds(3) = j3
+            LocalInds(4) = j4
+
+            iCase = 16
+            SgnNode = 4
+          ELSE IF(m==2) THEN
+            LocalInds(1) = n + j
+            LocalInds(2) = j2
+            LocalInds(3) = j3
+
+            iCase = 17
+            SgnNode = 2
+          END IF
+        END IF
+      END IF
+      
+    CASE DEFAULT
+      PRINT *,'ElemCut:',ElemCut(1:n*n)
+      CALL Fatal('SplitSingleElement','Unknown split case in element divisions: '//I2S(SplitCase))
+    END SELECT
+
+    IsMore = (m < mmax )
+    IF(iCase>0) nCase(iCase) = nCase(iCase) + 1
+    
+  END SUBROUTINE SplitSingleElement
+#endif
+
+  
   ! Given Element, levelset function and the CutDof field return information whether the element
   ! is cut and if it, should we call the routine again for the next split. 
   !----------------------------------------------------------------------------------------------
@@ -769,27 +1115,34 @@ CONTAINS
     LOGICAL :: IsMore
 
     TYPE(Element_t), TARGET :: Elem303, Elem404, Elem706, Elem808
-    TYPE(Element_t), POINTER, SAVE :: prevElement
-    INTEGER, SAVE :: m, n_split, n_cut, SgnNode, body_in, body_out, SplitCase, iCase,mmax
-    INTEGER :: i,j,j2,j3,j4,nn,ne,subcase
-    INTEGER, POINTER :: nIndexes(:), eIndexes(:)
-    LOGICAL :: isActive, Found
-    LOGICAL :: Visited = .FALSE.
-    REAL(KIND=dp) :: s1,s2
+    TYPE(Element_t), POINTER :: prevElement
+    INTEGER :: SgnNode, i, n, nn, ElemType, body_out, body_in, CutCnt
+    LOGICAL :: Found
     REAL(KIND=dp), POINTER :: x(:), y(:), z(:)
     CHARACTER(:), ALLOCATABLE :: str       
-    TYPE(Variable_t), POINTER :: Var, PhiVar
+    TYPE(Variable_t), POINTER :: PhiVar !Var
     TYPE(Mesh_t), POINTER :: Mesh
-    TYPE(Solver_t), POINTER :: Solver
+    TYPE(Solver_t), POINTER :: Solver => NULL()
     CHARACTER(*), PARAMETER :: Caller = 'CutInterfaceBulk'
+    TYPE(Nodes_t) :: ElemNodes
+    INTEGER, ALLOCATABLE :: LocalInds(:), ElemInds(:)
+    LOGICAL, ALLOCATABLE :: ElemCut(:)
     
-    SAVE Visited, Mesh, Solver, x, y, z, Elem303, Elem404, Elem706, Elem808, &
-        nn, s1, s2, j, j2, j3, j4, PhiVar, subcase
+        
+    SAVE Mesh, Solver, x, y, z, Elem303, Elem404, body_in, body_out, &
+        nn, CutCnt, PhiVar, ElemNodes, ElemInds, ElemCut, ElemType, LocalInds, &
+        prevElement
     
-    IF(.NOT. Visited) THEN
+    IF(.NOT. ASSOCIATED( Solver, CurrentModel % Solver ) ) THEN
       Mesh => CurrentModel % Solver % Mesh
       Solver => CurrentModel % Solver
 
+      IF(.NOT. ASSOCIATED(ElemNodes % x)) THEN
+        n = 8
+        ALLOCATE( ElemNodes % x(n), ElemNodes % y(n), ElemNodes % z(n), ElemInds(n), &
+            ElemCut(n), LocalInds(4))        
+      END IF
+              
       nn = Mesh % NumberOfNodes
       x => Mesh % Nodes % x
       y => Mesh % Nodes % y
@@ -815,304 +1168,45 @@ CONTAINS
       IF(.NOT. Found) body_in = CurrentModel % NumberOfBodies
       body_out = ListGetInteger( Solver % Values,'CutFem Outside Body',Found )
       IF(.NOT. Found) body_out = body_in+1
-
-      Visited = .TRUE.
     END IF
 
     
     ! This is the counter for splitting.
     IF(.NOT. ASSOCIATED(prevElement,Element)) THEN
-      m = 1
+      CutCnt = 1
       prevElement => Element
-      n_split = COUNT( CutDof(nn + Element % EdgeIndexes) )
-      n_cut = COUNT( CutDof(Element % NodeIndexes) )
+      ElemType = Element % Type % ElementCode
+      n = ElemType / 100
+
+      ! For triangles & quads these are true, not for others...
+      ElemInds(1:n) = Element % NodeIndexes(1:n)
+      ElemInds(n+1:2*n) = nn + Element % EdgeIndexes(1:n)
+
+      ElemCut(1:2*n) = CutDof(ElemInds(1:2*n))
+
+      ElemNodes % x(1:2*n) = x(ElemInds(1:2*n))
+      ElemNodes % y(1:2*n) = y(ElemInds(1:2*n))
+      ElemNodes % z(1:2*n) = z(ElemInds(1:2*n))      
     ELSE
-      m = m+1
+      CutCnt = CutCnt+1
     END IF
 
-    nIndexes => Element % NodeIndexes
-    eIndexes => Element % EdgeIndexes
+    pElement => Element
+    CALL SplitSingleElement(Element, ElemCut, ElemNodes, CutCnt, &
+        IsCut, IsMore, LocalInds, SgnNode )
+    IF(.NOT. IsCut) RETURN
     
-    IsMore = .FALSE.
-    IsActive = .TRUE.
-    
-    IF(n_split == 0) THEN
-      IsCut = .FALSE.
-      pElement => Element
-      RETURN
-    END IF
-
-    isCut = .TRUE.
-
-    ! This allows use case to deal with element types, edge splits and node splits at the same time. 
-    ! It is a matter of taste if this is ok or not...
-    SplitCase = 100 * Element % TYPE % ElementCode + 10 * n_split + n_cut
-    iCase = 0
-
-    SELECT CASE( SplitCase ) 
-
-      
-    CASE( 30320, 30321 ) 
-      ! Triangle being cut on two edges.
+    i = COUNT(LocalInds > 0)
+    SELECT CASE(i)
+    CASE(3) 
       pElement => Elem303
-      
-      IF( m == 1 ) THEN
-        ! Find the only edge that is not cut
-        DO j=1,3
-          IF( .NOT. CutDof( nn + eIndexes(j) ) ) EXIT
-        END DO
-        j2 = MODULO(j,3)+1
-        j3 = MODULO(j+1,3)+1
-        mmax = 3
-        
-        ! There are two ways to split the triangle.
-        ! Choose the one with shorter diameter.
-        s1 = (x(nIndexes(j)) - x(nn + eIndexes(j2)))**2 + &
-            (y(nIndexes(j)) - y(nn + eIndexes(j2)))**2 + &
-            (z(nIndexes(j)) - z(nn + eIndexes(j2)))**2
-        s2 = (x(nIndexes(j2)) - x(nn + eIndexes(j3)))**2 + &
-            (y(nIndexes(j2)) - y(nn + eIndexes(j3)))**2 + &
-            (z(nIndexes(j2)) - z(nn + eIndexes(j3)))**2
-
-        pElement % NodeIndexes(1) = nIndexes(j)
-        pElement % NodeIndexes(2) = nIndexes(j2)                 
-        IF( s1 < s2 ) THEN
-          pElement % NodeIndexes(3) = nn + eIndexes(j2)
-        ELSE
-          pElement % NodeIndexes(3) = nn + eIndexes(j3)
-        END IF
-        SgnNode = 1
-        iCase = 1
-      ELSE IF(m==2) THEN
-        IF( s1 < s2 ) THEN
-          pElement % NodeIndexes(1) = nIndexes(j)
-        ELSE
-          pElement % NodeIndexes(1) = nIndexes(j2)                   
-        END IF
-        pElement % NodeIndexes(2) = nn + eIndexes(j2)
-        pElement % NodeIndexes(3) = nn + eIndexes(j3)
-
-        SgnNode = 1
-        iCase = 2
-      ELSE IF(m==3) THEN
-        pElement % NodeIndexes(1) = nn + eIndexes(j3)
-        pElement % NodeIndexes(2) = nn + eIndexes(j2)
-        pElement % NodeIndexes(3) = nIndexes(j3)
-
-        SgnNode = 3
-        iCase = 3
-      END IF
-
-    CASE( 30311 ) 
-      ! Triangle being cut on one edge and one node. 
-      IF( m == 1 ) THEN
-        ! Find the only edge that is cut
-        DO j=1,3
-          IF( CutDof( nn + eIndexes(j) ) ) EXIT
-        END DO
-        j2 = MODULO(j,3)+1
-        j3 = MODULO(j+1,3)+1
-      END IF
-      pElement => Elem303
-      
-      ! One cut result to splitted elements only if the opposing node is cut through
-      IF( CutDof(nIndexes(j3)) ) THEN
-        IF(m==1) THEN
-          pElement % NodeIndexes(1) = nn + eIndexes(j)
-          pElement % NodeIndexes(2) = nIndexes(j2)
-          pElement % NodeIndexes(3) = nIndexes(j3)
-          
-          SgnNode = 2
-          iCase = 4
-          mmax = 2
-        ELSE IF(m==2) THEN
-          pElement % NodeIndexes(1) = nn + eIndexes(j)
-          pElement % NodeIndexes(2) = nIndexes(j3)
-          pElement % NodeIndexes(3) = nIndexes(j)
-          
-          sgnNode = 3
-          iCase = 5
-        END IF
-      ELSE IF(CutDof(nIndexes(j)) .OR. CutDof(nIndexes(j2))) THEN
-        pElement => Elem303
-        pElement % NodeIndexes(1:3) = nIndexes(1:3)          
-        
-        iCase = 6
-        SgnNode = j3          
-        mmax = 1
-      END IF
-
-    CASE( 40420, 40421 ) 
-      ! Quadrilateral being cut on two edges. 
-
-      
-      IF( m == 1 ) THEN
-        subcase = 0
-        IF( ALL( CutDof( nn + eIndexes([1,3])) ) ) THEN
-          subcase = 1
-          j = 1
-          mmax = 2
-        ELSE IF( ALL( CutDof( nn + eIndexes([2,4])) ) ) THEN            
-          subcase = 1
-          j = 2
-          mmax = 2
-        ELSE
-          DO j=1,4
-            j2 = MODULO(j,4)+1
-            IF(ALL( CutDof( nn + eIndexes([j,j2]) ) ) ) THEN
-              subcase = 2 
-              mmax = 3
-              EXIT
-            END IF
-          END DO
-        END IF
-        IF( subcase == 0 ) THEN
-          CALL Fatal(Caller,'This case not treated yet for 404!')
-        END IF
-      END IF
-
-      
-      IF( subcase == 1 ) THEN        
-        pElement => Elem404
-        mmax = 2
-        
-        IF( m == 1 ) THEN
-          j2 = MODULO(j,4)+1
-          j3 = MODULO(j+1,4)+1
-          j4 = MODULO(j+2,4)+1
-          
-          pElement % NodeIndexes(1) = nIndexes(j)
-          pElement % NodeIndexes(2) = nn + eIndexes(j)
-          pElement % NodeIndexes(3) = nn + eIndexes(j3)
-          pElement % NodeIndexes(4) = nIndexes(j4)          
-          
-          SgnNode = 1
-          iCase = 7
-        ELSE IF(m==2) THEN
-          pElement % NodeIndexes(1) = nIndexes(j2)
-          pElement % NodeIndexes(2) = nIndexes(j3)
-          pElement % NodeIndexes(3) = nn + eIndexes(j3)
-          pElement % NodeIndexes(4) = nn + eIndexes(j)
-          
-          SgnNode = 1
-          iCase = 8
-        END IF
-
-      ELSE IF( subcase == 2 ) THEN
-        pElement => Elem303
-        mmax = 4
-
-        IF( m == 1 ) THEN
-          j2 = MODULO(j,4)+1
-          j3 = MODULO(j+1,4)+1
-          j4 = MODULO(j+2,4)+1
-
-          pElement % NodeIndexes(1) = nn + eIndexes(j)
-          pElement % NodeIndexes(2) = nIndexes(j2)
-          pElement % NodeIndexes(3) = nn + eIndexes(j2)
-
-          SgnNode = 2
-          iCase = 9
-        ELSE IF(m==2) THEN
-          pElement % NodeIndexes(1) = nIndexes(j)
-          pElement % NodeIndexes(2) = nn + eIndexes(j)
-          pElement % NodeIndexes(3) = nIndexes(j4)
-
-          SgnNode = 3
-          iCase = 10
-        ELSE IF(m==3) THEN
-          pElement % NodeIndexes(1) = nn + eIndexes(j)
-          pElement % NodeIndexes(2) = nn + eIndexes(j2)
-          pElement % NodeIndexes(3) = nIndexes(j4)
-
-          SgnNode = 3
-          iCase = 11
-        ELSE IF(m==4) THEN
-          pElement % NodeIndexes(1) = nn + eIndexes(j2)
-          pElement % NodeIndexes(2) = nIndexes(j3)
-          pElement % NodeIndexes(3) = nIndexes(j4)
-
-          SgnNode = 3
-          iCase = 12
-        END IF
-
-      END IF
-
-    CASE( 40411 ) 
-      ! Quadrilateral being cut on one edge and one node.  
-
-      ! Find the only edge that is cut
-      DO j=1,4
-        IF( CutDof( nn + eIndexes(j) ) ) EXIT
-      END DO
-      j2 = MODULO(j,4)+1
-      j3 = MODULO(j+1,4)+1
-      j4 = MODULO(j+2,4)+1
-
-      ! IF we cut node associated to the same edge, we don't really have a split element,
-      IF(CutDof(nIndexes(j)) .OR. CutDof(nIndexes(j2))) THEN
-        pElement => Elem404
-        pElement % NodeIndexes(1:4) = nIndexes(1:4)          
-        iCase = 13
-        SgnNode = j3          
-        mmax = 1
-      ELSE
-        mmax = 2
-        IF( CutDof(nIndexes(j3)) ) THEN
-          IF(m==1) THEN
-            pElement => Elem404
-            pElement % NodeIndexes(1) = nn + eIndexes(j)
-            pElement % NodeIndexes(2) = nIndexes(j2)
-            pElement % NodeIndexes(3) = nIndexes(j3)
-            pElement % NodeIndexes(4) = nIndexes(j4)
-
-            iCase = 14
-            SgnNode = 3
-          ELSE IF(m==2) THEN
-            pElement => Elem303
-            pElement % NodeIndexes(1) = nIndexes(j)
-            pElement % NodeIndexes(2) = nn + eIndexes(j)
-            pElement % NodeIndexes(3) = nIndexes(j4)
-
-            iCase = 15
-            SgnNode = 1
-          END IF
-
-        ELSE IF( CutDof(nIndexes(j4))) THEN
-          IF(m==1) THEN
-            pElement => Elem404
-            pElement % NodeIndexes(1) = nIndexes(j)
-            pElement % NodeIndexes(2) = nn + eIndexes(j)
-            pElement % NodeIndexes(3) = nIndexes(j3)
-            pElement % NodeIndexes(4) = nIndexes(j4)
-
-            iCase = 16
-            SgnNode = 4
-          ELSE IF(m==2) THEN
-            pElement => Elem303
-            pElement % NodeIndexes(1) = nn + eIndexes(j)
-            pElement % NodeIndexes(2) = nIndexes(j2)
-            pElement % NodeIndexes(3) = nIndexes(j3)
-
-            iCase = 17
-            SgnNode = 2
-          END IF
-        END IF
-      END IF
-      
+    CASE(4)
+      pElement => Elem404
     CASE DEFAULT
-      PRINT *,'EdgeCut:',CutDof(nn + Element % EdgeIndexes) 
-      PRINT *,'NodeCut:',CutDof(Element % NodeIndexes)
-      PRINT *,'Phi:',PhiVar % Values(PhiVar % Perm(Element % NodeIndexes))
-      s1 = MAXVAL(PhiVar % Values(PhiVar % Perm(Element % NodeIndexes))) &
-          - MINVAL(PhiVar % Values(PhiVar % Perm(Element % NodeIndexes))) 
-      PRINT *,'RelativePhi:',PhiVar % Values(PhiVar % Perm(Element % NodeIndexes))/s1          
-      CALL Fatal(Caller,'Unknown split case in element divisions: '//I2S(SplitCase))
+      CALL Fatal('CutInterfaceBulk','Impossible number of nodes!')
     END SELECT
-    
-    IsMore = (m < mmax ) 
-    IF(iCase>0) nCase(iCase) = nCase(iCase) + 1
-
+    pElement % NodeIndexes(1:i) = ElemInds(LocalInds(1:i)) 
+          
     ! This circumwents some rare case when node is cut.
     IF( body_out == 0 ) THEN
       IF( ALL( CutPerm(pElement % NodeIndexes) > 0) ) THEN
@@ -1147,7 +1241,7 @@ CONTAINS
     INTEGER :: m, n, n_split, n_cut, i, j, j2, j3, j4, nn, SplitCase
     INTEGER, POINTER :: nIndexes(:), eIndexes(:)
     TYPE(Mesh_t), POINTER :: Mesh
-    LOGICAL :: isActive, Visited = .FALSE., Found, VerticalCut
+    LOGICAL :: Visited = .FALSE., Found, VerticalCut
     REAL(KIND=dp), POINTER :: x(:), y(:), z(:)
     TYPE(Solver_t), POINTER :: Solver
     CHARACTER(*), PARAMETER :: Caller = 'CutInterfaceBC'
@@ -1215,7 +1309,6 @@ CONTAINS
     END IF
 
     IsMore = .FALSE.
-    IsActive = .TRUE.
 
     IF( n_split == 0 .AND. n_cut <= 1 ) THEN
       isCut = .FALSE.
