@@ -141,13 +141,14 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   INTEGER :: iter, maxiter, compi, compn, compj, dofs
   LOGICAL :: Found, VecAsm, InitHandles, &
       PrecUse, PiolaVersion, SecondOrder, SecondFamily, &
-      Monolithic, Segregated, UseProjMatrix, CurlCurlForm
+      Monolithic, Segregated, UseProjMatrix, CurlCurlForm, HasPrecDampCoeff
   TYPE(ValueList_t), POINTER :: Params, EdgeSolverParams
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Variable_t), POINTER :: EF, EiVar, EdgeResVar, EdgeSolVar
   REAL(KIND=dp) :: mu0inv, eps0, rob0, omega
   CHARACTER(LEN=MAX_NAME_LEN) :: sname
   COMPLEX(KIND=dp), PARAMETER :: im = (0._dp,1._dp)
+  COMPLEX(KIND=dp) :: PrecDampCoeff
   TYPE(Matrix_t), POINTER, SAVE :: Proj => NULL()
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzNodal'
 !------------------------------------------------------------------------------
@@ -212,6 +213,11 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     IF (PrecUse) THEN
       UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
       CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
+
+      PrecDampCoeff = GetCReal(Params, 'Linear System Preconditioning Damp Coefficient', HasPrecDampCoeff)
+      PrecDampCoeff = CMPLX(REAL(PrecDampCoeff), &
+          GetCReal(Params, 'Linear System Preconditioning Damp Coefficient im', Found), kind=dp)
+      HasPrecDampCoeff = HasPrecDampCoeff .OR. Found
     END IF
   ELSE
     EF => VariableGet( Mesh % Variables,'ElField')
@@ -401,7 +407,7 @@ CONTAINS
     REAL(KIND=dp), ALLOCATABLE, SAVE :: Basis(:),dBasisdx(:,:)
     COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
     REAL(KIND=dp) :: weight, DetJ, CondAtIp
-    COMPLEX(KIND=dp) :: muinvAtIp, EpsAtIp, CurrAtIp(3)
+    COMPLEX(KIND=dp) :: muinvAtIp, EpsAtIp, CurrAtIp(3), kappa
     LOGICAL :: Stat,Found, WithConductivity
     INTEGER :: i,j,k,t,p,q,m,allocstat
     TYPE(GaussIntegrationPoints_t) :: IP
@@ -440,6 +446,11 @@ CONTAINS
 
     CALL GetElementNodes( Nodes, UElement=Element )
 
+    kappa = CMPLX(1.0_dp, 0.0_dp, kind=dp)
+    IF (PrecUse) THEN
+      IF (HasPrecDampCoeff) kappa = kappa - PrecDampCoeff
+    END IF
+      
     ! Initialize
     STIFF = 0._dp
     FORCE = 0._dp
@@ -472,7 +483,7 @@ CONTAINS
           DO j=1,dim
             DO q=1,nd
               STIFF(dim*(p-1)+j,dim*(q-1)+j,1) = STIFF(dim*(p-1)+j,dim*(q-1)+j,1) - &
-                  Weight * Omega**2 * epsAtIP * Basis(q) * Basis(p)
+                  Weight * kappa * Omega**2 * epsAtIP * Basis(q) * Basis(p)
 
               IF (WithConductivity) THEN
                 STIFF(dim*(p-1)+j,dim*(q-1)+j,1) = STIFF(dim*(p-1)+j,dim*(q-1)+j,1) - &
@@ -525,7 +536,7 @@ CONTAINS
 
         ! This is the same for each component with isotropic materials!
         DO p=1,nd
-          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
+          STIFF(p,1:nd,1) = STIFF(p,1:nd,1) - Weight * kappa * Omega**2 * epsAtIP * Basis(p) * Basis(1:nd)
         END DO
 
         IF(.NOT. PrecUse ) THEN
