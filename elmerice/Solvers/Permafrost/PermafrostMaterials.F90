@@ -405,22 +405,15 @@ CONTAINS
       IF (.NOT.Found) THEN
         CALL INFO(FunctionName," 'Rock Material File' keyword not found - looking for default DB!")
         fexist = .FALSE.
-#ifdef USE_ISO_C_BINDINGS
         str = 'ELMER_LIB'
-#else
-        str = 'ELMER_LIB'//CHAR(0)
-#endif
+
         CALL envir( str,MaterialFileName,k ) 
         IF ( k > 0  ) THEN
           MaterialFileName = MaterialFileName(1:k) // '/permafrostmaterialdb.dat'
           INQUIRE(FILE=TRIM(MaterialFileName), EXIST=fexist)
         END IF
         IF (.NOT. fexist) THEN
-#ifdef USE_ISO_C_BINDINGS
           str = 'ELMER_HOME'
-#else
-          str = 'ELMER_HOME'//CHAR(0)
-#endif
           CALL envir( str,MaterialFileName,k ) 
           IF ( k > 0 ) THEN
             MaterialFileName = MaterialFileName(1:k) // '/share/elmersolver/lib/' // 'permafrostmaterialdb.dat'
