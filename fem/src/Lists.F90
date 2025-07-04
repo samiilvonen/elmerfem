@@ -9898,7 +9898,7 @@ CONTAINS
           ! The size of the vector can be either dim or 3. 
           GotIt = .FALSE.
           IF( IsIndex ) THEN
-            Var1 => VariableGet(Variables,TRIM(str(1:k)))
+            Var1 => VariableGet(Variables,TRIM(str(1:k)),ThisOnly)
             IF( ASSOCIATED( Var1 ) ) THEN
               GotIt = .TRUE.
               IsVector = ( Var1 % Dofs == Dim .OR. Var1 % Dofs == 3 ) 

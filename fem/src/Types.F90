@@ -962,6 +962,8 @@ MODULE Types
 
       INTEGER :: LocalSystemMode = -1
       TYPE(LocalSystemStorage_t), POINTER :: LocalSystem(:) => NULL()
+
+      REAL(KIND=dp), POINTER :: CutInterp(:) => NULL()
     END TYPE Solver_t
 
 !------------------------------------------------------------------------------

@@ -11153,7 +11153,7 @@ END SUBROUTINE PickActiveFace
 
 
      IF (SIZE(Solver % Def_Dofs,2) < id) CALL Fatal('mGetElementDOFS', &
-         'Indexing outside array bounds')
+         'Indexing outside array bounds: '//I2S(SIZE(Solver % Def_Dofs,2))//' vs. '//I2S(id))
      
      IF (.NOT.ASSOCIATED(Mesh)) THEN
        IF ( Solver % Def_Dofs(ElemFamily,id,1)>0 ) THEN  

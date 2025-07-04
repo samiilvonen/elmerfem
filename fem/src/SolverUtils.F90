@@ -11396,7 +11396,7 @@ END FUNCTION SearchNodeL
     INTEGER :: AdaptOrder, AdaptNp, Np, RelOrder
     REAL(KIND=dp) :: MinLim, MaxLim, MinV, MaxV, V
     LOGICAL :: UseAdapt, Found,ElementalRule
-    INTEGER :: i,n,ElementalNp(8),prevVisited = -1
+    INTEGER :: i,j,n,ElementalNp(8),prevVisited = -1
     LOGICAL :: Debug, InitDone, pRef, IsBC, prevIsBC, AdaptSplit 
     INTEGER :: EdgeBasisDegree
     REAL(KIND=dp) :: ElemPhi(27)
@@ -11434,7 +11434,7 @@ END FUNCTION SearchNodeL
       
       VarName = ListGetString( pSolver % Values,'Adaptive Integration Variable',UseAdapt )
       IF( UseAdapt ) THEN
-        CALL Info('GaussPointsAdapt','Using adaptive gaussian integration rules',Level=7)
+        CALL Info('GaussPointsAdapt','Using adaptive gaussian integration rules',Level=10)
         IntegVar => VariableGet( pSolver % Mesh % Variables, VarName )
         IF( .NOT. ASSOCIATED( IntegVar ) ) THEN
           CALL Fatal('GaussPointsAdapt','> Adaptive Integration Variable < does not exist')
@@ -11523,10 +11523,35 @@ END FUNCTION SearchNodeL
 
       n = Element % TYPE % NumberOfNodes
       
-      ElemPhi(1:n) = IntegVar % Values( IntegVar % Perm( Element % NodeIndexes(1:n) ) )
-      MinV = MINVAL(ElemPhi(1:n))           
-      MaxV = MAXVAL(ElemPhi(1:n))
+      BLOCK
+        INTEGER :: nn,j1,j2
+        REAL(KIND=dp) :: r
 
+        ElemPhi(1:n) = 0.0_dp
+        
+        DO i=1,n
+          j = Element % NodeIndexes(i)
+          IF ( j>0 .AND. j<=SIZE(IntegVar % Perm) ) THEN
+            j = IntegVar % Perm(j)
+            IF ( j>0 ) THEN
+              ElemPhi(i) = IntegVar % Values(j)
+            END IF
+          ELSE IF( ASSOCIATED( Solver % CutInterp ) ) THEN
+            nn = SIZE(IntegVar % Perm)
+            j1 = IntegVar % Perm(Solver % Mesh % Edges(j-nn) % NodeIndexes(1))
+            j2 = IntegVar % Perm(Solver % Mesh % Edges(j-nn) % NodeIndexes(2))
+            IF(j1 > 0 .AND. j2 > 0) THEN
+              r = Solver % CutInterp(j-nn)
+              ElemPhi(i) = r*IntegVar % Values(j1) + (1-r)*IntegVar % Values(j2)
+            END IF
+          END IF
+        END DO
+        
+        MinV = MINVAL(ElemPhi(1:n))           
+        MaxV = MAXVAL(ElemPhi(1:n))
+      END BLOCK
+
+        
       IF( .NOT. ( MaxV < MinLim .OR. MinV > MaxLim ) ) THEN
         IF( AdaptSplit ) THEN
           ElemPhi(1:n) = ElemPhi(1:n) - MinLim 
@@ -11540,7 +11565,7 @@ END FUNCTION SearchNodeL
           ElemCut = .FALSE.
           CALL CutSingleElement(Element, ElemNodes, ElemPhi, ElemCut )
 
-          IF(COUNT(ElemCut) > 1) THEN
+          IF(COUNT(ElemCut(1:n)) > 1) THEN
             BLOCK
               LOGICAL :: IsCut, IsMore, stat
               INTEGER :: SgnNode, CutCnt, LocalInds(4), m, t
@@ -11563,10 +11588,14 @@ END FUNCTION SearchNodeL
               DO CutCnt=1,10           
                 CALL SplitSingleElement(Element, ElemCut, ElemNodes, CutCnt, &
                     IsCut, IsMore, LocalInds, SgnNode )
-                IF(.NOT. IsCut) CALL Fatal('','not cut?')
+                IF(.NOT. IsCut) THEN
+                  PRINT *,'ElemCut: ',ElemCut(1:n),CutCnt,IsCut,IsMore
+                  CALL Warn('GaussPointsAdapt','This should be cut?')
+                  RETURN
+                END IF
                   
                 m = COUNT(LocalInds > 0)
-                IF(m<3 .OR. m>4) CALL Fatal('','Invalid m?')
+                IF(m<3 .OR. m>4) CALL Fatal('GaussPointsAdapt','This is neither triange or quad?')
                 
                 PieceElement % TYPE => GetElementType( 101*m )   
                 IP = GaussPoints( PieceElement, PReferenceElement = .FALSE. )
@@ -16267,6 +16296,11 @@ END FUNCTION SearchNodeL
 
     n = A % NumberOfRows
 
+    IF(A % FORMAT < 1 .OR. A % FORMAT > 3 ) THEN
+      CALL Fatal( Caller,'Not implemented for matrix format: '//I2S(A % format))
+    END IF
+      
+    
     RestrictionMode = HaveRestrictionMatrix( A ) 
 
     ResidualMode = ListGetLogical( Params,'Linear System Residual Mode',Found )      
