@@ -867,7 +867,7 @@ MODULE Interpolation
     INTEGER, ALLOCATABLE, SAVE :: Ind(:)
     INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, k0, &
         vdofs, edgej, facej
-    REAL(KIND=dp) :: PiMat(MaxEDOFs,6), FacePiMat(MaxFDOFs,12), x(12), D
+    REAL(KIND=dp) :: PiMat(MaxEDOFs,6), FacePiMat(MaxFDOFs,12)
     CHARACTER(*), PARAMETER :: Caller = 'NodalToNedelecInterpolation_GlobalMatrix'
 !------------------------------------------------------------------------------
     IF (.NOT. ASSOCIATED(NodalVar) .OR. .NOT. ASSOCIATED(VectorElementVar)) THEN
@@ -930,7 +930,6 @@ MODULE Interpolation
       k1 = NodalVar % Perm(i1)
       k2 = NodalVar % Perm(i2)
 
-      x(1:6) = 0.0_dp
       DO dofi=1, vdofs
         DO j=1,EDOFs
           k = VectorElementVar % Perm(Ind(j))
@@ -962,7 +961,6 @@ MODULE Interpolation
 
         CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
 
-        x(1:12) = 0.0_dp
         DO dofi=1, vdofs
           DO j=1,Face % BDOFs
             k2 = VectorElementVar % Perm(Ind(j+i0))
@@ -997,12 +995,11 @@ MODULE Interpolation
 !> with edges, so that the geometric domain of the finite element given as input
 !> is supposed to be one-dimensional.  
 !------------------------------------------------------------------------------
-  SUBROUTINE NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondFamily)
+  SUBROUTINE NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, SecondFamily)
 !------------------------------------------------------------------------------
     REAL(KIND=dp), INTENT(OUT) :: PiMat(2,2)      !< The interpolation operator as a matrix 
     TYPE(Element_t), POINTER, INTENT(IN) :: Edge  !< The element for which the operator is created
     TYPE(Mesh_t), POINTER, INTENT(IN) :: Mesh     !< The Edge should belong to the mesh given
-    INTEGER, INTENT(IN) :: dim                    !< The number of components of the vector field  
     LOGICAL, OPTIONAL, INTENT(IN) :: SecondFamily !< To select the Nedelec family    
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes
@@ -1085,12 +1082,11 @@ MODULE Interpolation
 !> but here the matrix representation of the interpolation operator is created for
 !> the DOFs associated with the element faces.
 !------------------------------------------------------------------------------
-  SUBROUTINE NodalGradientToNedelecPiMatrix_Faces(PiMat, Face, Mesh, dim, BasisDegree)
+  SUBROUTINE NodalGradientToNedelecPiMatrix_Faces(PiMat, Face, Mesh, BasisDegree)
 !------------------------------------------------------------------------------
     REAL(KIND=dp), INTENT(OUT) :: PiMat(2,4)      !< The interpolation operator as a matrix 
     TYPE(Element_t), POINTER, INTENT(IN) :: Face  !< The element for which the operator is created
     TYPE(Mesh_t), POINTER, INTENT(IN) :: Mesh     !< The Face should belong to the mesh given
-    INTEGER, INTENT(IN) :: dim                    !< The number of components of the vector field  
     INTEGER, OPTIONAL, INTENT(IN) :: BasisDegree  !< The order of basis     
 !------------------------------------------------------------------------------
     TYPE(Nodes_t), SAVE :: Nodes, EdgeNodes
@@ -1203,7 +1199,131 @@ MODULE Interpolation
   END SUBROUTINE NodalGradientToNedelecPiMatrix_Faces
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+  SUBROUTINE NodalGradientToNedelecInterpolation_GlobalMatrix(Mesh, NodalVar, &
+      VectorElementVar, GlobalPiMat)
+!------------------------------------------------------------------------------
+    IMPLICIT NONE
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Variable_t), POINTER, INTENT(IN) :: NodalVar
+    TYPE(Variable_t), POINTER, INTENT(IN) :: VectorElementVar
+    TYPE(Matrix_t), POINTER :: GlobalPiMat  !< Used for the global representation
+!------------------------------------------------------------------------------
+    INTEGER, PARAMETER :: MaxEDOFs = 2
+    INTEGER, PARAMETER :: MaxFDOFs = 2
 
+    TYPE(Element_t), POINTER :: Edge, Face
+    LOGICAL :: PiolaVersion, SecondKindBasis, SecondOrder
+    INTEGER, ALLOCATABLE, SAVE :: Ind(:)
+    INTEGER :: EDOFs, dof, i, istat, i0, j, k, l, m, nd, ndofs, p, q, vdofs
+    REAL(KIND=dp) :: PiMat(MaxEDOFs,2), FacePiMat(MaxFDOFs,4)
+    CHARACTER(*), PARAMETER :: Caller = 'NodalGradientToNedelecInterpolation_GlobalMatrix'
+!------------------------------------------------------------------------------
+    IF (.NOT. ASSOCIATED(NodalVar) .OR. .NOT. ASSOCIATED(VectorElementVar)) THEN
+      CALL Fatal(Caller, 'H1 or H(curl) variable is not associated')
+    END IF
+    
+    IF (ASSOCIATED(Mesh)) THEN
+      IF (.NOT. ASSOCIATED(Mesh % Edges)) CALL Fatal(Caller, 'Mesh edges not associated!')
+    ELSE
+      CALL Fatal(Caller, 'Mesh structure is not associated')
+    END IF
+
+    IF (ASSOCIATED(GlobalPiMat)) THEN
+      CALL Fatal(Caller, 'Matrix structure has already been created')
+    END IF
+
+    vdofs = VectorElementVar % DOFs
+    ndofs = NodalVar % DOFs
+    IF (ndofs /= vdofs) CALL Fatal(Caller, &
+        'Coordinate system dimension and DOF counts are not as expected')
+    
+    CALL EdgeElementStyle(VectorElementVar % Solver % Values, PiolaVersion, SecondKindBasis, &
+        SecondOrder, Check = .TRUE.)
+
+    IF (SecondKindBasis) THEN
+      EDOFs = 2
+    ELSE
+      EDOFs = 1
+    END IF
+    
+    GlobalPiMat => AllocateMatrix()
+    GlobalPiMat % Format = MATRIX_LIST
+
+    ! Add the extreme entry since otherwise the ListMatrix operations may be very slow:
+    CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, SIZE(VectorElementVar % Values), &
+        SIZE(NodalVar % Values), 0.0_dp)
+    CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, 1, 1, 0.0_dp)
+
+    IF (.NOT. ALLOCATED(Ind)) THEN
+      ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
+    END IF
+
+    ! Here we need separate loops over edges, faces and elements so that all DOFs are handled
+    !    
+    DO j=1, Mesh % NumberOfEdges      
+      Edge => Mesh % Edges(j)
+
+      ! Create the matrix representation of the Nedelec interpolation operator 
+      CALL NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, SecondKindBasis)
+
+      nd = mGetElementDOFs(Ind, Edge, VectorElementVar % Solver)
+
+      DO dof=1,vDOFs
+        DO i=1,Edge % Type % NumberOfNodes
+          m = NodalVar % Perm(Edge % NodeIndexes(i))
+          l = ndofs*(m-1) + dof
+          DO p=1,EDOFs
+            q = VectorElementVar % Perm(Ind(p))
+            k = vdofs*(q-1)+dof
+            CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k, l, PiMat(p,i))
+          END DO
+        END DO
+      END DO
+    END DO
+
+    IF (ASSOCIATED(Mesh % Faces)) THEN
+      DO j=1, Mesh % NumberOfFaces
+        Face => Mesh % Faces(j)
+        IF (Face % BDOFs < 1) CYCLE
+        
+        nd = mGetElementDOFs(Ind, Face, VectorElementVar % Solver)
+
+        ! Count the offset for picking the true face DOFs
+        !
+        i0 = 0
+        DO k=1,Face % Type % NumberOfEdges
+          Edge => Mesh % Edges(Face % EdgeIndexes(k))
+          EDOFs = Edge % BDOFs
+          IF (EDOFs < 1) CYCLE
+          i0 = i0 + EDOFs
+        END DO
+
+        CALL NodalGradientToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, BasisDegree = 1)
+
+        DO dof=1,vdofs
+          DO p=1,Face % BDOFs
+            k = VectorElementVar % Perm(Ind(p+i0))
+            k = vdofs*(k-1)+dof
+            DO i=1,Face % TYPE % NumberOfNodes
+              m = NodalVar % Perm(Face % NodeIndexes(i))
+              l = ndofs*(m-1) + dof
+              CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k, l, FacePiMat(p,i))
+            END DO
+          END DO
+        END DO
+      END DO
+    END IF
+    
+    ! TO DO: Add loop over elements
+    
+    ! Finally, change to CRS matrix format which is much faster:
+    CALL List_toCRSMatrix(GlobalPiMat)
+    
+    CALL Info(Caller, 'Created Gradient Matrix: grad(H1) -> H(curl)', Level=6)    
+!------------------------------------------------------------------------------
+  END SUBROUTINE NodalGradientToNedelecInterpolation_GlobalMatrix
+!------------------------------------------------------------------------------
     
 !-------------------------------------------------------------------------------
 END MODULE Interpolation

@@ -261,10 +261,7 @@ SUBROUTINE DCRComplexSolver( Model,Solver,dt,TransientSimulation )
         n = CurrentElement % Type % NumberOfNodes
         NodeIndexes => CurrentElement % NodeIndexes
 
-        ElementNodes % x(1:n) = Solver % Mesh % Nodes % x(NodeIndexes)
-        ElementNodes % y(1:n) = Solver % Mesh % Nodes % y(NodeIndexes)
-        ElementNodes % z(1:n) = Solver % Mesh % Nodes % z(NodeIndexes)
-
+        CALL CopyElementNodesFromMesh(ElementNodes, Solver % Mesh, n, NodeIndexes)
 !------------------------------------------------------------------------------
 !       Get equation & material parameters
 !------------------------------------------------------------------------------
@@ -361,9 +358,7 @@ SUBROUTINE DCRComplexSolver( Model,Solver,dt,TransientSimulation )
 
               IF ( ANY( PressurePerm(NodeIndexes) == 0 ) ) CYCLE
 
-              ElementNodes % x(1:n) = Solver % Mesh % Nodes % x(NodeIndexes)
-              ElementNodes % y(1:n) = Solver % Mesh % Nodes % y(NodeIndexes)
-              ElementNodes % z(1:n) = Solver % Mesh % Nodes % z(NodeIndexes)
+              CALL CopyElementNodesFromMesh(ElementNodes, Solver % Mesh, n, NodeIndexes)
 
               Load(1,1:n) = ListGetReal( Model % BCs(i) % Values, &
                    'Wave Flux 1', n, NodeIndexes, GotIt )
@@ -379,7 +374,12 @@ SUBROUTINE DCRComplexSolver( Model,Solver,dt,TransientSimulation )
               
               BscalarImag(1:n) = ListGetReal( Model % BCs(i) % Values, &
                    'Bscalar 2', n, NodeIndexes, GotIt)
-
+              
+              IF (UseEdgeResidual) THEN
+                IF (ListGetLogical(Model % BCs(i) % Values, 'Absorbing BC', Found)) THEN
+!                  CALL Fatal('DCRComplexSolve', 'Cannot handle Absorbing BC')
+                END IF
+              END IF
 !------------------------------------------------------------------------------
 !             Get element local matrix and rhs vector
 !------------------------------------------------------------------------------
@@ -440,14 +440,14 @@ CONTAINS
    SUBROUTINE InputTensor( Tensor, IsScalar, Name, Material, n, NodeIndexes )
 !------------------------------------------------------------------------------
       REAL(KIND=dp) :: Tensor(:,:,:)
-      INTEGER :: i, n, NodeIndexes(:)
       LOGICAL :: IsScalar
       CHARACTER(LEN=*) :: Name
       TYPE(ValueList_t), POINTER :: Material
+      INTEGER :: n, NodeIndexes(:)
 !------------------------------------------------------------------------------
       LOGICAL :: FirstTime = .TRUE., stat
       REAL(KIND=dp), POINTER :: Hwrk(:,:,:)
-      INTEGER :: n1,n2,t1
+      INTEGER :: i,n1,n2,t1
       SAVE FirstTime, Hwrk
 !------------------------------------------------------------------------------
       IF ( FirstTime ) THEN
@@ -456,13 +456,14 @@ CONTAINS
       END IF
 
       Tensor = 0.0d0
+      IsScalar = .TRUE.
 
       CALL ListGetRealArray( Material, Name, Hwrk, n, NodeIndexes, stat )
+      IF ( .NOT. stat ) RETURN
+      
       n1 = MIN(SIZE(HWrk,1),3)
       n2 = MIN(SIZE(Hwrk,2),3)
       IsScalar = (n1==1 .AND. n2==1) 
-
-      IF ( .NOT. stat ) RETURN
 
       IF ( IsScalar ) THEN
         t1 = SIZE(Tensor,1)
@@ -495,10 +496,10 @@ CONTAINS
    SUBROUTINE InputVector( Tensor, IsScalar, Name, Material, n, NodeIndexes )
 !------------------------------------------------------------------------------
       REAL(KIND=dp) :: Tensor(:,:)
-      INTEGER :: n, NodeIndexes(:)
       LOGICAL :: IsScalar
       CHARACTER(LEN=*) :: Name
       TYPE(ValueList_t), POINTER :: Material
+      INTEGER :: n, NodeIndexes(:)
 !------------------------------------------------------------------------------
       LOGICAL :: FirstTime = .TRUE., stat
       REAL(KIND=dp), POINTER :: Hwrk(:,:,:)
@@ -846,7 +847,7 @@ CONTAINS
       Edge => Mesh % Edges(j)
 
       ! Create the matrix representation of the Nedelec interpolation operator 
-      CALL NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondKindBasis)
+      CALL NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, SecondKindBasis)
 
       ! Finally apply the interpolation operator to a nodal variable
       ! which may consist of both real and imaginary components
@@ -929,7 +930,7 @@ CONTAINS
       Edge => Mesh % Edges(j)
 
       ! Create the matrix representation of the Nedelec interpolation operator 
-      CALL NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondKindBasis)
+      CALL NodalGradientToNedelecPiMatrix(PiMat, Edge, Mesh, SecondKindBasis)
 
       nd = GetElementDOFs(Ind, Edge, VectorElementRes % Solver)
 
