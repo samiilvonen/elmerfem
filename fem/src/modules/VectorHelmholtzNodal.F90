@@ -56,8 +56,11 @@ SUBROUTINE VectorHelmholtzNodal_init( Model,Solver,dt,Transient )
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzNodal_init'
   TYPE(ValueList_t), POINTER :: Params
   LOGICAL :: Found, PrecUse, Monolithic
+  INTEGER :: soln, i, j
   !INTEGER :: dim
-   
+  CHARACTER(LEN=MAX_NAME_LEN) :: sname
+!------------------------------------------------------------------------------
+  
   Params => GetSolverParams()
   !dim = CoordinateSystemDimension()
 
@@ -94,7 +97,29 @@ SUBROUTINE VectorHelmholtzNodal_init( Model,Solver,dt,Transient )
   END IF
 
   CALL ListAddNewLogical( Params, "Linear System Complex", .TRUE.)  
+  CALL ListAddInteger( Params,'Time Derivative Order', 0 )  
+  
+  !
+  ! The following is for creating sources from pre-computed eigenfunctions:
+  !
+  IF (ListGetLogicalAnyBC(Model, 'Eigenfunction BC')) THEN
+    soln = 0
+    DO i=1,Model % NumberOfSolvers
+      sname = GetString(Model % Solvers(i) % Values, 'Procedure', Found)
+      j = INDEX(sname, 'EMPortSolver')
+      IF (j > 0) THEN
+        soln = i
+        EXIT
+      END IF
+    END DO
 
+    IF( soln == 0 ) THEN
+      CALL Fatal('VectorHelmholtzNodal_Init','Eigenfunction BC given without solving a port model')      
+    ELSE
+      CALL Info('VectorHelmholtzNodal_Init','The eigensolver index is: '//I2S(soln), Level=12)
+      CALL ListAddInteger(Params, 'Eigensolver Index', soln)
+    END IF
+  END IF  
     
   !IF (ListGetLogical(Params,'Calculate Electric Energy',Found)) THEN
   !  CALL ListAddString( Params,NextFreeKeyword('Exported Variable ',Params), &
@@ -112,7 +137,6 @@ SUBROUTINE VectorHelmholtzNodal_init( Model,Solver,dt,Transient )
   !      'Nodal Energy Density' )
   !END IF
 
-  CALL ListAddInteger( Params,'Time Derivative Order', 0 )  
   
 END SUBROUTINE VectorHelmholtzNodal_Init
 
@@ -128,28 +152,30 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   USE DefUtils
   IMPLICIT NONE
 !------------------------------------------------------------------------------
-  TYPE(Solver_t) :: Solver
   TYPE(Model_t) :: Model
+  TYPE(Solver_t) :: Solver
   REAL(KIND=dp) :: dt
   LOGICAL :: Transient
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------
-  TYPE(Element_t),POINTER :: Element
-  REAL(KIND=dp) :: Norm(3)
-  INTEGER :: i, n, nb, nd, t, active, dim, RelOrder
+  TYPE(Element_t), POINTER :: Element
+  INTEGER :: i, n, nb, nd, t, active, dim, RelOrder, soln
   INTEGER :: iter, maxiter, compi, compn, compj, dofs
   LOGICAL :: Found, VecAsm, InitHandles, &
       PrecUse, PiolaVersion, SecondOrder, SecondFamily, &
-      Monolithic, Segregated, UseProjMatrix, CurlCurlForm, HasPrecDampCoeff
+      Monolithic, Segregated, UseProjMatrix, CurlCurlForm, HasPrecDampCoeff, &
+      EigenfunctionSource
   TYPE(ValueList_t), POINTER :: Params, EdgeSolverParams
+  TYPE(Solver_t), POINTER :: Eigensolver => NULL()
   TYPE(Mesh_t), POINTER :: Mesh
   TYPE(Variable_t), POINTER :: EF, EiVar, EdgeResVar, EdgeSolVar
+  REAL(KIND=dp) :: Norm(3)
   REAL(KIND=dp) :: mu0inv, eps0, rob0, omega
-  CHARACTER(LEN=MAX_NAME_LEN) :: sname
   COMPLEX(KIND=dp), PARAMETER :: im = (0._dp,1._dp)
   COMPLEX(KIND=dp) :: PrecDampCoeff
   TYPE(Matrix_t), POINTER, SAVE :: Proj => NULL()
+  CHARACTER(LEN=MAX_NAME_LEN) :: sname
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzNodal'
 !------------------------------------------------------------------------------
   CALL Info(Caller,'',Level=8)
@@ -226,6 +252,15 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   IF(.NOT. ASSOCIATED(EF) ) THEN
     CALL Fatal(Caller,'Variable for Electric field not found!')
   END IF  
+
+  EigenfunctionSource = ListGetLogicalAnyBC(Model, 'Eigenfunction BC')
+  IF (EigenfunctionSource) THEN
+    soln = ListGetInteger(Params, 'Eigensolver Index', Found) 
+    IF (soln == 0) THEN
+      CALL Fatal(Caller, 'We should know > Eigensolver Index <')
+    END IF
+    Eigensolver => Model % Solvers(soln)
+  END IF
   
   IF( ListGetLogical( Params,'Follow P Curvature', Found )  ) THEN
     CALL FollowCurvedBoundary( Model, Mesh, .TRUE. ) 
@@ -587,13 +622,14 @@ CONTAINS
 !    COMPLEX(KIND=dp) :: STIFF(nd,nd,3), FORCE(nd,3)
     COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:,:), FORCE(:,:)
     COMPLEX(KIND=dp) :: muInvAtIp, TemGrad(3), L(3), B 
-    LOGICAL :: Stat,Found,RobinBC,NT
-    INTEGER :: i,j,k,m,p,q,t,allocstat
+    LOGICAL :: Stat,Found,RobinBC,NT,EigenBC
+    INTEGER :: i,j,k,m,p,q,t,allocstat,EigenInd
     TYPE(GaussIntegrationPoints_t) :: IP
     TYPE(ValueList_t), POINTER :: BC       
     TYPE(Nodes_t), SAVE :: Nodes
     TYPE(Element_t), POINTER :: Parent
     TYPE(ValueHandle_t), SAVE :: ElRobin_h, MagLoad_h, Absorb_h, TemRe_h, TemIm_h, MuCoeff_h
+    TYPE(ValueHandle_t), SAVE :: EigenvectorSource, EigenvectorInd
     
     BC => GetBC(Element)
     IF (.NOT.ASSOCIATED(BC) ) RETURN
@@ -604,7 +640,9 @@ CONTAINS
       CALL ListInitElementKeyword( Absorb_h,'Boundary Condition','Absorbing BC')
       CALL ListInitElementKeyword( TemRe_h,'Boundary Condition','TEM Potential')
       CALL ListInitElementKeyword( TemIm_h,'Boundary Condition','TEM Potential Im')
-      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)      
+      CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)
+      CALL ListInitElementKeyword( EigenvectorSource,'Boundary Condition','Eigenfunction BC')
+      CALL ListInitElementKeyword( EigenvectorInd,'Boundary Condition','Eigenfunction Index')
       InitHandles = .FALSE.
     END IF
     
@@ -630,6 +668,14 @@ CONTAINS
     IF(NT .AND. .NOT. Monolithic) THEN
       CALL Fatal(Caller,'Normal-tangential conditions require monolithic solver!')
     END IF
+
+    ! Check whether BC should be created in terms of pre-computed eigenfunction:
+    EigenBC = ListGetElementLogical(EigenvectorSource, Element, Found)
+    IF (EigenBC) THEN
+      EigenInd = ListGetElementInteger(EigenvectorInd, Element, Found)
+      IF (EigenInd < 1) CALL Fatal(Caller, 'Eigenfunction Index must be positive')
+    END IF
+
     
     ! Numerical integration:
     !-----------------------
@@ -663,11 +709,16 @@ CONTAINS
           FORCE(1:nd,i) = FORCE(1:nd,i) - muinvAtIp * L(i) * Basis(1:nd) * Weight
         END DO
       END IF
-        
-      IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
-        B = CMPLX(0.0_dp, rob0 ) 
+
+      IF (EigenBC) THEN
+        B = CMPLX(0.0_dp, 1.0_dp, kind=dp) * SQRT(-Eigensolver % Variable % Eigenvalues(EigenInd))
+        Found = .TRUE.
       ELSE
-        B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
+        IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
+          B = CMPLX(0.0_dp, rob0 ) 
+        ELSE
+          B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
+        END IF
       END IF
 
       IF( Found ) THEN
