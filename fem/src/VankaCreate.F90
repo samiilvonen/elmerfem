@@ -1188,22 +1188,23 @@
     REAL(KIND=dp) :: rnorm
     LOGICAL :: Found, ScaleRHS
     CHARACTER(MAX_NAME_LEN) :: str   
-    INTEGER :: n
+    INTEGER :: n, DOFs
 !-------------------------------------------------------------------------------
 
     Solver => CurrentModel % Solver
     Params => Solver % Values
     Mesh => Solver % Mesh
     Amat => Solver % Matrix
-
+    n = SIZE(Solver % Variable % Values)
+    DOFs = Solver % Variable % dofs
+    
     str = ListGetString( Params,'Preconditioning Residual', UnfoundFatal=.TRUE.)
     pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )
 
-    n = SIZE(pVar % Values)   
-    IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
+    IF(pVar % Dofs /= dofs ) THEN
       CALL Fatal('SlavePrecComplex','Residual should have the same count of DOFs as primary variable!')
     END IF
-    IF(n /= SIZE(Solver % Variable % Values) ) THEN
+    IF(n /= SIZE(pVar % Values) ) THEN
       CALL Fatal('SlavePrecComplex','Residual should have same size as primary variable!')
     END IF
     res => pVar % Values
@@ -1211,6 +1212,18 @@
     res(1:n:2) = REAL(v(1:n/2))
     res(2:n:2) = AIMAG(v(1:n/2))
 
+    str = ListGetString( Params,'Preconditioning Update', UnfoundFatal=.TRUE.)
+    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )    
+
+    IF(pVar % Dofs /= dofs ) THEN
+      CALL Fatal('SlavePrecComplex','Update should have the same count of DOFs as primary variable!')
+    END IF
+    IF(n /= SIZE(pVar % Values) ) THEN
+      CALL Fatal('SlavePrecComplex','Update should have same size as primary variable!')
+    END IF
+    dx => pVar % Values
+
+    
     ! Check whether the residual corresponds to a scaled linear system
     ScaleRHS = ListGetLogical(Params, 'Linear System Scaling', Found, DefValue = .TRUE.)
     IF (ScaleRHS) THEN
@@ -1221,20 +1234,7 @@
     END IF
     
     CALL DefaultSlaveSolvers( Solver, 'Prec Solvers' )
-    
-    str = ListGetString( Params,'Preconditioning Update', UnfoundFatal=.TRUE.)
-    pVar => VariableGet( Mesh % Variables, str, ThisOnly = .TRUE., UnfoundFatal=.TRUE. )    
-
-    IF(pVar % Dofs /= Solver % Variable % dofs ) THEN
-      CALL Fatal('SlavePrecComplex','Update should have the same count of DOFs as primary variable!')
-    END IF
-    n = SIZE(pVar % Values)
-    IF(n /= SIZE(Solver % Variable % Values) ) THEN
-      CALL Fatal('SlavePrecComplex','Update should have same size as primary variable!')
-    END IF
-
-    dx => pVar % Values
-
+ 
     IF (ScaleRHS) THEN
       !
       ! Transform the search direction so that it corresponds to the scaled linear system
@@ -1251,7 +1251,7 @@
       ! is returned via r but its initial value does not change the result 
       r(:) = 0.0_dp
       RNorm = MGSmooth( Solver, Amat, Mesh, dx, res, r, &
-          1, pVar % dofs, PreSmooth = .FALSE.)
+          1, dofs, PreSmooth = .FALSE.)
 
       DEALLOCATE(r)
     END IF
@@ -1282,7 +1282,7 @@
         res(2:n:2) = AIMAG(v(1:n/2))
         r(:) = 0.0_dp
         RNorm = MGSmooth(Solver, Amat, Mesh, dx, res, r, &
-            1, pVar % dofs, PreSmooth = .FALSE.)
+            1, dofs, PreSmooth = .FALSE.)
       END IF
       
 !      CALL ListAddLogical(Params, 'Gradient Matrix', .FALSE.)
