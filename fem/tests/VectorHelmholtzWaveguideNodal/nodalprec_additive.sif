@@ -2,8 +2,7 @@
 ! A case to test a nodal solver as a preconditioner for the corresponding
 ! wave equation approximated in H(curl)
 !
-! Issues for the current implementation:
-!   - Monolithic Solver = Logical True needed
+
 
 Check Keywords "Warn"
 
@@ -64,8 +63,8 @@ Solver 1
 ! Needed for auxiliary space preconditioning
   Exported Variable 1 = -dofs 2 e res
   Exported Variable 2 = -dofs 2 e update
-  Prec Solvers(1) = Integer 2
-  Additive Prec Solvers(1) = Integer 3	
+  Prec Solvers(1) = Integer 3
+  Additive Prec Solvers(1) = Integer 2	
   Preconditioning Residual = String "e res"
   Preconditioning Update = String "e update"
 
@@ -73,7 +72,7 @@ Solver 1
   MG Post Smoothing Iterations = 7
   MG Smoother Relaxation Factor = Real 1.0
 
-  Additive Preconditioning = Logical False
+  Additive Preconditioning = Logical True
 End
 
 Solver 2
@@ -87,6 +86,11 @@ Solver 2
   Monolithic Solver = Logical True
   Edge Residual Name = String "e res"
   Edge Update Name = String "e update"
+
+  curl-curl Form = Logical True
+  Linear System Preconditioning Damp Coefficient im = -1.0
+
+  Use Projection Matrix = Logical True
 
   Linear System Symmetric = False
   Linear System Scaling = True
@@ -175,8 +179,8 @@ Boundary Condition 1
   Magnetic Boundary Load Im 2 = Variable Coordinate 1
     Real MATC "2*beta0*sin(kc*tx)"
 
-  ps re = Real 0.0
-  ps im = Real 0.0
+  Bscalar 1 = Real 0.0
+  Bscalar 2 = Real -33369383.999357168
 End
 
 Boundary Condition 2
@@ -184,8 +188,8 @@ Boundary Condition 2
   Target Boundaries(1) = 6
   Absorbing BC = Logical True
 
-  ps re = Real 0.0
-  ps im = Real 0.0
+  Bscalar 1 = Real 0.0
+  Bscalar 2 = Real -41695511.898178279
 End
 
 Boundary Condition 3
@@ -207,10 +211,8 @@ Boundary Condition 4
   E re {e} = Real 0
   E im {e} = Real 0
 
-  PEX re = Real 0
   PEY re = Real 0
   PEZ re = Real 0
-  PEX im = Real 0
   PEY im = Real 0
   PEZ im = Real 0
 
