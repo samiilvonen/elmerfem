@@ -51,12 +51,14 @@ Material 1
   Name = "higher_eps"
   Relative Reluctivity = 1.0
   Relative Permittivity = $ epsr
+  AMatrix = Real $ -epsr * wref^2
 End 
 
 Material 2
   Name = "Vacuum"
   Relative Reluctivity = 1.0
   Relative Permittivity = 1.0
+  AMatrix = Real $ -wref^2
 End
 
 Equation 1
@@ -64,7 +66,7 @@ Equation 1
 End
 
 Equation 2
-  Active Solvers(3) = 3 4 7 
+  Active Solvers(4) = 3 4 7 8
 End
 
 Solver 1
@@ -153,9 +155,11 @@ Solver 3
 ! Needed for auxiliary space preconditioning
   Exported Variable 1 = -dofs 2 e res
   Exported Variable 2 = -dofs 2 e update
-  Prec Solvers(1) = Integer 7
+  Prec Solvers(1) = Integer 8
+  Additive Prec Solvers(1) = Integer 7	
   Preconditioning Residual = String "e res"
   Preconditioning Update = String "e update"
+  Additive Preconditioning = Logical True
 
   MG Smoother = csgs
   MG Post Smoothing Iterations = 7
@@ -251,6 +255,38 @@ Solver 7
   Skip Compute Nonlinear Change = True
 End
 
+Solver 8
+! used as slave solver only  
+  exec solver = never
+
+  Equation = "Complex Poisson"
+  Procedure = "DCRComplexSolve" "DCRComplexSolver"
+
+  Variable = "Prec Scalar[ps re:1 ps im:1]"
+!  Variable DOFs = 2
+
+  Preconditioning Solver = Logical True
+  Edge Residual Name = String "e res"
+  Edge Update Name = String "e update"
+
+  Linear System Symmetric = False
+  Linear System Scaling = True
+  Linear System Solver = "Iterative"
+  Linear System Iterative Method = String "bicgstab2"
+  Linear System Complex = True
+  BiCGstabl polynomial degree = Integer 4  
+  Linear System Preconditioning = String "ILU1"
+  Linear System Max Iterations = Integer 1000
+  Linear System Convergence Tolerance = 1.0e-7
+  Linear system abort not converged = false
+  Linear System Residual Output = 1
+
+  Nonlinear System Max Iterations = 1
+
+  Skip Compute Nonlinear Change = True
+End
+
+
 Boundary Condition 1
   Target Boundaries(1) = 1
   EF re {e} = Real 0.0
@@ -260,6 +296,9 @@ Boundary Condition 1
   PEZ re = Real 0
   PEX im = Real 0
   PEZ im = Real 0
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 2
@@ -271,6 +310,10 @@ Boundary Condition 2
   PEZ re = Real 0
   PEX im = Real 0
   PEZ im = Real 0
+
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 3
@@ -282,6 +325,9 @@ Boundary Condition 3
   PEZ re = Real 0
   PEY im = Real 0
   PEZ im = Real 0
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 4
@@ -293,6 +339,9 @@ Boundary Condition 4
   PEZ re = Real 0
   PEX im = Real 0
   PEZ im = Real 0
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 5
@@ -304,6 +353,9 @@ Boundary Condition 5
   PEZ re = Real 0
   PEX im = Real 0
   PEZ im = Real 0
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 6
@@ -315,6 +367,9 @@ Boundary Condition 6
   PEZ re = Real 0
   PEY im = Real 0
   PEZ im = Real 0
+
+  ps re = Real 0.0
+  ps im = Real 0.0
 End
 
 Boundary Condition 7
@@ -323,6 +378,8 @@ Boundary Condition 7
   Eigenfunction BC = Logical True
   Eigenfunction Index = Integer 7
   Incident Wave = Logical True
+  Bscalar 1 = Real 0.0  
+  Bscalar 2 = Real -2.9152713305134146
 End
 
 Boundary Condition 8
@@ -331,6 +388,8 @@ Boundary Condition 8
   Eigenfunction BC = Logical True
   Eigenfunction Index = Integer 7
   Incident Wave = Logical True
+  Bscalar 1 = Real 0.0  
+  Bscalar 2 = Real -2.9152713305134146
 End
 
 Boundary Condition 9
@@ -385,12 +444,16 @@ Boundary Condition 15
   Target Boundaries(1) = 9
   Eigenfunction BC = Logical True
   Eigenfunction Index = Integer 7
+  Bscalar 1 = Real 0.0  
+  Bscalar 2 = Real -2.9152713305134146
 End
 
 Boundary Condition 16
   Target Boundaries(1) = 10
   Eigenfunction BC = Logical True
   Eigenfunction Index = Integer 7
+  Bscalar 1 = Real 0.0  
+  Bscalar 2 = Real -2.9152713305134146
 End
 
 Solver 3 :: Reference Norm = Real 0.31546722E-01
