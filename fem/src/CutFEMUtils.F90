@@ -2298,7 +2298,7 @@ CONTAINS
     !------------------------------------------------------------------------------
     SUBROUTINE PopulatePolyline()
       !------------------------------------------------------------------------------      
-      REAL(KIND=dp) :: x0,y0,x1,y1,ss
+      REAL(KIND=dp) :: x0,y0,x1,y1,ss,TotLineLen
       INTEGER :: i,j,k,n,m,i0,i1,nCol,dofs,k2
       TYPE(Variable_t), POINTER :: Var1D
       INTEGER :: iVar, MyPe, PEs, Phase
@@ -2309,6 +2309,8 @@ CONTAINS
       nVar = 0
       iAvoid = 0
       iSolver = 0
+      TotLineLen = 0.0_dp
+      
       DO k = 1,100    
         str = ListGetString( Solver % Values,'isoline variable '//I2S(k), Found )
         IF(.NOT. Found ) EXIT            
@@ -2362,6 +2364,9 @@ CONTAINS
           
           m = m+1
           IF(Phase==0) CYCLE
+
+          TotLineLen = TotLineLen + SQRT(ss)
+
           
           ! Coordinates for the polyline. 
           PolylineData(MyPe) % Vals(m,1) = x0
@@ -2453,12 +2458,20 @@ CONTAINS
           END DO
 
           CALL MPI_BARRIER( comm, ierr )          
-        END BLOCK
 
-        k = SUM( PolylineData(1:PEs) % nLines ) 
-        CALL Info('LevelSetUpdate','Number of line segments in parallel system: '//I2S(k),Level=7)
+          k = SUM( PolylineData(1:PEs) % nLines ) 
+          CALL Info('LevelSetUpdate','Number of line segments in parallel system: '//I2S(k),Level=7)
+          
+          CALL MPI_ALLREDUCE(MPI_IN_PLACE, TotLineLen, PEs, MPI_DOUBLE_PRECISION, MPI_SUM, comm, ierr)                
+        END BLOCK
       END IF
 
+      WRITE(Message,'(A,ES12.3)') 'Cutfem isoline length:',TotLineLen
+      CALL Info('LevelSetUpdate',Message,Level=6)
+
+      CALL ListAddConstReal(CurrentModel % Simulation,'res: cutfem isoline length',TotLineLen )
+      
+      
       IF(InfoActive(25)) THEN
         CALL Info('LevelSetUpdate','Polyline interval for Isoline variables')
 
