@@ -56,7 +56,8 @@
   USE DefUtils
   USE SSAMaterialModels
   USE ComputeFluxUtils
-
+  USE CutFEMUtils
+  
   IMPLICIT NONE
   !------------------------------------------------------------------------------
   TYPE(Solver_t) :: Solver
@@ -71,7 +72,7 @@
   TYPE(Element_t),POINTER :: CurrentElement, Element, ParentElement, BoundaryElement
   TYPE(Matrix_t),POINTER  :: StiffMatrix
   TYPE(ValueList_t), POINTER :: SolverParams, BodyForce, Material, BC
-  TYPE(Variable_t), POINTER :: PointerToVariable, ZsSol, ZbSol, VeloSol,strbasemag,Ceff
+  TYPE(Variable_t), POINTER :: ZsSol, ZbSol, VeloSol,strbasemag,Ceff
 
   LOGICAL :: AllocationsDone = .FALSE., Found, GotIt, CalvingFront, UnFoundFatal=.TRUE.
   LOGICAL :: stat
@@ -94,24 +95,26 @@
        NodalZs(:), NodalZb(:), NodalU(:), NodalV(:),Basis(:)
 
   REAL(KIND=dp) :: DetJ,UnLimit,un,un_max,FillValue
-  CHARACTER(LEN=MAX_NAME_LEN) :: SolverName, ZsName, ZbName
+  CHARACTER(LEN=MAX_NAME_LEN) :: ZsName, ZbName
   REAL(KIND=dp) :: at, at0
   LOGICAL :: SEP ! Sub-element parametrization for Grounding line
   INTEGER :: GLnIP ! number of Integ. Points for GL Sub-element parametrization
+  CHARACTER(*), PARAMETER :: SolverName = 'SSASolver-SSABasalSolver'
 
   SAVE rhow
-  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM, SolverName, ElementNodes
+  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM, ElementNodes
   SAVE NodalGravity, NodalViscosity, NodalDensity, &
-       NodalZs, NodalZb,   &
-       NodalU, NodalV, &
-       Basis
+       NodalZs, NodalZb, NodalU, NodalV, Basis
 
   !------------------------------------------------------------------------------
-  PointerToVariable => Solver % Variable
-  Permutation  => PointerToVariable % Perm
-  VariableValues => PointerToVariable % Values
-  STDOFs = PointerToVariable % DOFs 
-  WRITE(SolverName, '(A)') 'SSASolver-SSABasalSolver'
+
+
+  ! We need this early on since Solver % Variable structures will be affected by CutFEM stuff
+  ! that is called within this slot. 
+  CALL DefaultStart()
+
+  VeloSol => Solver % Variable 
+  STDOFs = VeloSol % DOfs
 
   !------------------------------------------------------------------------------
   !    Get variables needed for solution
@@ -222,8 +225,6 @@
   if (.NOT.Gotit) NewtonIter = NonlinearIter + 1
 
   Newton=.FALSE.
-
-  CALL DefaultStart()
   
   !------------------------------------------------------------------------------
   DO iter=1,NonlinearIter
@@ -231,7 +232,7 @@
     at  = CPUTime()
     at0 = RealTime()
 
-    CALL Info( SolverName, ' ', Level=4 )
+    CALL Info( SolverName, ' ', Level=6 )
     CALL Info( SolverName, '----------------------------------------------',Level=4 )
     IF( Newton ) THEN
       WRITE( Message,'(A,I0)') 'SSA BASAL VELOCITY NON-LINEAR NEWTON ITERATION: ', iter
@@ -239,8 +240,8 @@
       WRITE( Message,'(A,I0)') 'SSA BASAL VELOCITY NON-LINEAR PICARD ITERATION: ', iter
     END IF
     CALL Info( SolverName, Message, Level=4 )
-    CALL Info( SolverName, '----------------------------------------------',Level=4 )
-    CALL Info( SolverName, ' ', Level=4 )
+    CALL Info( SolverName, '----------------------------------------------',Level=6 )
+    CALL Info( SolverName, ' ', Level=6 )
 
 
     !Initialize the system and do the assembly:
@@ -265,11 +266,7 @@
         ElementNodes % y(1:n) = Solver % Mesh % Nodes % y(NodeIndexes)
         ElementNodes % z(1:n) = 0.0_dp
       ELSE
-        WRITE(Message,'(a,i1,a)')&
-             'It is not possible to compute SSA problems with DOFs=',&
-             STDOFs, ' . Aborting'
-        CALL Fatal( SolverName, Message)
-        STOP
+        CALL Fatal( SolverName,'It is not possible to compute SSA problems WITH '//I2S(STDOFS)//' dofs!')
       END IF
 
       ! Read the gravity in the Body Force Section 
@@ -300,14 +297,14 @@
       NodalViscosity(1:n) = ListGetReal( Material, 'SSA Mean Viscosity',n, NodeIndexes,Found,&
            UnFoundFatal=UnFoundFatal)
 
-      ! Get the Nodal value of Zb and Zs
-      NodalZb(1:n) = Zb(ZbPerm(NodeIndexes(1:n)))
-      NodalZs(1:n) = Zs(ZsPerm(NodeIndexes(1:n)))
-
+      ! Get the Nodal value of Zb and Zs. For CutFEM we need something special tricks. 
+      CALL GetLocalSolution( NodalZb,UElement=Element,UVariable=ZbSol)
+      CALL GetLocalSolution( NodalZs,UElement=Element,UVariable=ZsSol)
+      
       ! Previous Velocity 
-      NodalU(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+1)
+      NodalU(1:n) = VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(1:n))-1)+1)
       NodalV = 0.0_dp
-      IF (STDOFs == 2) NodalV(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+2)
+      IF (STDOFs == 2) NodalV(1:n) = VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(1:n))-1)+2)
 
       CALL LocalMatrixUVSSA (  STIFF, FORCE, Element, n, ElementNodes, NodalGravity, &
            NodalDensity, NodalViscosity, NodalZb, NodalZs, NodalU, NodalV, &
@@ -323,7 +320,6 @@
     ! Neumann condition
     !
     DO t=1,GetNOFBoundaryElements()
-
 
       BoundaryElement => GetBoundaryElement(t)
       IF (STDOFS /= 1) then
@@ -363,8 +359,10 @@
       CalvingFront=.False. 
       CalvingFront = ListGetLogical( BC, 'Calving Front', GotIt )
       IF (CalvingFront) THEN
-        NodalZs(1:n) = Zs(ZsPerm(NodeIndexes(1:n)))
-        NodalZb(1:n) = Zb(ZbPerm(NodeIndexes(1:n)))
+
+        CALL GetLocalSolution( NodalZb,UElement=BoundaryElement,UVariable=ZbSol)
+        CALL GetLocalSolution( NodalZs,UElement=BoundaryElement,UVariable=ZsSol)
+        
         ! Need to access Parent Element to get Material properties
         other_body_id = BoundaryElement % BoundaryInfo % outbody
         IF (other_body_id < 1) THEN ! only one body in calculation
@@ -375,17 +373,31 @@
           IF (ParentElement % BodyId == other_body_id) ParentElement =>  BoundaryElement % BoundaryInfo % Left
         END IF
 
-        ! Read Density in the Material Section
-        Material => GetMaterial(ParentElement)
-
+        IF(ASSOCIATED(ParentElement)) THEN
+          ! Read Density in the Material Section
+          Material => GetMaterial(ParentElement)
+          ! Read the gravity in the Body Force Section 
+          BodyForce => GetBodyForce(ParentElement)
+        ELSE
+          ! This will happen in CutFEM!
+          IF( ASSOCIATED( Solver % CutInterp ) ) THEN
+            i = LIstGetInteger( SolverParams,'CutFEM inside body',Found )
+            IF(.NOT. Found) i=1
+            j = ListGetInteger( CurrentModel % Bodies(i) % Values,'Material')
+            Material => CurrentModel % Materials(j) % Values
+            j = ListGetInteger( CurrentModel % Bodies(i) % Values,'Body Force')
+            BodyForce => CurrentModel % BodyForces(j) % Values
+          ELSE
+            CALL Fatal( SolverName,'ParentElement not associated!')
+          END IF
+        END IF
+                  
         NodalDensity(1:n) = ListGetReal( Material, 'SSA Mean Density',n, NodeIndexes,Found,&
              UnFoundFatal=UnFoundFatal)
 
         MinH = ListGetConstReal( Material, 'SSA Critical Thickness',Found)
         If (.NOT.Found) MinH=EPSILON(MinH)
 
-        ! Read the gravity in the Body Force Section 
-        BodyForce => GetBodyForce(ParentElement)
         NodalGravity = 0.0_dp
         IF ( ASSOCIATED( BodyForce ) ) THEN
           IF (STDOFs==1) THEN 
@@ -503,12 +515,12 @@
            UnFoundFatal=UnFoundFatal)
 
       ! Get the Nodal value of Zb and Zs
-      NodalZb(1:n) = Zb(ZbPerm(NodeIndexes(1:n)))
-      NodalZs(1:n) = Zs(ZsPerm(NodeIndexes(1:n)))
-
-      NodalU(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+1)
+      CALL GetLocalSolution( NodalZb,UElement=Element,UVariable=ZbSol)
+      CALL GetLocalSolution( NodalZs,UElement=Element,UVariable=ZsSol)
+      
+      NodalU(1:n) = VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(1:n))-1)+1)
       NodalV = 0.0_dp
-      IF (STDOFs == 2) NodalV(1:n) = VariableValues(STDOFs*(Permutation(NodeIndexes(1:n))-1)+2)
+      IF (STDOFs == 2) NodalV(1:n) = VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(1:n))-1)+2)
 
       IF (ASSOCIATED(strbasemag)) THEN
         IF (strbasemag % Perm(Element % ElementIndex) > 0) &
@@ -522,7 +534,8 @@
                              Element % Type % NodeW(i),  detJ, Basis )
           un=0._dp
           Do j=1,STDOFs
-           un=un+VariableValues(STDOFs*(Permutation(NodeIndexes(i))-1)+j)*VariableValues(STDOFs*(Permutation(NodeIndexes(i))-1)+j)
+            un = un + VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(i))-1)+j) &
+                *VeloSol % Values(STDOFs*(VeloSol % Perm(NodeIndexes(i))-1)+j)
           End do
           un=sqrt(un)
 
@@ -836,7 +849,7 @@ CONTAINS
 
     ELSE   
 
-      CALL FATAL('SSASolver-SSABasalSolver','Do not work for STDOFs <> 1 or 2')
+      CALL FATAL(SolverName,'Do not work for STDOFs <> 1 or 2')
 
     END IF
     !------------------------------------------------------------------------------
@@ -902,15 +915,14 @@ SUBROUTINE GetMeanValueSolver( Model,Solver,dt,TransientSimulation )
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:), FORCE(:), &
        NodalVar(:) 
 
-  CHARACTER(LEN=MAX_NAME_LEN) :: SolverName
+  CHARACTER(*), PARAMETER :: SolverName = 'SSASolver-IntValue'
 
-  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM, SolverName
-  SAVE NodalVar 
+  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM, NodalVar
+  
   !------------------------------------------------------------------------------
   PointerToVariable => Solver % Variable
   Permutation  => PointerToVariable % Perm
   VariableValues => PointerToVariable % Values
-  WRITE(SolverName, '(A)') 'SSASolver-IntValue'
 
   IntViscoSol => VariableGet( Solver % Mesh % Variables, 'Mean Viscosity',UnFoundFatal=UnFoundFatal)
   IntVisco => IntViscoSol % Values
@@ -1205,10 +1217,11 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
   TYPE(Variable_t), POINTER :: FlowSol
   REAL(KIND=dp), POINTER :: FlowSolution(:)
 
-  CHARACTER(LEN=MAX_NAME_LEN) :: SolverName, FreeSurfGradName, MaskName, FSName
+  CHARACTER(LEN=MAX_NAME_LEN) :: FreeSurfGradName, MaskName, FSName
+  CHARACTER(*), PARAMETER :: SolverName = 'SSASolver'
 
 
-  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM, SolverName
+  SAVE STIFF, LOAD, FORCE, AllocationsDone, DIM
   SAVE NodalGravity, NodalDensity, &
        NodalDepth, NodalSurfGrad1, NodalSurfGrad2, &
        NodalU, NodalV
@@ -1216,7 +1229,6 @@ SUBROUTINE SSASolver( Model,Solver,dt,TransientSimulation )
   PointerToVariable => Solver % Variable
   Permutation  => PointerToVariable % Perm
   VariableValues => PointerToVariable % Values
-  WRITE(SolverName, '(A)') 'SSASolver'
   !------------------------------------------------------------------------------
   !    Get variables needed for solution
   !------------------------------------------------------------------------------
