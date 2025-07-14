@@ -13048,14 +13048,19 @@ BLOCK
     !------------------------------------------------------------------------------
     TYPE(Element_t), POINTER :: Element,tmp
     REAL(KIND=dp), ALLOCATABLE :: Passive(:)
-    INTEGER :: body_id, bf_id, nlen, NbrNodes,PassNodes, LimitNodes
+    INTEGER :: body_id, bf_id, nlen, NbrNodes, PassNodes
     LOGICAL :: Found
     CHARACTER(:), ALLOCATABLE :: PassName
-    LOGICAL :: NoPassiveElements = .FALSE.
+    LOGICAL :: NoPassiveElements = .FALSE.    
     TYPE(Solver_t), POINTER :: pSolver, PrevSolver => NULL()
+    TYPE(ValueList_t), POINTER :: BodyForce => NULL()
+    INTEGER :: ActiveMin = -1, PassiveMin = -1, prev_body_id = -1
+    LOGICAL :: DoCheck = .FALSE.
     
-    SAVE Passive, NoPassiveElements, PrevSolver, PassName
-    !$OMP THREADPRIVATE(Passive, NoPassiveElements, PrevSolver, PassName)
+    SAVE Passive, NoPassiveElements, PrevSolver, PassName, prev_body_id, &
+        BodyForce, ActiveMin, PassiveMin, DoCheck
+    !$OMP THREADPRIVATE(Passive, NoPassiveElements, PrevSolver, PassName, prev_body_id, &
+    !$OMP               BodyForce, ActiveMin, PassiveMin, DoCheck ) 
     !------------------------------------------------------------------------------
     IsPassive = .FALSE.
     pSolver => CurrentModel % Solver
@@ -13065,6 +13070,9 @@ BLOCK
       nlen = CurrentModel % Solver % Variable % NameLen
       PassName = GetVarName(CurrentModel % Solver % Variable) // ' Passive'     
       NoPassiveElements = .NOT. ListCheckPresentAnyBodyForce(CurrentModel, PassName)
+
+      ! Nullify the BodyForce memories also if we have new solver.
+      prev_body_id = -1
     END IF
     
     IF( NoPassiveElements ) RETURN       
@@ -13086,11 +13094,25 @@ BLOCK
     body_id = Element % BodyId 
     IF ( body_id <= 0 )  RETURN   ! body_id == 0 for boundary elements
 
-    bf_id = ListGetInteger( CurrentModel % Bodies(body_id) % Values, &
-         'Body Force', Found, minv=1,maxv=CurrentModel % NumberOfBodyForces )
-    IF ( .NOT. Found )  RETURN
-
-    IF ( ListCheckPresent(CurrentModel % BodyForces(bf_id) % Values, PassName) ) THEN
+    ! Do some mundane list operations if we have different body than previously. 
+    IF(body_id /= prev_body_id ) THEN
+      prev_body_id = body_id
+      
+      bf_id = ListGetInteger( CurrentModel % Bodies(body_id) % Values, &
+          'Body Force', DoCheck , minv=1,maxv=CurrentModel % NumberOfBodyForces )
+      IF(DoCheck) THEN
+        BodyForce => CurrentModel % BodyForces(bf_id) % Values
+        DoCheck = ListCheckPresent( BodyForce, PassName)
+      END IF
+      IF(DoCheck) THEN
+        PassiveMin = ListGetInteger( pSolver % Values,'Passive Element Min Nodes',Found )      
+        IF(.NOT. Found) PassiveMin = ListGetInteger( BodyForce,'Passive Element Min Nodes',Found )              
+        ActiveMin = ListGetInteger( pSolver % Values,'Active Element Min Nodes',Found )               
+        IF(.NOT. Found) ActiveMin = ListGetInteger( BodyForce,'Active Element Min Nodes',Found )
+      END IF
+    END IF
+    
+    IF(DoCheck) THEN 
       NbrNodes = Element % TYPE % NumberOfNodes
       IF ( ALLOCATED(Passive) ) THEN
         IF ( SIZE(Passive) < NbrNodes ) THEN
@@ -13100,8 +13122,7 @@ BLOCK
       ELSE
         ALLOCATE( Passive(NbrNodes) )
       END IF
-      Passive(1:NbrNodes) = ListGetReal( CurrentModel % BodyForces(bf_id) % Values, &
-           PassName, NbrNodes, Element % NodeIndexes )
+      Passive(1:NbrNodes) = ListGetReal( BodyForce, PassName, NbrNodes, Element % NodeIndexes )
       PassNodes = COUNT(Passive(1:NbrNodes)>0)
 
       ! Go through the extremum cases first, and if the element is not either fully 
@@ -13113,18 +13134,12 @@ BLOCK
       ELSE IF( PassNodes == NbrNodes ) THEN
         IsPassive = .TRUE.
       ELSE
-        LimitNodes = ListGetInteger( CurrentModel % BodyForces(bf_id) % Values, &
-             'Passive Element Min Nodes',Found )
-        IF( Found ) THEN
-          IsPassive = ( PassNodes >= LimitNodes )
+        IF( PassiveMin > 0 ) THEN
+          IsPassive = ( PassNodes >= PassiveMin )
+        ELSE IF( ActiveMin > 0 ) THEN
+          IsPassive = ( PassNodes > NbrNodes - ActiveMin )
         ELSE
-          LimitNodes = ListGetInteger( CurrentModel % BodyForces(bf_id) % Values, &
-               'Active Element Min Nodes',Found )
-          IF( Found ) THEN
-            IsPassive = ( PassNodes > NbrNodes - LimitNodes )
-          ELSE
-            IsPassive = ( 2*PassNodes > NbrNodes )
-          END IF
+          IsPassive = ( 2*PassNodes > NbrNodes )
         END IF
       END IF
     END IF
