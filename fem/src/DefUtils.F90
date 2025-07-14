@@ -629,6 +629,42 @@ CONTAINS
        END IF
        IF(PRESENT(Found)) Found = Found0
        RETURN       
+     ELSE IF( ASSOCIATED(Solver % CutInterp) ) THEN
+       ! This is a special case associated to CutFEM. Only nodal fields can be mapped this way!
+
+       n = Element % TYPE % NumberOfNodes
+       Indexes => Element % NodeIndexes
+
+       BLOCK
+         INTEGER :: nn,j1,j2
+         REAL(KIND=dp) :: r
+         nn = SIZE(Variable % Perm)
+         
+         DO i=1,n
+           j = Indexes(i)
+           IF ( j>0 .AND. j<=nn ) THEN
+             ! This is an original node.
+             j = Variable % Perm(j)
+             IF ( j>0 ) THEN
+               Found0 = .TRUE.
+               x(i) = Values(j)
+             END IF
+           ELSE
+             ! This is an additional node of the fictious domain method. 
+             ! When we know where the isoline cuts the edge we can use linear iterpolation
+             ! on the edge to get the value at the intersetion on-the-fly.
+             r = Solver % CutInterp(j-nn)
+             j1 = Variable % Perm(Solver % Mesh % Edges(j-nn) % NodeIndexes(1))
+             j2 = Variable % Perm(Solver % Mesh % Edges(j-nn) % NodeIndexes(2))
+             IF(j1 > 0 .AND. j2 > 0) THEN
+               Found0 = .TRUE.
+               x(i) = r*Variable % Values(j1) + (1-r)*Variable % Values(j2)
+               !PRINT *,'interp:',j,j1,j2,r,x(i)
+             END IF
+           END IF
+         END DO
+       END BLOCK
+       RETURN
      END IF
 
      Indexes => GetIndexStore()
@@ -666,19 +702,19 @@ CONTAINS
          END DO
        END IF
      ELSE
-        DO i=1,n
-          j = Indexes(i)
-          IF ( j>0 .AND. j<=SIZE(Variable % Values) ) THEN
-            Found0 = .TRUE.
-            x(i) = Values(Indexes(i))
-          END IF
-        END DO
-      END IF
-
-      IF(PRESENT(Found)) Found = Found0 
-      
-  END SUBROUTINE GetScalarLocalSolution
-
+       DO i=1,n
+         j = Indexes(i)
+         IF ( j>0 .AND. j<=SIZE(Variable % Values) ) THEN
+           Found0 = .TRUE.
+           x(i) = Values(Indexes(i))
+         END IF
+       END DO
+     END IF
+     
+     IF(PRESENT(Found)) Found = Found0 
+     
+   END SUBROUTINE GetScalarLocalSolution
+   
 
 
 !> Returns a vector field in the nodes of the element
@@ -798,6 +834,8 @@ CONTAINS
        END IF
        IF(PRESENT(Found)) Found = Found0
        RETURN       
+     ELSE IF( ASSOCIATED(Solver % CutInterp) ) THEN
+       CALL Fatal('GetVectorLocalSolution','Not associated for CutFEM yet!')
      END IF
 
      
