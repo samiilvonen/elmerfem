@@ -324,7 +324,7 @@ SUBROUTINE PermafrostGroundwaterFlow( Model,Solver,dt,TransientSimulation )
           CALL INFO(SolverName,'Permafrost Rock Material read',Level=5)
           FirstTime = .FALSE.
         END IF
-        CALL SetPermafrostSolventMaterial( CurrentSolventMaterial )
+        CALL ReadPermafrostSolventMaterial( Material, CurrentSolventMaterial )
         IF (.NOT.ASSOCIATED(CurrentSolventMaterial)) &
              CALL FATAL(Solvername,'Solvent Material not associated')
         CALL ReadPermafrostSoluteMaterial( Material,Model % Constants,CurrentSoluteMaterial )
