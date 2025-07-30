@@ -118,8 +118,14 @@ CONTAINS
     ELSE
       SolventMaterialFileName = GetString( Params, 'Solvent Material File', Found )
       IF (Found) THEN
+        OPEN(unit = io, file = TRIM(SolventMaterialFileName), status = 'old',iostat = ok)
+        IF (ok /= 0) THEN
+          WRITE(Message,'(A,A)') 'Unable to open file ',TRIM(SolventMaterialFileName)
+          CALL FATAL(TRIM(SubroutineName),TRIM(message))
+        END IF
         READ (io, *, END=10, IOSTAT=OK, ERR=20) LocalSolventMaterial % SolventName
-        WRITE(Message,'(A,A)') 'Reading entry', TRIM(LocalSolventMaterial % SolventName)
+        WRITE(Message,'(A,A,A,A)') 'Reading from file ',TRIM(SolventMaterialFileName),&
+             '. Solvent name: ', TRIM(LocalSolventMaterial % SolventName)
         CALL INFO(Trim(SubroutineName),Trim(Message),Level=3)
         !------------------------------------------------------------------------------
         ! Read in information for solvent material
@@ -167,6 +173,7 @@ CONTAINS
         READ (io, *, END=10, IOSTAT=OK, ERR=20) LocalSolventMaterial % nui0, Comment  
         READ (io, *, END=10, IOSTAT=OK, ERR=20) LocalSolventMaterial % betai, Comment
         DataRead=.TRUE.
+        CALL INFO(Trim(SubroutineName),"All solvent components read in",Level=3)
 10      CLOSE(io)
         IF (.NOT.DataRead) THEN
           WRITE(Message,'(A,A,A)')  'Not all entries in "Solvent material File" ',TRIM(SolventMaterialFileName),' found.'
@@ -177,6 +184,7 @@ CONTAINS
         LocalSolventMaterial % vi0 = 1.0_dp/(LocalSolventMaterial % rhoi0)
         
       ELSE
+        LocalSolventMaterial % SolventName = "Water"
         !------------------------------------------------------------------------------
         ! set constants for water and ice 
         ! Mw,rhow0,rhoi0,hw0,hi0,vi0,cw0,ci0,acw(0:2),acwl,bcw(0:2),bcwl,aci(0:1),kw0th,ki0th, bi, bw
