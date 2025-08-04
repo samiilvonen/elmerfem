@@ -498,9 +498,13 @@ CONTAINS
     
     SAVE Nodes, ConstantsRead, ConstVal, DIM, GasConstant, N0, DeltaT, T0, p0, eps, Gravity
     !------------------------------------------------------------------------------
+    Material => GetMaterial(Element)    ! Get stuff from SIF Material section
     IF(.NOT.ConstantsRead) THEN
       ConstantsRead = &
-           ReadPermafrostConstants(Model, FunctionName, DIM, GasConstant, N0, DeltaT, T0, p0, eps, Gravity)      
+           ReadPermafrostConstants(Model, FunctionName, DIM, GasConstant, N0, DeltaT, T0, p0, eps, Gravity)
+      ConstVal = GetLogical(Material,'Constant Permafrost Properties',Found)
+      IF (ConstVal) &
+           CALL INFO(FunctionName,'"Constant Permafrost Properties" set to true',Level=9)
     END IF
     XiAtIPVar => VariableGet( Solver % Mesh % Variables, 'Xi')
     IF (.NOT.ASSOCIATED(XiAtIPVar)) THEN
@@ -549,8 +553,7 @@ CONTAINS
       LOAD(1:n) = GetReal( BodyForce,'Groundwater source', Found )   
     END IF
 
-    ! Get stuff from SIF Material section
-    Material => GetMaterial(Element)
+
 
     !meanfactor = GetConstReal(Material,"Conductivity Arithmetic Mean Weight",Found)
     !IF (.NOT.Found) THEN
@@ -569,9 +572,7 @@ CONTAINS
     
     NoSalinity = GetLogical(Material,'No Salinity',Found)
     
-    ConstVal = GetLogical(Material,'Constant Permafrost Properties',Found)
-    IF (ConstVal) &
-        CALL INFO(FunctionName,'"Constant Permafrost Properties" set to true',Level=9)
+ 
     DispersionCoefficient = GetConstReal(Material,"Dispersion Coefficient", ConstantDispersion)
     MolecularDiffusionCoefficient = GetConstReal(Material,"Molecular Diffusion Coefficient", ConstantDiffusion)
     CryogenicSuction = GetLogical(Material,"Compute Cryogenic Suction", Found)

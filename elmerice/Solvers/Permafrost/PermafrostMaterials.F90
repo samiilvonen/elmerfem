@@ -1155,12 +1155,12 @@ CONTAINS
   FUNCTION GetXiInterfrost(T0,Temperature,Swres, deltaT) RESULT(XiInterfrost)
     REAL(KIND=dp), INTENT(IN) ::T0,Temperature,Swres,deltaT
     REAL(KIND=dp) :: XiInterfrost
-    XiInterfrost = (1.0_dp - Swres) * EXP(-((MIN(Temperature,T0) -T0)/deltaT)**2.0_dp) + Swres
+    XiInterfrost = (1.0_dp - Swres)*EXP(-((MIN(Temperature,T0) - T0)/deltaT)**2.0_dp) + Swres
   END FUNCTION GetXiInterfrost
   !---------------------------------------------------------------------------------------------
   REAL (KIND=dp) FUNCTION XiInterfrostT(T0,Temperature,Swres, deltaT)
     REAL(KIND=dp), INTENT(IN) ::T0,Temperature,Swres,deltaT
-    XiInterfrostT = (1.0_dp - Swres) &
+    XiInterfrostT = -(1.0_dp - Swres) &
          * EXP(-((MIN(Temperature,T0) -T0)/deltaT)**2.0_dp) * 2.0_dp*(MIN(Temperature,T0) -T0)/(deltaT*deltaT)
   END FUNCTION XiInterfrostT
   !---------------------------------------------------------------------------------------------

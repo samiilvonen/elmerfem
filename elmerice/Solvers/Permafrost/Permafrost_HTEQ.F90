@@ -340,9 +340,13 @@ CONTAINS
     !------------------------------------------------------------------------------
     gradTAtIP = 0.0_dp
     gradPAtIP = 0.0_dp
+    Material => GetMaterial(Element)   ! Get stuff from SIF Material section
     IF(.NOT.ConstantsRead) THEN
       ConstantsRead = &
            ReadPermafrostConstants(Model, FunctionName, DIM, GasConstant, N0, DeltaT, T0, p0, eps, Gravity)
+      ConstVal = GetLogical(Material,'Constant Permafrost Properties',Found)
+      IF (ConstVal) &
+           CALL INFO(FunctionName,'"Constant Permafrost Properties" set to true',Level=3)
     END IF
 
     CALL GetElementNodes( Nodes )
@@ -370,8 +374,7 @@ CONTAINS
       END IF
     END IF
 
-    ! Get stuff from SIF Material section
-    Material => GetMaterial(Element)
+ 
 
     NoSalinity = GetLogical(Material,'No Salinity',Found)
     IF (ElementWiseRockMaterial) THEN
@@ -382,9 +385,7 @@ CONTAINS
 
     HydroGeo = GetLogical(Material,'Hydrogeological Model',Found)
 
-    ConstVal = GetLogical(Material,'Constant Permafrost Properties',Found)
-    IF (ConstVal) &
-        CALL INFO(FunctionName,'"Constant Permafrost Properties" set to true',Level=9)
+ 
 
     meanfactor = GetConstReal(Material,"Conductivity Arithmetic Mean Weight",Found)
     IF (.NOT.Found) THEN
