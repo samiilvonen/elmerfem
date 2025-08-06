@@ -2385,7 +2385,7 @@ CONTAINS
     Kgwh0(1:3,1:3) = GlobalRockMaterial % Kgwh0(1:3,1:3,RockMaterialID) ! hydro-conductivity
     ! transformation factor from hydr. conductivity to permeability hydr. conductivity tensor
     factor = muw0/(rhow0*gval)
-    relativepermeabilty = (Xi**qexp)
+    relativepermeability = (Xi**qexp)
     ! interfrost
     !relativepermeability = MAX(10.0_dp**(-50.0_dp*(1.0_dp - Xi)),1.0d-06)
     DO I=1,3
