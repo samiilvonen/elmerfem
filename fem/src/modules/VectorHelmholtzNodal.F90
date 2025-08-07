@@ -203,21 +203,25 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   Mesh => GetMesh()
   Params => GetSolverParams()
 
+  Monolithic = ListGetLogical(Params, 'Monolithic Solver', Found)
+  
   EiVar => Solver % Variable
   dofs = EiVar % Dofs / 2 
   IF( dofs == 1 ) THEN
-    Monolithic = .FALSE.
+    IF (Monolithic) Call Fatal(Caller, 'Variable DOFs incompatible with the segregated solution')
     CALL Info(Caller,'Treating the equation in segregated manner!')
+    compn = dim
   ELSE IF( dofs == dim ) THEN
-    Monolithic = .TRUE.
+    IF (.NOT. Monolithic) Call Fatal(Caller, 'Variable DOFs incompatible with the monolithic solution')
     CALL Info(Caller,'Treating the equation in monolithic manner!')
+    compn = 1
   ELSE
-    CALL Fatal(Caller,'Invalid number of dofs in solver variable: '//I2S(dofs))
+    CALL Fatal(Caller,'Invalid number of dofs for the solver variable: '//I2S(dofs))
   END IF
   Segregated = .NOT. Monolithic
 
   PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found ) 
-  CurlCurlForm = .FALSE.
+  CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
   
   IF( PrecUse ) THEN
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
@@ -248,8 +252,6 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       PrecUse = .FALSE.
     END IF
     IF (PrecUse) THEN
-      CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
-
       PrecDampCoeff = GetCReal(Params, 'Linear System Preconditioning Damp Coefficient', HasPrecDampCoeff)
       PrecDampCoeff = CMPLX(REAL(PrecDampCoeff), &
           GetCReal(Params, 'Linear System Preconditioning Damp Coefficient im', Found), kind=dp)
@@ -283,12 +285,6 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
 
   RelOrder = GetInteger( Params,'Relative Integration Order',Found ) 
   CALL InitStuff()
-
-  IF( Monolithic ) THEN
-    compn = 1
-  ELSE
-    compn = dim
-  END IF
 
   IF (PrecUse .AND. .NOT. ASSOCIATED(Proj)) THEN
     CALL Info(Caller,'Creating projection matrix to map a nodal solution into vector element space', Level=6)
