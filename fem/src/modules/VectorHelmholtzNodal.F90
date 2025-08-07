@@ -208,11 +208,11 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   EiVar => Solver % Variable
   dofs = EiVar % Dofs / 2 
   IF( dofs == 1 ) THEN
-    IF (Monolithic) Call Fatal(Caller, 'Variable DOFs incompatible with the segregated solution')
+    IF (Monolithic) CALL Fatal(Caller, 'Variable DOFs incompatible with the segregated solution')
     CALL Info(Caller,'Treating the equation in segregated manner!')
     compn = dim
   ELSE IF( dofs == dim ) THEN
-    IF (.NOT. Monolithic) Call Fatal(Caller, 'Variable DOFs incompatible with the monolithic solution')
+    IF (.NOT. Monolithic) CALL Fatal(Caller, 'Variable DOFs incompatible with the monolithic solution')
     CALL Info(Caller,'Treating the equation in monolithic manner!')
     compn = 1
   ELSE
@@ -224,6 +224,8 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
   
   IF( PrecUse ) THEN
+    IF (.NOT. Monolithic) CALL Fatal(Caller, 'The use as a preconditioner needs Monolithic Solver = True')
+    
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
 
     EdgeSolVar => NULL()
@@ -322,7 +324,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
 !              SIZE(EdgeResVar % Values), SIZE(Solver % Matrix % rhs)
         CALL CRS_TransposeMatrixVectorMultiply(Proj, EdgeResVar % Values, Solver % Matrix % rhs )           
       ELSE
-        CALL EdgeToNodeProject()
+        ! TO DO: Add the transformation of the residual for the component-wise wave equation 
       END IF
     END IF
 
@@ -771,120 +773,6 @@ CONTAINS
   END SUBROUTINE LocalMatrixBC
 !------------------------------------------------------------------------------
 
-
-!------------------------------------------------------------------------------
-! Project edge residual to nodal residual.
-! NOTE: Consider using other implementation instead
-!------------------------------------------------------------------------------
-  SUBROUTINE EdgeToNodeProject()
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    INTEGER :: n, nd, nb
-    TYPE(Element_t), POINTER :: Element, Edge
-    REAL(KIND=dp), ALLOCATABLE, SAVE :: Basis(:),dBasisdx(:,:), WBasis(:,:), RotWBasis(:,:)
-    COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:), FORCE(:)
-    REAL(KIND=dp) :: weight, DetJ, Coord(3), s1, s2
-    LOGICAL :: Stat,Found,NormLoop
-    INTEGER :: i,j,k,t,p,q,m,ipi,i1,i2,allocstat
-    TYPE(GaussIntegrationPoints_t) :: IP
-    TYPE(Nodes_t), SAVE :: Nodes
-    INTEGER :: n0, nedge
-    REAL(KIND=dp), ALLOCATABLE :: EdgeWeight(:), NodeWeight(:)
-    REAL(KIND=dp), SAVE :: EdgeVector(3)
-    COMPLEX(KIND=dp) :: c
- !------------------------------------------------------------------------------
-
-    ! Allocate storage if needed
-    IF (.NOT. ALLOCATED(Basis)) THEN
-      m = MAX(Mesh % MaxElementDofs,20)
-      ALLOCATE(Basis(m), dBasisdx(m,3), RotWBasis(m,3), Wbasis(m,3), &
-          STIFF(m,m), FORCE(m), STAT=allocstat)      
-      IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
-    END IF
-    STIFF = 0._dp
-    
-    Active = GetNOFActive(Solver)
-    NormLoop = .TRUE.
-
-    ALLOCATE(EdgeWeight(Mesh % NumberOfEdges))
-    EdgeWeight = 0.0_dp
-    n0 = Mesh % NumberOfNodes
-    
-1   CONTINUE
-    
-    DO t=1,Active
-      Element => GetActiveElement(t)
-      n  = GetElementNOFNodes(Element)
-      nd = GetElementNOFDOFs(Element)
-      nb = GetElementNOFBDOFs(Element)
-
-      IF( RelOrder /= 0 ) THEN
-        IP = GaussPoints( Element, RelOrder = RelOrder)
-      ELSE
-        IP = GaussPoints( Element )
-      END IF
-
-      CALL GetElementNodes( Nodes, UElement=Element )
-
-      ! Initialize
-      IF (.NOT. NormLoop) THEN
-        FORCE = 0._dp
-      END IF
-
-      DO ipi=1,IP % n
-        ! Basis function values & derivatives at the integration point:
-        !--------------------------------------------------------------
-
-        stat = ElementInfo( Element, Nodes, IP % U(ipi), IP % V(ipi), &
-            IP % W(ipi), detJ, Basis, dBasisdx, EdgeBasis = Wbasis, &
-            RotBasis = RotWBasis ) !, USolver = pSolver )
-
-        nedge = Element % TYPE % NumberOfEdges        
-        DO i=1,nedge
-          j = Element % EdgeIndexes(i)                    
-          
-          IF( NormLoop ) THEN
-            s2 = SQRT(SUM(WBasis(i,:)**2))
-            weight = IP % s(ipi) * s2
-            EdgeWeight(j) = EdgeWeight(j) + Weight 
-          ELSE
-            Edge => Mesh % Edges(j)
-            k = EdgeResVar % Perm(n0 + j)
-          
-            i1 = Edge % NodeIndexes(1)
-            i2 = Edge % NodeIndexes(2)
-          
-            ! Vector in the direction of the edge
-            EdgeVector(1) = Mesh % Nodes % x(i2) - Mesh % Nodes % x(i1)
-            EdgeVector(2) = Mesh % Nodes % y(i2) - Mesh % Nodes % y(i1)
-            EdgeVector(3) = Mesh % Nodes % z(i2) - Mesh % Nodes % z(i1)
-          
-            ! Integration length of the edge
-            s1 = SQRT(SUM(EdgeVector**2))
-            
-            weight = IP % s(ipi) / EdgeWeight(j)            
-            c = Wbasis(i,compi) * &
-                s1 * CMPLX(EdgeResVar % Values(2*k-1), EdgeResVar % Values(2*k))           
-            FORCE(1:nd) = FORCE(1:nd) + Basis(1:nd) * weight * c  
-          END IF
-        END DO
-      END DO
-
-      IF(.NOT. NormLoop ) THEN
-        CALL CondensateP( nd-nb, nb, STIFF, FORCE )    
-        CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
-      END IF
-    END DO
-    
-    IF( NormLoop ) THEN
-      NormLoop = .FALSE.
-      GOTO 1 
-    END IF
-       
-!------------------------------------------------------------------------------
-  END SUBROUTINE EdgeToNodeProject
-!------------------------------------------------------------------------------
-  
 !------------------------------------------------------------------------------
 END SUBROUTINE VectorHelmholtzNodal
 !------------------------------------------------------------------------------
