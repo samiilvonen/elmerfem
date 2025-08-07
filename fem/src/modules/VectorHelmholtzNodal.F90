@@ -23,9 +23,16 @@
 !
 !/******************************************************************************
 ! *
-! *  Module for computing the electric field from the component-wise wave
-! *  equation by using nodal finite finite elements. This only works when
-! *  the permeability is constant and the boundaries are Cartesian. 
+! *  Module for computing the electric field from the time-harmonic wave equation
+! *  by using nodal finite finite elements. Although the use of the nodal finite
+! *  elements is not generally recommended for this problem, this approximation
+! *  might be utilized as a preconditioner for a truthful discretization based on
+! *  curl-conforming finite elements. This solver can handle the equations 
+! *  either in the curl-curl form, which couples the solution
+! *  components, or in the component-wise manner, which requires that
+! *  the permeability is constant and the boundaries are Cartesian planes. 
+! *  More flexibility in regard to setting BCs is obtained by using the curl-curl
+! *  form.
 ! *
 ! *  Authors: Peter Råback + later edits by Mika Malinen
 ! *  Email:   elmeradm@csc.fi
@@ -55,17 +62,22 @@ SUBROUTINE VectorHelmholtzNodal_init( Model,Solver,dt,Transient )
 !------------------------------------------------------------------------------
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzNodal_init'
   TYPE(ValueList_t), POINTER :: Params
-  LOGICAL :: Found, PrecUse, Monolithic
+  LOGICAL :: Found, PrecUse, CurlCurlForm, Monolithic
   INTEGER :: soln, i, j
-  !INTEGER :: dim
   CHARACTER(LEN=MAX_NAME_LEN) :: sname
 !------------------------------------------------------------------------------
   
   Params => GetSolverParams()
   !dim = CoordinateSystemDimension()
 
-  PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found )  
+  PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found )
   Monolithic = ListGetLogical( Params,'Monolithic Solver',Found )
+  
+  CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
+  IF (CurlCurlForm .AND. .NOT. Monolithic) THEN
+    CALL ListAddLogical(Params, 'Monolithic Solver', .TRUE.)
+    Monolithic = .TRUE.
+  END IF
   
   IF( Monolithic ) THEN
     ! We use different naming convention if this is used as preconditioner.
@@ -278,7 +290,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
     compn = dim
   END IF
 
-  IF (.NOT. ASSOCIATED(Proj)) THEN
+  IF (PrecUse .AND. .NOT. ASSOCIATED(Proj)) THEN
     CALL Info(Caller,'Creating projection matrix to map a nodal solution into vector element space', Level=6)
     CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, EF, EdgeSolVar, Proj, cdim=3)
   END IF
