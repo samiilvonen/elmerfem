@@ -84,7 +84,6 @@ Solver 2
   Edge Residual Name = String "e res"
   Edge Update Name = String "e update"
 
-  Use projection Matrix = Logical True
   curl-curl Form = Logical True
   Linear System Preconditioning Damp Coefficient im = -1.0
 
