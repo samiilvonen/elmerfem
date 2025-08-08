@@ -23,9 +23,16 @@
 !
 !/******************************************************************************
 ! *
-! *  Module for computing the electric field from the component-wise wave
-! *  equation by using nodal finite finite elements. This only works when
-! *  the permeability is constant and the boundaries are Cartesian. 
+! *  Module for computing the electric field from the time-harmonic wave equation
+! *  by using nodal finite finite elements. Although the use of the nodal finite
+! *  elements is not generally recommended for this problem, this approximation
+! *  might be utilized as a preconditioner for a truthful discretization based on
+! *  curl-conforming finite elements. This solver can handle the equations 
+! *  either in the curl-curl form, which couples the solution
+! *  components, or in the component-wise manner, which requires that
+! *  the permeability is constant and the boundaries are Cartesian planes. 
+! *  More flexibility in regard to setting BCs is obtained by using the curl-curl
+! *  form.
 ! *
 ! *  Authors: Peter Råback + later edits by Mika Malinen
 ! *  Email:   elmeradm@csc.fi
@@ -55,17 +62,22 @@ SUBROUTINE VectorHelmholtzNodal_init( Model,Solver,dt,Transient )
 !------------------------------------------------------------------------------
   CHARACTER(*), PARAMETER :: Caller = 'VectorHelmholtzNodal_init'
   TYPE(ValueList_t), POINTER :: Params
-  LOGICAL :: Found, PrecUse, Monolithic
+  LOGICAL :: Found, PrecUse, CurlCurlForm, Monolithic
   INTEGER :: soln, i, j
-  !INTEGER :: dim
   CHARACTER(LEN=MAX_NAME_LEN) :: sname
 !------------------------------------------------------------------------------
   
   Params => GetSolverParams()
   !dim = CoordinateSystemDimension()
 
-  PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found )  
+  PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found )
   Monolithic = ListGetLogical( Params,'Monolithic Solver',Found )
+  
+  CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
+  IF (CurlCurlForm .AND. .NOT. Monolithic) THEN
+    CALL ListAddLogical(Params, 'Monolithic Solver', .TRUE.)
+    Monolithic = .TRUE.
+  END IF
   
   IF( Monolithic ) THEN
     ! We use different naming convention if this is used as preconditioner.
@@ -164,7 +176,7 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   INTEGER :: iter, maxiter, compi, compn, compj, dofs
   LOGICAL :: Found, VecAsm, InitHandles, &
       PrecUse, PiolaVersion, SecondOrder, SecondFamily, &
-      Monolithic, Segregated, UseProjMatrix, CurlCurlForm, HasPrecDampCoeff, &
+      Monolithic, Segregated, CurlCurlForm, HasPrecDampCoeff, &
       EigenfunctionSource
   TYPE(ValueList_t), POINTER :: Params, EdgeSolverParams
   TYPE(Solver_t), POINTER :: Eigensolver => NULL()
@@ -191,24 +203,29 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   Mesh => GetMesh()
   Params => GetSolverParams()
 
+  Monolithic = ListGetLogical(Params, 'Monolithic Solver', Found)
+  
   EiVar => Solver % Variable
   dofs = EiVar % Dofs / 2 
   IF( dofs == 1 ) THEN
-    Monolithic = .FALSE.
+    IF (Monolithic) CALL Fatal(Caller, 'Variable DOFs incompatible with the segregated solution')
     CALL Info(Caller,'Treating the equation in segregated manner!')
+    compn = dim
   ELSE IF( dofs == dim ) THEN
-    Monolithic = .TRUE.
+    IF (.NOT. Monolithic) CALL Fatal(Caller, 'Variable DOFs incompatible with the monolithic solution')
     CALL Info(Caller,'Treating the equation in monolithic manner!')
+    compn = 1
   ELSE
-    CALL Fatal(Caller,'Invalid number of dofs in solver variable: '//I2S(dofs))
+    CALL Fatal(Caller,'Invalid number of dofs for the solver variable: '//I2S(dofs))
   END IF
   Segregated = .NOT. Monolithic
 
   PrecUse = ListGetLogical( Params,'Preconditioning Solver',Found ) 
-  UseProjMatrix = .FALSE.
-  CurlCurlForm = .FALSE.
+  CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
   
   IF( PrecUse ) THEN
+    IF (.NOT. Monolithic) CALL Fatal(Caller, 'The use as a preconditioner needs Monolithic Solver = True')
+    
     EF => VariableGet( Mesh % Variables,'Prec ElField')        
 
     EdgeSolVar => NULL()
@@ -237,9 +254,6 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       PrecUse = .FALSE.
     END IF
     IF (PrecUse) THEN
-      UseProjMatrix = ListGetLogical( Params,'Use Projection Matrix',Found )
-      CurlCurlForm = ListGetLogical( Params,'curl-curl Form',Found )
-
       PrecDampCoeff = GetCReal(Params, 'Linear System Preconditioning Damp Coefficient', HasPrecDampCoeff)
       PrecDampCoeff = CMPLX(REAL(PrecDampCoeff), &
           GetCReal(Params, 'Linear System Preconditioning Damp Coefficient im', Found), kind=dp)
@@ -274,17 +288,9 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
   RelOrder = GetInteger( Params,'Relative Integration Order',Found ) 
   CALL InitStuff()
 
-  IF( Monolithic ) THEN
-    compn = 1
-  ELSE
-    compn = dim
-  END IF
-
-  IF( UseProjMatrix ) THEN
-    IF (.NOT. ASSOCIATED(Proj)) THEN
-      CALL Info(Caller,'Creating projection matrix to map a nodal solution into vector element space', Level=6)
-      CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, EF, EdgeSolVar, Proj, cdim=3)
-    END IF
+  IF (PrecUse .AND. .NOT. ASSOCIATED(Proj)) THEN
+    CALL Info(Caller,'Creating projection matrix to map a nodal solution into vector element space', Level=6)
+    CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, EF, EdgeSolVar, Proj, cdim=3)
   END IF
   
   DO compi=1,compn
@@ -313,17 +319,12 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
       ! we may solve the residual correction equation by using the nodal basis.
       !
       IF (Monolithic) THEN
-        IF( UseProjMatrix ) THEN
-          CALL Info(Caller,'Using Transposed Projection Matrix: H(curl) -> H1', Level=6)
+        CALL Info(Caller,'Using Transposed Projection Matrix: H(curl) -> H1', Level=6)
 !          PRINT *,'sizes:',MAXVAL(Proj % Cols),MINVAL(Proj % Cols),Proj % NumberOfRows, &
 !              SIZE(EdgeResVar % Values), SIZE(Solver % Matrix % rhs)
-          CALL CRS_TransposeMatrixVectorMultiply(Proj, EdgeResVar % Values, Solver % Matrix % rhs )           
-        ELSE
-          CALL NedelecToNodalResidual(Solver % Matrix % RHS, EdgeResVar, cdim=3, &
-              SecondFamily = SecondFamily, PiolaVersion = PiolaVersion)
-        END IF
+        CALL CRS_TransposeMatrixVectorMultiply(Proj, EdgeResVar % Values, Solver % Matrix % rhs )           
       ELSE
-        CALL EdgeToNodeProject()
+        ! TO DO: Add the transformation of the residual for the component-wise wave equation 
       END IF
     END IF
 
@@ -379,14 +380,8 @@ SUBROUTINE VectorHelmholtzNodal( Model,Solver,dt,Transient )
 
   IF (PrecUse) THEN
     CALL Info(Caller,'Projecting nodal solution to vector element space', Level=6)
-
-    IF( UseProjMatrix ) THEN
-      CALL Info(Caller,'Using Projection Matrix: H1 -> H(curl)',Level=6)
-      CALL CRS_MatrixVectorMultiply(Proj, EF % Values, EdgeSolVar % Values ) 
-    ELSE
-      CALL NodalToNedelecInterpolation(EF, EdgeSolVar, cdim=3, &
-          SecondFamily = SecondFamily )
-    END IF
+    CALL Info(Caller,'Using Projection Matrix: H1 -> H(curl)',Level=6)
+    CALL CRS_MatrixVectorMultiply(Proj, EF % Values, EdgeSolVar % Values ) 
   END IF
     
   !IF( Solver % Variable % NonlinConverged == 1 ) EXIT
@@ -778,403 +773,6 @@ CONTAINS
   END SUBROUTINE LocalMatrixBC
 !------------------------------------------------------------------------------
 
-
-!------------------------------------------------------------------------------
-!> Apply the Nedelec interpolation to a vector field represented in terms of
-!> the Lagrange (nodal) basis functions. The result of the interpolation is
-!> returned by substituting the values of the DOFs into the FE variable
-!> describing the vector element field. Alternatively, one may create
-!> the interpolation operator as a global matrix without performing
-!> the interpolation. The current implementation assumes that no DOFs are
-!> associated with the element interiors.
-!------------------------------------------------------------------------------
-  SUBROUTINE NodalToNedelecInterpolation(NodalVar, VectorElementVar, cdim, &
-      SecondFamily, Proj )
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    TYPE(Variable_t), POINTER, INTENT(IN) :: NodalVar
-    TYPE(Variable_t), POINTER, INTENT(INOUT) :: VectorElementVar
-    INTEGER, OPTIONAL :: cdim         !< The number of spatial coordinates 
-    LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
-    TYPE(Matrix_t), POINTER, OPTIONAL :: Proj  !< Used for the global representation
-!------------------------------------------------------------------------------
-    TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(Element_t), POINTER :: Edge, Face
-    LOGICAL :: SecondKindBasis
-    INTEGER, ALLOCATABLE, SAVE :: Ind(:)
-    INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, k0, &
-        vdofs, edgej, facej
-    REAL(KIND=dp) :: PiMat(2,6), FacePiMat(2,12), x(12), D
-!------------------------------------------------------------------------------
-    IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
-      CALL Fatal('NodalToNedelecInterpolation', 'Mesh edges not associated!')
-    END IF
-    
-    IF (PRESENT(cdim)) THEN
-      dim = cdim
-    ELSE
-      dim = 3
-    END IF
-    vdofs = VectorElementVar % DOFs
-    
-    IF (PRESENT(SecondFamily)) THEN
-      SecondKindBasis = SecondFamily
-    ELSE
-      SecondKindBasis = .FALSE.
-    END IF
-
-    IF (SecondKindBasis) THEN
-      EDOFs = 2
-    ELSE
-      EDOFs = 1  
-    END IF
-
-    IF (NodalVar % DOFs /= dim * vdofs) CALL Fatal('NodalToNedelecInterpolation', &
-        'Coordinate system dimension and DOF counts are not as expected')
-    
-    IF (.NOT. ALLOCATED(Ind)) THEN
-      ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
-    END IF
-    
-    ! Here we need separate loops over edges, faces and elements so that all DOFs are handled
-    ! 
-    DO edgej=1, Mesh % NumberOfEdges      
-      Edge => Mesh % Edges(edgej)
-
-      ! Create the matrix representation of the Nedelec interpolation operator 
-      CALL NodalToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondKindBasis)
-
-      ! Finally apply the interpolation operator to a nodal variable
-      ! which may consist of both real and imaginary components
-      !
-      nd = GetElementDOFs(Ind, Edge, VectorElementVar % Solver)
-
-      i1 = Edge % NodeIndexes(1)
-      i2 = Edge % NodeIndexes(2)
-      k1 = NodalVar % Perm(i1)
-      k2 = NodalVar % Perm(i2)
-
-      x(1:6) = 0.0_dp 
-      DO dofi=1, vdofs
-        IF( PRESENT(Proj) ) THEN
-          DO j=1,EDOFs
-            k = VectorElementVar % Perm(Ind(j))               
-            k0 = vdofs*(k-1)+dofi
-            DO i=1,dim
-              CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k1-1)+2*(i-1)+dofi, PiMat(j,i) )
-              CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k2-1)+2*(i-1)+dofi, PiMat(j,3+i) )
-            END DO
-          END DO
-        ELSE          
-          DO i=1,dim
-            x(i) = NodalVar % Values(6*(k1-1) + 2*(i-1) + dofi)
-            x(3+i) = NodalVar % Values(6*(k2-1) + 2*(i-1) + dofi)
-          END DO
-
-          DO j=1,EDOFs
-            D = SUM(PiMat(j,1:6) * x(1:6))
-            k = VectorElementVar % Perm(Ind(j)) 
-            VectorElementVar % Values(vdofs*(k-1)+dofi) = D     
-          END DO
-        END IF
-      END DO
-    END DO
-
-    IF (ASSOCIATED(Mesh % Faces)) THEN
-      DO facej=1, Mesh % NumberOfFaces      
-        Face => Mesh % Faces(facej)
-        IF (Face % BDOFs < 1) CYCLE
-        
-        nd = GetElementDOFs(Ind, Face, VectorElementVar % Solver)
-
-        ! Count the offset for picking the true face DOFs
-        !
-        i0 = 0
-        DO k=1,Face % Type % NumberOfEdges
-          Edge => Mesh % Edges(Face % EdgeIndexes(k))
-          EDOFs = Edge % BDOFs
-          IF (EDOFs < 1) CYCLE
-          i0 = i0 + EDOFs
-        END DO
-
-        CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
-
-        x(1:12) = 0.0_dp
-        DO dofi=1, vdofs
-          IF( PRESENT(Proj) ) THEN
-            DO j=1,Face % BDOFs
-              k2 = VectorElementVar % Perm(Ind(j+i0))               
-              k0 = vdofs*(k2-1)+dofi
-              DO i=1,Face % TYPE % NumberOfNodes
-                k1 = NodalVar % Perm(Face % NodeIndexes(i))
-                DO k=1,dim                                  
-                  CALL List_AddToMatrixElement(Proj % ListMatrix, k0, 6*(k1-1)+2*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
-                END DO
-              END DO
-            END DO
-          ELSE                     
-            DO i=1,Face % TYPE % NumberOfNodes
-              k1 = NodalVar % Perm(Face % NodeIndexes(i))
-              DO k=1,dim
-                x(3*(i-1)+k) = NodalVar % Values(6*(k1-1) + 2*(k-1) + dofi)
-              END DO
-            END DO
-
-            DO j=1,Face % BDOFs
-              D = SUM(FacePiMat(j,1:12) * x(1:12))
-              k2 = VectorElementVar % Perm(Ind(j+i0)) 
-              VectorElementVar % Values(vdofs*(k2-1)+dofi) = D     
-            END DO
-          END IF
-        END DO
-      END DO
-    END IF
-
-    ! Add loop over elements
-    
-!------------------------------------------------------------------------------
-  END SUBROUTINE NodalToNedelecInterpolation
-!------------------------------------------------------------------------------
-    
-!------------------------------------------------------------------------------
-  SUBROUTINE NedelecToNodalResidual(RHSVector, VectorElementRes, cdim, &
-      SecondFamily, PiolaVersion)
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    REAL(KIND=dp), INTENT(INOUT) :: RHSVector(:) 
-    TYPE(Variable_t), POINTER, INTENT(IN) :: VectorElementRes
-    INTEGER, OPTIONAL :: cdim         !< The number of spatial coordinates 
-    LOGICAL, OPTIONAL :: SecondFamily !< To select the element family
-    LOGICAL, OPTIONAL :: PiolaVersion
-!------------------------------------------------------------------------------
-    TYPE(Nodes_t), SAVE :: Nodes
-    TYPE(Element_t), POINTER :: Edge, Face
-    TYPE(GaussIntegrationPoints_t) :: IP
-    LOGICAL :: SecondKindBasis, stat
-    INTEGER, ALLOCATABLE, SAVE :: Ind(:)
-    INTEGER :: dim, istat, EDOFs, i, j, k, m, p, q, nd, dofi, ndofs, i0
-    REAL(KIND=dp) :: PiMat(2,6), FacePiMat(2,12), ri
-!------------------------------------------------------------------------------
-    IF (.NOT. ASSOCIATED(Mesh % Edges)) THEN
-      CALL Fatal('NedelecToNodalResidual', 'Mesh edges not associated!')
-    END IF
-
-    IF (PRESENT(cdim)) THEN
-      dim = cdim
-    ELSE
-      dim = 3
-    END IF
-    
-    IF (PRESENT(SecondFamily)) THEN
-      SecondKindBasis = SecondFamily
-    ELSE
-      SecondKindBasis = .FALSE.
-    END IF
-
-    IF (SecondKindBasis) THEN
-      EDOFs = 2
-    ELSE
-      EDOFs = 1  
-    END IF
-    
-    ndofs = 6   ! This is correct for the 3-D monolithic version only!
-    
-    IF (ndofs /= dim * VectorElementRes % DOFs) CALL Fatal('NedelecToNodalResidual', &
-        'Coordinate system dimension and DOF counts are not as expected')
-    
-    IF (.NOT. ALLOCATED(Ind)) THEN
-      ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
-    END IF
-    
-    ! Here we make separate loops over edges, faces and 
-    ! element interiors so that all DOFs are handled finally 
-    !
-    DO j=1, Mesh % NumberOfEdges      
-      Edge => Mesh % Edges(j)
-
-      ! Create the matrix representation of the Nedelec interpolation operator 
-      CALL NodalToNedelecPiMatrix(PiMat, Edge, Mesh, dim, SecondKindBasis)
-      
-      nd = GetElementDOFs(Ind, Edge, VectorElementRes % Solver)
-      
-      DO dofi=1, VectorElementRes % DOFs
-        DO k=1,dim
-          DO i=1,2
-            ri = 0.0_dp    
-            DO p=1,EDOFs
-              q = VectorElementRes % Perm(Ind(p))
-              ri = ri + PiMat(p,3*(i-1)+k) * &
-                  VectorElementRes % Values(VectorElementRes % DOFs*(q-1)+dofi)
-            END DO
-            m = Solver % Variable % Perm(Edge % NodeIndexes(i))
-            RHSVector(ndofs*(m-1) + 2*(k-1) + dofi) = &
-                RHSVector(ndofs*(m-1)+ 2*(k-1) + dofi) + ri
-          END DO
-        END DO
-      END DO
-    END DO
-
-    IF (ASSOCIATED(Mesh % Faces)) THEN
-      DO j=1, Mesh % NumberOfFaces      
-        Face => Mesh % Faces(j)
-        nd = GetElementDOFs(Ind, Face, VectorElementRes % Solver)
-
-        ! Count the offset for picking the true face DOFs
-        !
-        i0 = 0
-        DO k=1,Face % Type % NumberOfEdges
-          Edge => Mesh % Edges(Face % EdgeIndexes(k))
-          EDOFs = Edge % BDOFs
-          IF (EDOFs < 1) CYCLE
-          i0 = i0 + EDOFs
-        END DO
-
-        IF (Face % BDOFs /= nd - i0) CALL Fatal('NedelecToNodalResidual', &
-            'Nodal DOFs are not yet supported')
-
-        IF (Face % BDOFs < 1) CYCLE
-        
-        CALL NodalToNedelecPiMatrix_Faces(FacePiMat, Face, Mesh, dim, BasisDegree = 1)
-
-        DO dofi=1, VectorElementRes % DOFs
-          DO k=1,dim
-            DO i=1,Face % Type % NumberOfNodes
-              ri = 0.0_dp    
-              DO p=1, Face % BDOFs
-                q = VectorElementRes % Perm(Ind(p+i0))
-                ri = ri + FacePiMat(p,3*(i-1)+k) * &
-                    VectorElementRes % Values(VectorElementRes % DOFs*(q-1)+dofi)
-              END DO
-              m = Solver % Variable % Perm(Face % NodeIndexes(i))
-              RHSVector(ndofs*(m-1) + 2*(k-1) + dofi) = &
-                  RHSVector(ndofs*(m-1)+ 2*(k-1) + dofi) + ri
-            END DO
-          END DO
-        END DO
-        
-      END DO
-    END IF
-
-    ! Add loop over elements to handle elementwise bubbles 
-
-!------------------------------------------------------------------------------
-  END SUBROUTINE NedelecToNodalResidual
-!------------------------------------------------------------------------------
-
-  
-!------------------------------------------------------------------------------
-! Project edge residual to nodal residual.
-! NOTE: Consider using NedelecToNodalResidual instead
-!------------------------------------------------------------------------------
-  SUBROUTINE EdgeToNodeProject()
-!------------------------------------------------------------------------------
-    IMPLICIT NONE
-    INTEGER :: n, nd, nb
-    TYPE(Element_t), POINTER :: Element, Edge
-    REAL(KIND=dp), ALLOCATABLE, SAVE :: Basis(:),dBasisdx(:,:), WBasis(:,:), RotWBasis(:,:)
-    COMPLEX(KIND=dp), ALLOCATABLE, SAVE :: STIFF(:,:), FORCE(:)
-    REAL(KIND=dp) :: weight, DetJ, Coord(3), s1, s2
-    LOGICAL :: Stat,Found,NormLoop
-    INTEGER :: i,j,k,t,p,q,m,ipi,i1,i2,allocstat
-    TYPE(GaussIntegrationPoints_t) :: IP
-    TYPE(Nodes_t), SAVE :: Nodes
-    INTEGER :: n0, nedge
-    REAL(KIND=dp), ALLOCATABLE :: EdgeWeight(:), NodeWeight(:)
-    REAL(KIND=dp), SAVE :: EdgeVector(3)
-    COMPLEX(KIND=dp) :: c
- !------------------------------------------------------------------------------
-
-    ! Allocate storage if needed
-    IF (.NOT. ALLOCATED(Basis)) THEN
-      m = MAX(Mesh % MaxElementDofs,20)
-      ALLOCATE(Basis(m), dBasisdx(m,3), RotWBasis(m,3), Wbasis(m,3), &
-          STIFF(m,m), FORCE(m), STAT=allocstat)      
-      IF (allocstat /= 0) CALL Fatal(Caller,'Local storage allocation failed')
-    END IF
-    STIFF = 0._dp
-    
-    Active = GetNOFActive(Solver)
-    NormLoop = .TRUE.
-
-    ALLOCATE(EdgeWeight(Mesh % NumberOfEdges))
-    EdgeWeight = 0.0_dp
-    n0 = Mesh % NumberOfNodes
-    
-1   CONTINUE
-    
-    DO t=1,Active
-      Element => GetActiveElement(t)
-      n  = GetElementNOFNodes(Element)
-      nd = GetElementNOFDOFs(Element)
-      nb = GetElementNOFBDOFs(Element)
-
-      IF( RelOrder /= 0 ) THEN
-        IP = GaussPoints( Element, RelOrder = RelOrder)
-      ELSE
-        IP = GaussPoints( Element )
-      END IF
-
-      CALL GetElementNodes( Nodes, UElement=Element )
-
-      ! Initialize
-      IF (.NOT. NormLoop) THEN
-        FORCE = 0._dp
-      END IF
-
-      DO ipi=1,IP % n
-        ! Basis function values & derivatives at the integration point:
-        !--------------------------------------------------------------
-
-        stat = ElementInfo( Element, Nodes, IP % U(ipi), IP % V(ipi), &
-            IP % W(ipi), detJ, Basis, dBasisdx, EdgeBasis = Wbasis, &
-            RotBasis = RotWBasis ) !, USolver = pSolver )
-
-        nedge = Element % TYPE % NumberOfEdges        
-        DO i=1,nedge
-          j = Element % EdgeIndexes(i)                    
-          
-          IF( NormLoop ) THEN
-            s2 = SQRT(SUM(WBasis(i,:)**2))
-            weight = IP % s(ipi) * s2
-            EdgeWeight(j) = EdgeWeight(j) + Weight 
-          ELSE
-            Edge => Mesh % Edges(j)
-            k = EdgeResVar % Perm(n0 + j)
-          
-            i1 = Edge % NodeIndexes(1)
-            i2 = Edge % NodeIndexes(2)
-          
-            ! Vector in the direction of the edge
-            EdgeVector(1) = Mesh % Nodes % x(i2) - Mesh % Nodes % x(i1)
-            EdgeVector(2) = Mesh % Nodes % y(i2) - Mesh % Nodes % y(i1)
-            EdgeVector(3) = Mesh % Nodes % z(i2) - Mesh % Nodes % z(i1)
-          
-            ! Integration length of the edge
-            s1 = SQRT(SUM(EdgeVector**2))
-            
-            weight = IP % s(ipi) / EdgeWeight(j)            
-            c = Wbasis(i,compi) * &
-                s1 * CMPLX(EdgeResVar % Values(2*k-1), EdgeResVar % Values(2*k))           
-            FORCE(1:nd) = FORCE(1:nd) + Basis(1:nd) * weight * c  
-          END IF
-        END DO
-      END DO
-
-      IF(.NOT. NormLoop ) THEN
-        CALL CondensateP( nd-nb, nb, STIFF, FORCE )    
-        CALL DefaultUpdateEquations(STIFF,FORCE,UElement=Element)
-      END IF
-    END DO
-    
-    IF( NormLoop ) THEN
-      NormLoop = .FALSE.
-      GOTO 1 
-    END IF
-       
-!------------------------------------------------------------------------------
-  END SUBROUTINE EdgeToNodeProject
-!------------------------------------------------------------------------------
-  
 !------------------------------------------------------------------------------
 END SUBROUTINE VectorHelmholtzNodal
 !------------------------------------------------------------------------------

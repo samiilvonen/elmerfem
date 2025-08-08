@@ -160,9 +160,11 @@ Solver 3
   Preconditioning Residual = String "e res"
   Preconditioning Update = String "e update"
   Additive Preconditioning = Logical True
+  Additive Pre-Smoothing = Logical False
 
   MG Smoother = csgs
-  MG Post Smoothing Iterations = 7
+!  MG Pre Smoothing Iterations = 7
+  MG Post Smoothing Iterations = 3
   MG Smoother Relaxation Factor = Real 1.0
 
   Steady State Convergence Tolerance = 1e-9
@@ -234,7 +236,6 @@ Solver 7
   Edge Residual Name = String "e res"
   Edge Update Name = String "e update"
 
-  Use projection Matrix = Logical True
   curl-curl Form = Logical True
   Linear System Preconditioning Damp Coefficient im = -1.0
 

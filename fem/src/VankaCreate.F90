@@ -1186,7 +1186,7 @@
     TYPE(Matrix_t), POINTER :: Amat
     REAL(KIND=dp), POINTER :: res(:), dx(:), r(:), z(:)
     REAL(KIND=dp) :: rnorm
-    LOGICAL :: Found, ScaleRHS
+    LOGICAL :: Found, ScaleRHS, AdditivePrec, Smoothing, PostSmoothing
     CHARACTER(MAX_NAME_LEN) :: str   
     INTEGER :: n, DOFs
 !-------------------------------------------------------------------------------
@@ -1241,8 +1241,16 @@
       !
       CALL ScaleLinearSystemVectors(AMat, res, n, dx)
     END IF
-    
-    IF( ListCheckPresent( Params,'MG Smoother') ) THEN      
+
+    AdditivePrec = ListGetLogical(Params, 'Additive Preconditioning', Found)
+    IF (AdditivePrec) THEN
+      Smoothing = ListGetLogical(Params, 'Additive Pre-Smoothing', Found)
+      PostSmoothing = ListCheckPresent(Params, 'MG Smoother')
+    ELSE
+      Smoothing = ListCheckPresent(Params, 'MG Smoother')
+    END IF
+
+    IF (Smoothing) THEN
       ALLOCATE(r(n))
       
       CALL ExperimentalStuffZ()
@@ -1251,14 +1259,13 @@
       ! is returned via r but its initial value does not change the result 
       r(:) = 0.0_dp
       RNorm = MGSmooth( Solver, Amat, Mesh, dx, res, r, &
-          1, dofs, PreSmooth = .FALSE.)
+          1, dofs, PreSmooth = AdditivePrec)
 
       DEALLOCATE(r)
     END IF
 
-    IF (ListGetLogical(Params, 'Additive Preconditioning', Found)) THEN
+    IF (AdditivePrec) THEN
       ALLOCATE(r(n), z(n))
-!      CALL ListAddLogical(Params, 'Gradient Matrix', .TRUE.)
       
       CALL MatrixVectorMultiply(Amat, dx, r)
       res(1:n) = res(1:n) - r(1:n)
@@ -1277,7 +1284,7 @@
 
       dx(1:n) = dx(1:n) + z(1:n)
 
-      IF (ListCheckPresent(Params, 'MG Smoother')) THEN
+      IF (PostSmoothing) THEN
         res(1:n:2) = REAL(v(1:n/2))
         res(2:n:2) = AIMAG(v(1:n/2))
         r(:) = 0.0_dp
@@ -1285,7 +1292,6 @@
             1, dofs, PreSmooth = .FALSE.)
       END IF
       
-!      CALL ListAddLogical(Params, 'Gradient Matrix', .FALSE.)
       DEALLOCATE(r, z)
     END IF
     

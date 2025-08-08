@@ -69,10 +69,12 @@ Solver 1
   Preconditioning Update = String "e update"
 
   MG Smoother = csgs
+!  MG Pre Smoothing Iterations = 7
   MG Post Smoothing Iterations = 7
   MG Smoother Relaxation Factor = Real 1.0
 
   Additive Preconditioning = Logical True
+  Additive Pre-Smoothing = Logical False
 End
 
 Solver 2
@@ -89,8 +91,6 @@ Solver 2
 
   curl-curl Form = Logical True
   Linear System Preconditioning Damp Coefficient im = -1.0
-
-  Use Projection Matrix = Logical True
 
   Linear System Symmetric = False
   Linear System Scaling = True

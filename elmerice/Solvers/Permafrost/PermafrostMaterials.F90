@@ -2375,7 +2375,7 @@ CONTAINS
     REAL(KIND=dp), INTENT(IN) :: Xi
     REAL(KIND=dp) :: KGpe(3,3)
 !--------------------------
-    REAL(KIND=dp) :: muw0,rhow0,qexp,Kgwh0(3,3),factor
+    REAL(KIND=dp) :: muw0,rhow0,qexp,Kgwh0(3,3),factor, relativepermeability
     REAL(KIND=dp), PARAMETER :: gval=9.81_dp !hard coded, so match Kgwh0 with this value
     INTEGER :: I, J
     !-------------------------
@@ -2384,10 +2384,13 @@ CONTAINS
     qexp = GlobalRockMaterial % qexp(RockMaterialID)
     Kgwh0(1:3,1:3) = GlobalRockMaterial % Kgwh0(1:3,1:3,RockMaterialID) ! hydro-conductivity
     ! transformation factor from hydr. conductivity to permeability hydr. conductivity tensor
-    factor = (muw0)*(Xi**qexp)/(rhow0*gval)
+    factor = muw0/(rhow0*gval)
+    relativepermeability = (Xi**qexp)
+    ! interfrost
+    !relativepermeability = MAX(10.0_dp**(-50.0_dp*(1.0_dp - Xi)),1.0d-06)
     DO I=1,3
       DO J=1,3
-        KGpe(i,j) = Kgwh0(i,j)*factor
+        KGpe(i,j) = Kgwh0(i,j)*factor*relativepermeability
       END DO
     END DO
   END FUNCTION GetKGpe
