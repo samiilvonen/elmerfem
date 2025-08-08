@@ -970,8 +970,8 @@ CONTAINS
       IF ( PRESENT( TYPE ) ) THEN
         ptr % TYPE = TYPE
       ELSE
-        IF(.NOT. PRESENT(Perm)) THEN
-          IF(SIZE(Values) == DOFs ) ptr % Type = Variable_global
+        IF(.NOT. PRESENT(Perm) .AND. ASSOCIATED(Values)) THEN
+          IF(SIZE(Values) == DOFs) ptr % Type = Variable_global
         END IF
       END IF
         
