@@ -10741,11 +10741,13 @@ END FUNCTION SearchNodeL
     INTEGER :: ipar(1)
     TYPE(ValueList_t), POINTER :: SolverParams
     CHARACTER(*), PARAMETER :: Caller = 'ComputeChange'
-    LOGICAL :: Parallel, SingleMesh, x0Allocated
+    LOGICAL :: Parallel, SingleMesh, x0Allocated, LimitRelax
+    LOGICAL, ALLOCATABLE :: LimitMask(:)
     
     SolverParams => Solver % Values
     RelativeP = .FALSE.
     SingleMesh = Solver % Mesh % SingleMesh
+    LimitRelax = .FALSE.
 
     IF(.NOT. ASSOCIATED(Solver % Variable) ) THEN
       CALL Info(Caller,'Solver variable not found for: '&
@@ -10798,8 +10800,10 @@ END FUNCTION SearchNodeL
         RelaxBefore = ListGetLogical( SolverParams, &
             'Steady State Relaxation Before', Stat )      
         IF (.NOT. Stat ) RelaxBefore = .TRUE.
+        LimitRelax = ASSOCIATED(Solver % Variable % LowerLimitActive) .OR. &
+            ASSOCIATED(Solver % Variable % UpperLimitActive)
       END IF
-
+     
       ! Steady state system has never any constraints
       SkipConstraints = .FALSE.
       
@@ -10950,17 +10954,36 @@ END FUNCTION SearchNodeL
     END IF
 
     
+    IF(LimitRelax) THEN
+      ! If we do steady-state relaxation then the soft limiters might not be honored.
+      ! This is a trial to fix this but still not quite there. Better to do relaxation
+      ! on nonlinear system level when having soft limiters. 
+      ALLOCATE(LimitMask(n))
+      LimitMask = .FALSE.
+      IF(ASSOCIATED(Solver % Variable % LowerLimitActive)) &
+          LimitMask = Solver % Variable % LowerLimitActive 
+      IF(ASSOCIATED(Solver % Variable % UpperLimitActive)) &
+          LimitMask = LimitMask .OR. Solver % Variable % UpperLimitActive 
+    END IF
+    
     IF( ResidualMode ) THEN
+      IF(LimitRelax) THEN
+        CALL Fatal(Caller,'Residual mode and limited relaxation cannot be combined!')
+      END IF
       IF(Relax .AND. RelaxBefore) THEN
         x(1:n) = x0(1:n) + Relaxation*x(1:n)
       ELSE
         x(1:n) = x0(1:n) + x(1:n)
       END IF
-    ELSE 
-      IF(Relax .AND. RelaxBefore) THEN
+    ELSE IF(Relax .AND. RelaxBefore) THEN
+      IF(LimitRelax) THEN
+        WHERE(.NOT. LimitMask)
+          x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+        END WHERE          
+      ELSE
         x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
-        IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
       END IF
+      IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
     END IF
 
     IF(SteadyState) THEN
@@ -11215,10 +11238,17 @@ END FUNCTION SearchNodeL
 
     
     IF(Relax .AND. .NOT. RelaxBefore) THEN
-      x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+      IF(LimitRelax) THEN
+        WHERE(.NOT. LimitMask)
+          x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+        END WHERE          
+      ELSE        
+        x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+      END IF
       IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
       Solver % Variable % Norm = ComputeNorm(Solver,n,x)
     END IF
+    IF(LimitRelax) DEALLOCATE(LimitMask)
     
     ! Steady state output is done in MainUtils
     SolverName = ListGetString( SolverParams, 'Equation',Stat)
