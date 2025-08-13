@@ -1255,9 +1255,9 @@ CONTAINS
      LOGICAL, POINTER :: LimitActive(:)
      TYPE(ValueList_t), POINTER :: Params, Entity
      LOGICAL, ALLOCATABLE :: InterfaceDof(:)
-     INTEGER :: ConservativeAfterIters, NonlinIter, CoupledIter, DownStreamDirection
+     INTEGER :: ConservativeAfterIters, NonlinIter, CoupledIter, timeIter, DownStreamDirection
      LOGICAL :: Conservative, ConservativeAdd, ConservativeRemove, RelativeEps, &
-         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove
+         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove, LimitFreeze
      TYPE(Mesh_t), POINTER :: Mesh
 
      CHARACTER(:), ALLOCATABLE :: Name,LimitName, InitName, ActiveName
@@ -1270,22 +1270,36 @@ CONTAINS
      ! Check the iterations counts and determine whether this is the first 
      ! time with this solver. 
      !------------------------------------------------------------------------
-     FirstTime = .TRUE.
      iterV => VariableGet( Mesh % Variables,'nonlin iter')
      IF( ASSOCIATED( iterV ) ) THEN
        NonlinIter =  NINT( iterV % Values(1) ) 
-       IF( NonlinIter > 1 ) FirstTime = .FALSE.
+     ELSE
+       NonlinIter = 1
      END IF
 
      iterV => VariableGet( Mesh % Variables,'coupled iter')
      IF( ASSOCIATED( iterV ) ) THEN
        CoupledIter = NINT( iterV % Values(1) )
-       IF( CoupledIter > 1 ) FirstTime = .FALSE.
-     END IF
-     IF( FirstTime ) THEN
-       CALL Info(Caller,'Initializing soft limiter for solver',Level=10)
+     ELSE
+       CoupledIter = 1
      END IF
 
+     iterV => VariableGet( Mesh % Variables,'timestep')
+     IF( ASSOCIATED( iterV ) ) THEN
+       timeIter = NINT( iterV % Values(1) )
+     ELSE
+       timeIter = 1
+     END IF
+
+     FirstTime = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter == 1)
+     LimitFreeze = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter > 1)
+
+     IF( FirstTime ) THEN
+       CALL Info(Caller,'Initializing soft limiter for solver',Level=7)
+     END IF
+     IF( LimitFreeze ) THEN
+       CALL Info(Caller,'Keeping soft limiter fixed at start of timestep',Level=7)
+     END IF
      
      ! Determine variable for computing the contact load used to determine the 
      ! soft limit set.
@@ -1565,7 +1579,6 @@ CONTAINS
              ALLOCATE( InterfaceDof( totsize ) )
              InterfaceDof = .FALSE. 
            END IF
-
            
            ! Mark limited and unlimited neighbours and thereby make a 
            ! list of interface dofs. 
@@ -1720,7 +1733,9 @@ CONTAINS
              
              ! Go through the active set and free nodes with wrong sign in contact force
              !--------------------------------------------------------------------------       
-             IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
+             IF( LimitFreeze ) THEN
+               CONTINUE
+             ELSE IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
                IF(.NOT. LimitActive( ind ) ) THEN
                  added = added + 1
                  LimitActive(ind) = .TRUE. 
