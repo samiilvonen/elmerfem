@@ -179,4 +179,4 @@ End
 
 ! Electromagnetic field energy
 Solver 3:: Show Norm Index = 2
-Solver 3:: Reference Norm = 8.32659888E-06
+Solver 3:: Reference Norm = 9.48889363E-06

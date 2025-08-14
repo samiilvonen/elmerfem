@@ -2144,7 +2144,7 @@ SUBROUTINE SolveHypre(Matrix, XVec, RHSVec, Solver, ParallelInfo, SplittedMatrix
   INTEGER :: nrows, ncols, nnz
   TYPE(ValueList_t), POINTER :: Params
 
-  TYPE(Matrix_t), POINTER :: GM
+  TYPE(Matrix_t), POINTER :: GM, PiM
   INTEGER:: nnd,ind(2), precond
   REAL(KIND=dp), POINTER :: PrecVals(:)
   REAL(KIND=dp), ALLOCATABLE :: xx_d(:),yy_d(:),zz_d(:)  
@@ -2185,17 +2185,17 @@ SUBROUTINE SolveHypre(Matrix, XVec, RHSVec, Solver, ParallelInfo, SplittedMatrix
       INTEGER(KIND=c_int) :: verbosity
     END SUBROUTINE SolveHYPRE4
     
-    SUBROUTINE CreateHypreAMS(nrows,rows,cols,vals,n,grows,gcols,gvals, &
+    SUBROUTINE CreateHypreAMS(nrows,rows,cols,vals,n,grows,gcols,gvals, pirows, picols, pivals, &
         perm, invperm, globaldofs, owner, Bperm,nodeowner,xvec, rhsvec, pe, ILUn, rounds, &
         TOL, xx_d, yy_d, zz_d, hypremethod, hypre_intpara, hypre_dppara,verbosity,hyprecontainer,fcomm ) & 
         BIND(C,name="createhypreams")
       
       USE, INTRINSIC :: iso_c_binding
       INTEGER(KIND=c_int) :: nrows, n, Rows(*), Cols(*), Perm(*), INVPerm(*), &
-          Grows(*), gcols(*), PE, Owner(*), Rounds, ILUn, hypremethod, fcomm, &
+          Grows(*), gcols(*), PE, Owner(*), Rounds, ILUn, hypremethod, fcomm, pirows(*), picols(*), &
           symmetry, maxlevel, hypre_intpara(20),bperm(*),nodeOwner(*),globaldofs(*),verbosity
       REAL(KIND=c_double) :: Vals(*),Xvec(*),RHSvec(*),TOL,threshold,filter, &
-          hypre_dppara(10), Gvals(*), xx_d(*), yy_d(*), zz_d(*)
+          hypre_dppara(10), Gvals(*), xx_d(*), yy_d(*), zz_d(*), pivals(*)
       INTEGER(KIND=C_INTPTR_T) :: hypreContainer
     END SUBROUTINE CreateHypreAMS
 
@@ -2291,10 +2291,10 @@ SUBROUTINE SolveHypre(Matrix, XVec, RHSVec, Solver, ParallelInfo, SplittedMatrix
       CALL PrepareHypreAMS() 
       nnd = Solver % Mesh % NumberOfNodes      
       CALL CreateHYPREAMS( Matrix % NumberOfRows, Rows, Cols, Vals, &
-          nnd,GM % Rows,GM % Cols,GM % Values,Aperm,Aperm,Aperm,Owner, &
-          Bperm,NodeOwner,Xvec,RHSvec,ParEnv % myPE, ILUn, Rounds,TOL,  &
-          xx_d,yy_d,zz_d,hypremethod,hypre_intpara, hypre_dppara,verbosity, &
-          Matrix % Hypre, Matrix % Comm)
+          nnd,GM % Rows,GM % Cols,GM % Values,PiM % Rows, PiM % Cols, PiM % Values, &
+           Aperm,Aperm,Aperm,Owner, Bperm,NodeOwner,Xvec,RHSvec,ParEnv % myPE, ILUn, Rounds,TOL,  &
+            xx_d,yy_d,zz_d,hypremethod,hypre_intpara, hypre_dppara,verbosity, &
+             Matrix % Hypre, Matrix % Comm)
       CALL CleanHypreAMS() 
     END IF
     CALL SolveHYPRE1( Matrix % NumberOfRows, Rows, Cols, Vals, Precond, &
@@ -2347,51 +2347,39 @@ CONTAINS
 
     IF( Parallel ) THEN
       NodeOwner = 0
-      CALL ContinuousNumbering( Mesh % ParallelInfo, &
-          NodePerm, BPerm, NodeOwner, nnd, Mesh)
-      bPerm = bPerm-1 
+      CALL ContinuousNumbering( Mesh % ParallelInfo, NodePerm, BPerm, NodeOwner, nnd, Mesh)
+      bPerm = bPerm
     ELSE
       NodeOwner = 1
       DO i=1,nnd
-        bperm(i) = i-1
+        bperm(i) = i
       END DO
     END IF
 
-    GM => AllocateMatrix()
-    GM % FORMAT = MATRIX_LIST
+BLOCK
+    USE Interpolation
+    TYPE(Variable_t), POINTER :: Nvar
 
-    DO i=Mesh % NumberofEdges,1,-1
-      ind = Mesh % Edges(i) % NodeIndexes
-      IF( Parallel ) THEN
-        IF (Mesh % ParallelInfo % GlobalDOFs(ind(1))> &
-            Mesh % ParallelInfo % GlobalDOFs(ind(2))) THEN
-          k=ind(1); ind(1)=ind(2);ind(2)=k
-        END IF
-      ELSE
-        IF (ind(1)> ind(2)) THEN
-          k=ind(1); ind(1)=ind(2);ind(2)=k
-        END IF
-      END IF        
-      IF(Matrix % Complex) THEN
-        CALL List_AddToMatrixElement(gm % listmatrix,2*i-1,ind(1),-1._dp)
-        CALL List_AddToMatrixElement(gm % listmatrix,2*i-1,ind(2), 1._dp)
-        CALL List_AddToMatrixElement(gm % listmatrix,2*i,ind(1),-1._dp)
-        CALL List_AddToMatrixElement(gm % listmatrix,2*i,ind(2), 1._dp)
-      ELSE
-        CALL List_AddToMatrixElement(gm % listmatrix,i,ind(1),-1._dp)
-        CALL List_AddToMatrixElement(gm % listmatrix,i,ind(2), 1._dp)
-      END IF
-    END DO
-    CALL List_tocrsMatrix(gm)
-    
-    nnd = Mesh % NumberOfEdges
-    IF(Matrix % Complex) nnd=nnd*2
-    ALLOCATE(xx_d(nnd),yy_d(nnd),zz_d(nnd) )
-    CALL CRS_MatrixVectorMultiply(gm,Mesh % Nodes % x,xx_d)
-    CALL CRS_MatrixVectorMultiply(gm,Mesh % Nodes % y,yy_d)
-    CALL CRS_MatrixVectorMultiply(gm,Mesh % Nodes % z,zz_d)
+    Nvar => VariableGet( Solver % Mesh % Variables, 'ams nodal var' )
+
+    PiM => Null()
+    CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, Nvar, Solver % Variable, PiM, &
+             cdim=CurrentModel % Dimension, UseNodalPermArg=.FALSE. )
+
+    GM => Null()
+    CALL NodalGradientToNedelecInterpolation_GlobalMatrix(Mesh, Nvar, Solver % Variable, GM, &
+             cdim=CurrentModel % Dimension, UseNodalPermArg=.FALSE. )
+
+    Bperm = Bperm - 1
+
+!   nnd = GM % NumberOfRows
+!   ALLOCATE(xx_d(nnd),yy_d(nnd),zz_d(nnd) )
+!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % x,xx_d)
+!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % y,yy_d)
+!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % z,zz_d)
     
     nnd = Mesh % NumberOfNodes
+END BLOCK
   END SUBROUTINE PrepareHypreAMS
 
 
