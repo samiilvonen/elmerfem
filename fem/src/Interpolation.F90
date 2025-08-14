@@ -742,8 +742,7 @@ MODULE Interpolation
     END IF
     
     IF (Face % Type % ElementCode / 100 == 3) THEN
-!     CALL Fatal(Caller, 'Cannot handle triangular faces yet')
-      RETURN
+      CALL Fatal(Caller, 'Cannot handle triangular faces yet')
     END IF
         
     IF (.NOT. ASSOCIATED(Mesh % Faces)) THEN
