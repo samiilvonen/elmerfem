@@ -8282,12 +8282,13 @@ CONTAINS
     LOGICAL, OPTIONAL :: AntiPeriodic 
     !---------------------------------------------------------------------------------      
     INTEGER :: n, ind, indm, e, em, eind, eindm, k1, k2, km1, km2, sgn0, sgn, i1, i2, &
-        noedges, noedgesm, Nundefined, n0
+        noedges, noedgesm, Nundefined, n0, dim
     TYPE(Element_t), POINTER :: Edge, EdgeM
     INTEGER, POINTER :: Indexes(:), IndexesM(:)
-    REAL(KIND=dp) :: xm1, xm2, ym1, ym2, x1, y1, x2, y2, y2m, nrow
+    REAL(KIND=dp) :: xm1, xm2, ym1, ym2, x1, y1, x2, y2, y2m, z1, zm1, z2, zm2, nrow
     INTEGER, ALLOCATABLE :: PeriodicEdge(:), EdgeInds(:), EdgeIndsM(:)
-    REAL(KIND=dp), ALLOCATABLE :: EdgeX(:,:), EdgeY(:,:), EdgeMX(:,:), EdgeMY(:,:)
+    REAL(KIND=dp), ALLOCATABLE :: EdgeX(:,:), EdgeY(:,:), EdgeZ(:,:), &
+        EdgeMX(:,:), EdgeMY(:,:), EdgeMZ(:,:)
     REAL(KIND=dp) :: coordprod, indexprod, ss, minss, maxminss
     INTEGER :: minuscount, samecount, mini, doubleusecount
     LOGICAL :: Parallel, AntiPer
@@ -8302,10 +8303,18 @@ CONTAINS
     AntiPer = .FALSE.
     IF( PRESENT( AntiPeriodic ) ) AntiPer = AntiPeriodic
 
-    CALL CreateEdgeCenters( Mesh, BMesh1, noedges, EdgeInds, EdgeX, EdgeY ) 
+    dim = 2
+    BLOCK
+      REAL(KIND=dp) :: maxz, minz
+      maxz = MAXVAL(BMesh1 % Nodes % z)
+      minz = MINVAL(BMesh1 % Nodes % z)
+      IF(maxz-minz > EPSILON(maxz)) dim=3
+    END BLOCK
+      
+    CALL CreateEdgeCenters( Mesh, BMesh1, noedges, EdgeInds, EdgeX, EdgeY, EdgeZ )       
     CALL Info(Caller,'Number of edges in slave mesh: '//I2S(noedges),Level=10)
 
-    CALL CreateEdgeCenters( Mesh, BMesh2, noedgesm, EdgeIndsM, EdgeMX, EdgeMY )
+    CALL CreateEdgeCenters( Mesh, BMesh2, noedgesm, EdgeIndsM, EdgeMX, EdgeMY, EdgeMZ )
     CALL Info(Caller,'Number of edges in master mesh: '//I2S(noedgesm),Level=10)
 
     IF( noedges == 0 ) RETURN
@@ -8324,7 +8333,8 @@ CONTAINS
     DO i1=1,noedges
       x1 = EdgeX(3,i1)
       y1 = EdgeY(3,i1)
-
+      IF(dim==3) z1 = EdgeZ(3,i1)
+      
       IF( PerPerm( EdgeInds(i1) + n0 ) > 0 ) CYCLE
 
       minss = HUGE(minss)
@@ -8333,8 +8343,14 @@ CONTAINS
       DO i2=1,noedgesm
         x2 = EdgeMX(3,i2)
         y2 = EdgeMY(3,i2)
-
-        ss = (x1-x2)**2 + (y1-y2)**2
+        
+        IF(dim==3) THEN
+          z2 = EdgeMZ(3,i2)
+          ss = (x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2        
+        ELSE
+          ss = (x1-x2)**2 + (y1-y2)**2 
+        END IF
+          
         IF( ss < minss ) THEN
           minss = ss
           mini = i2
@@ -8388,7 +8404,11 @@ CONTAINS
       x2 = EdgeX(2,e)
       y1 = EdgeY(1,e)
       y2 = EdgeY(2,e)
-
+      IF(dim==3) THEN
+        z1 = EdgeZ(1,e)
+        z2 = EdgeZ(2,e)
+      END IF
+        
       ! Get the coordinates and indexes of the 2nd edge
       EdgeM => Mesh % Edges(eindm)
       km1 = EdgeM % NodeIndexes( 1 )
@@ -8402,8 +8422,14 @@ CONTAINS
       xm2 = EdgeMX(2,em)
       ym1 = EdgeMY(1,em)
       ym2 = EdgeMY(2,em)
-
-      coordprod = (x1-x2)*(xm1-xm2) + (y1-y2)*(ym1-ym2) 
+      IF(dim==3) THEN
+        zm1 = EdgeMZ(1,em)
+        zm2 = EdgeMZ(2,em)
+        coordprod = (x1-x2)*(xm1-xm2) + (y1-y2)*(ym1-ym2) + (z1-z1)*(zm1-zm2)
+      ELSE
+        coordprod = (x1-x2)*(xm1-xm2) + (y1-y2)*(ym1-ym2) 
+      END IF
+        
       indexprod = (k1-k2)*(km1-km2)
 
       IF( coordprod * indexprod < 0 ) THEN
@@ -8421,9 +8447,8 @@ CONTAINS
       PerPerm(eind+n0) = eindm + n0
     END DO
 
-    DEALLOCATE( EdgeInds, EdgeX, EdgeY ) 
-    DEALLOCATE( EdgeIndsM, EdgeMX, EdgeMY )
-    DEALLOCATE( PeriodicEdge )
+    DEALLOCATE( EdgeInds, EdgeX, EdgeY, EdgeIndsM, EdgeMX, EdgeMY, PeriodicEdge )
+    IF(dim==3) DEALLOCATE( EdgeZ, EdgeMZ )
 
     IF( samecount > 0 ) THEN
       CALL Info(Caller,'Number of edges are the same: '//I2S(samecount),Level=8)
@@ -8446,25 +8471,24 @@ CONTAINS
     
     ! Create edge centers for the mapping routines.
     !------------------------------------------------------------------------------
-    SUBROUTINE CreateEdgeCenters( Mesh, EdgeMesh, noedges, EdgeInds, EdgeX, EdgeY ) 
+    SUBROUTINE CreateEdgeCenters( Mesh, EdgeMesh, noedges, EdgeInds, EdgeX, EdgeY, EdgeZ ) 
 
       TYPE(Mesh_t), POINTER :: Mesh
       TYPE(Mesh_t), POINTER :: EdgeMesh
       INTEGER :: noedges
       INTEGER, ALLOCATABLE :: EdgeInds(:)
-      REAL(KIND=dp), ALLOCATABLE :: EdgeX(:,:), EdgeY(:,:)
+      REAL(KIND=dp), ALLOCATABLE :: EdgeX(:,:), EdgeY(:,:), EdgeZ(:,:)
 
       LOGICAL, ALLOCATABLE :: EdgeDone(:)
       INTEGER :: ind, eind, i, i1, i2, k1, k2, ktmp
       TYPE(Element_t), POINTER :: Element
       INTEGER, POINTER :: EdgeMap(:,:), Indexes(:)
       LOGICAL :: AllocationsDone 
-
+      
 
       ALLOCATE( EdgeDone( Mesh % NumberOfEdges ) )
       AllocationsDone = .FALSE.
-
-
+      
 100   noedges = 0
       EdgeDone = .FALSE.
 
@@ -8514,6 +8538,12 @@ CONTAINS
             EdgeX(3,noedges) = EdgeX(1,noedges) + EdgeX(2,noedges)
             EdgeY(3,noedges) = EdgeY(1,noedges) + EdgeY(2,noedges)
 
+            IF(dim == 3 ) THEN
+              EdgeZ(1,noedges) = EdgeMesh % Nodes % z(k1)
+              EdgeZ(2,noedges) = EdgeMesh % Nodes % z(k2)
+              EdgeZ(3,noedges) = EdgeZ(1,noedges) + EdgeZ(2,noedges)
+            END IF
+              
             EdgeInds(noedges) = eind
           END IF
         END DO
@@ -8522,6 +8552,7 @@ CONTAINS
       IF(noedges > 0 .AND. .NOT. AllocationsDone ) THEN
         CALL Info(Caller,'Allocating stuff for edges',Level=20)
         ALLOCATE( EdgeInds(noedges), EdgeX(3,noedges), EdgeY(3,noedges) )
+        IF(dim==3) ALLOCATE(EdgeZ(3,noedges) )
         AllocationsDone = .TRUE.
         GOTO 100
       END IF
