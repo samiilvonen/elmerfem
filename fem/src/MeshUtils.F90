@@ -12875,7 +12875,7 @@ CONTAINS
             x2 = Nodes % x(i2) 
             y2 = Nodes % y(i2)            
           ELSE
-            ! Fictive edges spanning from corner to corner.
+            ! Fictive edges spanning from center-of-edge to center-of-opposite-edge 
             jj = BMesh1 % NumberOfEdges + 2*(ind-1)+(j-ne)
             IF(j-ne == 2 ) THEN
               x1 = SUM(Nodes % x(1:2))/2
