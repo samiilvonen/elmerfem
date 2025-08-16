@@ -39,7 +39,7 @@
 ! * This module has been defived from a historical Navier-Stokes solver and
 ! * updated much later for problems involving challel flows.
 ! *
-! *  Authors: Juha Ruokolainen, Peter Råback
+! *  Authors: Juha Ruokolainen, Peter Råback, Thomas Zwinger, Tómas Jóhannesson
 ! *  Email:   elmeradm@csc.fi
 ! *  Web:     http://www.csc.fi/elmer
 ! *  Address: CSC - IT Center for Science Ltd.
@@ -232,6 +232,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       FrictionModel = 2
     ELSE IF( str == 'manning' ) THEN
       FrictionModel = 3
+    ELSE IF (str == 'manning2' ) THEN
+      FrictionModel = 4
     ELSE
       CALL Fatal(Caller,'Uknown friction model: '//TRIM(str))
     END IF
@@ -802,6 +804,11 @@ CONTAINS
            GradZphi2 = MAX(SUM((hGrad(1:mdim) + presGrad(1:mdim)/(rho*Grav))**2), 1.0E-09)
            MuCoeff = nm * rho * Grav * (gapi/2)**(-2.0/3) * GradZphi2**(1.0/4.0)
          END BLOCK
+
+       CASE( 4)
+         BLOCK
+           MuCoeff = rho * Grav * nm**2 * (gapi/2)**(-4.0/3) * Speed 
+       END BLOCK
                     
        CASE DEFAULT 
          IF( CSymmetry ) THEN
@@ -815,7 +822,6 @@ CONTAINS
 
        IF( CalcFrictionHeating ) THEN
          q_f = MuCoeff * gapi * Speed**2
-         !PRINT *, "q_f", q_f, MuCoeff, gapi, Speed**2
        END IF
          
        IF( CalcPressureHeating ) THEN
