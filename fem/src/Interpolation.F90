@@ -1266,7 +1266,7 @@ MODULE Interpolation
 
     vdofs = VectorElementVar % DOFs
     ndofs = NodalVar % DOFs
-    IF (ndofs /= dim * vdofs) CALL Fatal(Caller, &
+    IF (ndofs /= dim * vdofs .AND. ndofs /= vdofs) CALL Fatal(Caller, &
         'Coordinate system dimension and DOF counts are not as expected')
 
     UseNodalPerm = .TRUE.
