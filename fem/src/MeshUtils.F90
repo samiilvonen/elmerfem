@@ -9075,7 +9075,7 @@ CONTAINS
     REAL(KIND=dp), ALLOCATABLE :: Cond(:)
     TYPE(Matrix_t), POINTER :: DualProjector    
     LOGICAL :: DualMaster, DualSlave, DualLCoeff, BiorthogonalBasis
-    LOGICAL :: SecondOrder, pElemProj, pElemBasis
+    LOGICAL :: SecondFamily, SecondOrder, pElemProj, pElemBasis
     CHARACTER(*), PARAMETER :: Caller = "LevelProjector"
 
     CALL Info(Caller,'Creating projector for a levelized mesh',Level=7)
@@ -9317,12 +9317,9 @@ CONTAINS
       CALL Info(Caller,'Using biorthogonal basis for weak projectors, as requested',Level=8)      
     END IF
 
-
-    PiolaVersion = ListGetLogical( CurrentModel % Solver % Values, &
-        'Use Piola Transform', Found)
-    SecondOrder = ListGetLogical( CurrentModel % Solver % Values, &
-        'Quadratic Approximation', Found)
-      
+    CALL EdgeElementStyle(CurrentModel % Solver % Values, PiolaVersion, SecondFamily, SecondOrder)  
+    IF (SecondFamily) CALL Fatal(Caller, 'No ready functionality for the 2nd kind basis')
+    
     ! We assume that the 1st element may be used to determine whether the mesh is a p-element
     ! mesh or not.
     Element => BMesh1 % Elements(1)        
@@ -10751,7 +10748,7 @@ CONTAINS
 
         n = Element % TYPE % NumberOfNodes
         ne = Element % TYPE % NumberOfEdges
-        IF( PiolaVersion ) THEN
+        IF( PiolaVersion .AND. n==4) THEN
           nf = 2
         ELSE
           nf = 0
@@ -12683,7 +12680,9 @@ CONTAINS
         ! Even for quadratic elements only work with corner nodes (n >= ne)        
         IF( FaceEdge > 0 ) THEN
           IF( n == 3 ) CYCLE
-          ! The two additonal edge dofs are spanned between the corners. 
+          ! The two additional edge dofs may be associated with virtual edges between
+          ! the mid-points of the opposite edges
+          
           IF( MODULO(FaceEdge,2) == 0 ) THEN
             Nodes % x(1) = SUM(Nodes % x(1:2))/2
             Nodes % y(1) = SUM(Nodes % y(1:2))/2
@@ -12856,7 +12855,7 @@ CONTAINS
         PRINT *,'ArcCoeff:',ArcCoeff
       END IF
 
-      ! 2) The we loop over elements and tag the edge when a projector has been created to it. 
+      ! 2) Then we loop over elements and tag the edge when a projector has been created to it. 
       ! We need elements (not just edges) so that we can properly create the Hcurl base.
       !---------------------------------------------------------------------------------------
       DO ind=1,BMesh1 % NumberOfBulkElements 
