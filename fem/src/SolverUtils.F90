@@ -1255,9 +1255,9 @@ CONTAINS
      LOGICAL, POINTER :: LimitActive(:)
      TYPE(ValueList_t), POINTER :: Params, Entity
      LOGICAL, ALLOCATABLE :: InterfaceDof(:)
-     INTEGER :: ConservativeAfterIters, NonlinIter, CoupledIter, DownStreamDirection
+     INTEGER :: ConservativeAfterIters, NonlinIter, CoupledIter, timeIter, DownStreamDirection
      LOGICAL :: Conservative, ConservativeAdd, ConservativeRemove, RelativeEps, &
-         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove
+         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove, LimitFreeze
      TYPE(Mesh_t), POINTER :: Mesh
 
      CHARACTER(:), ALLOCATABLE :: Name,LimitName, InitName, ActiveName
@@ -1270,22 +1270,36 @@ CONTAINS
      ! Check the iterations counts and determine whether this is the first 
      ! time with this solver. 
      !------------------------------------------------------------------------
-     FirstTime = .TRUE.
      iterV => VariableGet( Mesh % Variables,'nonlin iter')
      IF( ASSOCIATED( iterV ) ) THEN
        NonlinIter =  NINT( iterV % Values(1) ) 
-       IF( NonlinIter > 1 ) FirstTime = .FALSE.
+     ELSE
+       NonlinIter = 1
      END IF
 
      iterV => VariableGet( Mesh % Variables,'coupled iter')
      IF( ASSOCIATED( iterV ) ) THEN
        CoupledIter = NINT( iterV % Values(1) )
-       IF( CoupledIter > 1 ) FirstTime = .FALSE.
-     END IF
-     IF( FirstTime ) THEN
-       CALL Info(Caller,'Initializing soft limiter for solver',Level=10)
+     ELSE
+       CoupledIter = 1
      END IF
 
+     iterV => VariableGet( Mesh % Variables,'timestep')
+     IF( ASSOCIATED( iterV ) ) THEN
+       timeIter = NINT( iterV % Values(1) )
+     ELSE
+       timeIter = 1
+     END IF
+
+     FirstTime = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter == 1)
+     LimitFreeze = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter > 1)
+
+     IF( FirstTime ) THEN
+       CALL Info(Caller,'Initializing soft limiter for solver',Level=7)
+     END IF
+     IF( LimitFreeze ) THEN
+       CALL Info(Caller,'Keeping soft limiter fixed at start of timestep',Level=7)
+     END IF
      
      ! Determine variable for computing the contact load used to determine the 
      ! soft limit set.
@@ -1565,7 +1579,6 @@ CONTAINS
              ALLOCATE( InterfaceDof( totsize ) )
              InterfaceDof = .FALSE. 
            END IF
-
            
            ! Mark limited and unlimited neighbours and thereby make a 
            ! list of interface dofs. 
@@ -1720,7 +1733,9 @@ CONTAINS
              
              ! Go through the active set and free nodes with wrong sign in contact force
              !--------------------------------------------------------------------------       
-             IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
+             IF( LimitFreeze ) THEN
+               CONTINUE
+             ELSE IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
                IF(.NOT. LimitActive( ind ) ) THEN
                  added = added + 1
                  LimitActive(ind) = .TRUE. 
@@ -1877,7 +1892,7 @@ CONTAINS
 !------------------------------------------------------------------------------
    SUBROUTINE DetermineContact( Solver )
 !------------------------------------------------------------------------------
-     TYPE(Solver_t) :: Solver
+     TYPE(Solver_t), POINTER :: Solver
 !-----------------------------------------------------------------------------
      TYPE(Model_t), POINTER :: Model
      TYPE(variable_t), POINTER :: Var, LoadVar, IterVar
@@ -1949,7 +1964,7 @@ CONTAINS
        CALL Fatal(Caller,'Invalid number of dofs for contact problem: '//I2S(dofs))
      END IF     
 
-     pContact = IsPelement(Mesh % Elements(1) )
+     pContact = IsActivePelement(Mesh % Elements(1), Solver)
      IF( pContact ) THEN
        ! We only have to deal with the middle dofs if they are not condensated away!
        IF( .NOT. ListGetLogical( Params,'Bubbles in Global System',Found ) ) THEN
@@ -10741,11 +10756,13 @@ END FUNCTION SearchNodeL
     INTEGER :: ipar(1)
     TYPE(ValueList_t), POINTER :: SolverParams
     CHARACTER(*), PARAMETER :: Caller = 'ComputeChange'
-    LOGICAL :: Parallel, SingleMesh, x0Allocated
+    LOGICAL :: Parallel, SingleMesh, x0Allocated, LimitRelax
+    LOGICAL, ALLOCATABLE :: LimitMask(:)
     
     SolverParams => Solver % Values
     RelativeP = .FALSE.
     SingleMesh = Solver % Mesh % SingleMesh
+    LimitRelax = .FALSE.
 
     IF(.NOT. ASSOCIATED(Solver % Variable) ) THEN
       CALL Info(Caller,'Solver variable not found for: '&
@@ -10798,8 +10815,10 @@ END FUNCTION SearchNodeL
         RelaxBefore = ListGetLogical( SolverParams, &
             'Steady State Relaxation Before', Stat )      
         IF (.NOT. Stat ) RelaxBefore = .TRUE.
+        LimitRelax = ASSOCIATED(Solver % Variable % LowerLimitActive) .OR. &
+            ASSOCIATED(Solver % Variable % UpperLimitActive)
       END IF
-
+     
       ! Steady state system has never any constraints
       SkipConstraints = .FALSE.
       
@@ -10950,17 +10969,36 @@ END FUNCTION SearchNodeL
     END IF
 
     
+    IF(LimitRelax) THEN
+      ! If we do steady-state relaxation then the soft limiters might not be honored.
+      ! This is a trial to fix this but still not quite there. Better to do relaxation
+      ! on nonlinear system level when having soft limiters. 
+      ALLOCATE(LimitMask(n))
+      LimitMask = .FALSE.
+      IF(ASSOCIATED(Solver % Variable % LowerLimitActive)) &
+          LimitMask = Solver % Variable % LowerLimitActive 
+      IF(ASSOCIATED(Solver % Variable % UpperLimitActive)) &
+          LimitMask = LimitMask .OR. Solver % Variable % UpperLimitActive 
+    END IF
+    
     IF( ResidualMode ) THEN
+      IF(LimitRelax) THEN
+        CALL Fatal(Caller,'Residual mode and limited relaxation cannot be combined!')
+      END IF
       IF(Relax .AND. RelaxBefore) THEN
         x(1:n) = x0(1:n) + Relaxation*x(1:n)
       ELSE
         x(1:n) = x0(1:n) + x(1:n)
       END IF
-    ELSE 
-      IF(Relax .AND. RelaxBefore) THEN
+    ELSE IF(Relax .AND. RelaxBefore) THEN
+      IF(LimitRelax) THEN
+        WHERE(.NOT. LimitMask)
+          x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+        END WHERE          
+      ELSE
         x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
-        IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
       END IF
+      IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
     END IF
 
     IF(SteadyState) THEN
@@ -11215,10 +11253,17 @@ END FUNCTION SearchNodeL
 
     
     IF(Relax .AND. .NOT. RelaxBefore) THEN
-      x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+      IF(LimitRelax) THEN
+        WHERE(.NOT. LimitMask)
+          x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+        END WHERE          
+      ELSE        
+        x(1:n) = (1-Relaxation)*x0(1:n) + Relaxation*x(1:n)
+      END IF
       IF( RelativeP ) x(dofs:n:dofs) = x(dofs:n:dofs) + Poffset
       Solver % Variable % Norm = ComputeNorm(Solver,n,x)
     END IF
+    IF(LimitRelax) DEALLOCATE(LimitMask)
     
     ! Steady state output is done in MainUtils
     SolverName = ListGetString( SolverParams, 'Equation',Stat)
