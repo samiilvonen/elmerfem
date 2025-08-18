@@ -2385,8 +2385,8 @@ END BLOCK
 
   SUBROUTINE CleanHypreAMS() 
     
-    IF(.NOT. ASSOCIATED(GM)) THEN
-      CALL Fatal(Caller,'Matrix "GM" should be allocated!')
+    IF(.NOT. ASSOCIATED(GM) .OR. .NOT. ASSOCIATED(PiM)) THEN
+      CALL Fatal(Caller,'Matrices "GM" and "PiM" should be allocated!')
     END IF
     
     DEALLOCATE(GM % Rows) 
@@ -2394,6 +2394,12 @@ END BLOCK
     DEALLOCATE(GM % Diag) 
     DEALLOCATE(GM % Values) 
     DEALLOCATE(GM)
+
+    DEALLOCATE(PiM % Rows) 
+    DEALLOCATE(PiM % Cols) 
+    DEALLOCATE(PiM % Diag) 
+    DEALLOCATE(PiM % Values) 
+    DEALLOCATE(PiM)
 
   END SUBROUTINE CleanHypreAMS
 
