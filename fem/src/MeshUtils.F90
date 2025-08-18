@@ -9605,7 +9605,8 @@ CONTAINS
         IF( StrongConformingEdges ) THEN
           CALL AddEdgeProjectorStrongConforming()
         ELSE         
-          IF( ListGetLogical( BC,'Level Projector Edges Generic', Found ) ) THEN
+          IF( ListGetLogical( BC,'Level Projector Edges Generic', Found ) .OR. &
+              ListGetLogical( BC,'Level Projector Generic', Found ) ) THEN
             CALL AddEdgeProjectorStrongGeneric()
           ELSE         
             CALL AddEdgeProjectorStrongStrides()
@@ -12535,7 +12536,7 @@ CONTAINS
       TYPE(Element_t), POINTER :: Edge
       TYPE(EdgeHelper_t), ALLOCATABLE :: EdgeHelper(:)
       INTEGER, ALLOCATABLE :: Eperm1(:), Eperm2(:)      
-      INTEGER :: DebugInd, Nslave, Nmaster, symmCount, DebugEdge, ipi
+      INTEGER :: DebugInd, Nslave, Nmaster, symmCount, DebugEdge, ipi, LeftCnt, RedCuts
       LOGICAL :: SaveElem, DebugElem, SaveErr, symmX, symmY
       CHARACTER(*), PARAMETER :: Caller = "AddEdgeProjectorStrongGeneric"
       
@@ -12602,6 +12603,8 @@ CONTAINS
       ZeroCuts = 0
       IpHit = 0
       IpCount = 0 
+      LeftCnt = 0
+      RedCuts = 0
       
       AnyQuad = .FALSE.
       DO ind=1,BMesh1 % NumberOfBulkElements 
@@ -12623,6 +12626,8 @@ CONTAINS
       ELSE
         IP = GaussPoints1D( 1 )
       END IF
+
+      CALL Info(Caller,'Total number of edge dofs: '//I2S(TotalEdges),Level=10)
       
       ALLOCATE( EdgeHelper(TotalEdges) )
       EdgeHits = 0
@@ -12705,6 +12710,7 @@ CONTAINS
             DO j=1,n
               IF( Alpha(j) < 0.0 ) Alpha(j) = Alpha(j) + ArcCoeff * 360.0_dp
             END DO
+            LeftCnt = LeftCnt + 1
           END IF
         END IF
 
@@ -12950,8 +12956,11 @@ CONTAINS
           ! Go through the pieces of each egde and apply numerical integration to each of them.
           DO ic=1,k+1
             ! We may have cut at almost the same coordinate. 
-            IF( ABS(Cuts(ic)-Cuts(ic+1)) < 1.0e-6 ) CYCLE
-
+            IF( ABS(Cuts(ic)-Cuts(ic+1)) < 1.0e-8 ) THEN
+              RedCuts = RedCuts + 1
+              CYCLE
+            END IF
+              
             ! Numerical integration rule.
             DO ipi = 1, IP % n
               ! set local coordinate to [0,1]
@@ -12975,7 +12984,9 @@ CONTAINS
               CALL GlobalToLocal( u, v, w, xc, yc, zc, Element, Nodes )              
               stat = ElementInfo( Element, Nodes, u, v, w, detJ, Basis )                                            
 
-              IF( DebugOn ) THEN              
+              IF( DebugOn ) THEN                              
+                PRINT *,'IP:',IP % n, IP % u(1:IP % n), IP % v(1:IP % n)
+                PRINT *,'ds:',u,v,ips,ds
                 PRINT *,'Find inds',ind,c(1),k,ic
                 PRINT *,'Find Coord:',u,v,xc,yc              
               END IF
@@ -13037,13 +13048,8 @@ CONTAINS
                   Nrange2 = FLOOR( (xc-xminm+ArcTol) / ArcRange )                  
                   IF( Nrange1 /= 0 ) THEN
                     NodesM % x(1:nM) = NodesM % x(1:nM) - NRange1 * ArcRange 
-                    xminm = MINVAL( NodesM % x(1:nM) )
-                    xmaxm = MAXVAL( NodesM % x(1:nM) )
                   END IF
                   Nrange = Nrange1
-                ELSE
-                  xminm = MINVAL( NodesM % x(1:neM) )
-                  xmaxm = MAXVAL( NodesM % x(1:neM) )
                 END IF
                 
 200             ymaxm = MAXVAL( NodesM % y(1:nM) )
@@ -13064,8 +13070,8 @@ CONTAINS
                   END DO
                 END IF
 
-                !xmaxm = MAXVAL( NodesM % x(1:nM) )
-                !xminm = MINVAL( NodesM % x(1:nM) )
+                xmaxm = MAXVAL( NodesM % x(1:nM) )
+                xminm = MINVAL( NodesM % x(1:nM) )
 
                 ! Eliminate this special case since it could otherwise give a faulty hit
                 IF( FullCircle .AND. .NOT. LeftCircle ) THEN
@@ -13166,8 +13172,10 @@ CONTAINS
                 IpHit = IpHit + 1
                 Hit = .TRUE.
                 EXIT
+
+100             CONTINUE
                 
-100             IF( Repeating ) THEN
+                IF( Repeating ) THEN
                   IF( NRange2 /= Nrange ) THEN
                     xminm = xminm + ArcCoeff * ( Nrange1 - Nrange2 ) * ArcRange
                     xmaxm = xmaxm + ArcCoeff * ( Nrange1 - Nrange2 ) * ArcRange
@@ -13206,8 +13214,11 @@ CONTAINS
           Basis, BasisM, dBasisdx, WBasis, WBasisM, RotWBasis )
 
       CALL Info(Caller,'Number of IP points: '//I2S(IpCount),Level=6)
-      CALL Info(Caller,'Number of IP misses: '//I2S(IpCount-IpHit),Level=6)
-      
+      CALL Info(Caller,'Number of Zero length segments: '//I2S(RedCuts),Level=6)
+
+      IF(IpCount > IpHit) CALL Info(Caller,'Number of IP misses: '//I2S(IpCount-IpHit),Level=6)      
+      IF(LeftCnt > 0) CALL Info(Caller,'Number of edge dofs on left side: '//I2S(LeftCnt),Level=12)
+
       WRITE( Message,'(A,ES12.5)') 'Total slave sum:',SlaveSum
       CALL Info(Caller,Message,Level=8)
       WRITE( Message,'(A,ES12.5)') 'Total master sum:',MasterSum
