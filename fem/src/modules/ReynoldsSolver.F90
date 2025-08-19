@@ -338,7 +338,7 @@ CONTAINS
       mat_id = GetInteger( Model % Bodies( body_id ) % Values, 'Material')
       Material => Model % Materials(mat_id) % Values
 
-      ent_id = GetInteger( Model % Bodies( ent_id ) % Values, 'Body Force')
+      ent_id = GetInteger( Model % Bodies( ent_id ) % Values, 'Body Force',GotIt)
       IF(ent_id>0) THEN
         BodyForce => Model % BodyForces(ent_id) % Values
       ELSE
@@ -397,7 +397,7 @@ CONTAINS
       
       Admittance(1:n) = GetReal( Material, 'Flow Admittance', GotIt)
       IF(ASSOCIATED(BodyForce)) THEN
-        ExtPressure(1:n) = GetReal( Material, 'External FilmPressure', GotIt)
+        ExtPressure(1:n) = GetReal( BodyForce, 'External FilmPressure', GotIt)
       ELSE
         ExtPressure(1:n) = 0.0_dp
       END IF
@@ -435,15 +435,12 @@ CONTAINS
               CompressibilityType = Compressibility_None
             ELSE IF(CompressibilityModel == 'weakly compressible') THEN
               CompressibilityType = Compressibility_Weak
-              ReferencePressure = GetCReal( Material,'Reference Pressure',GotIt)           
               BulkModulus = GetCReal( Material, 'Bulk Modulus')
             ELSE IF(CompressibilityModel == 'isothermal ideal gas') THEN
               CompressibilityType = Compressibility_GasIsothermal
-              ReferencePressure = GetCReal( Material,'Reference Pressure')           
             ELSE IF(CompressibilityModel == 'adiabatic ideal gas') THEN
               CompressibilityType = Compressibility_GasAdiabatic
               HeatRatio = GetCReal( Material, 'Specific Heat Ratio')
-              ReferencePressure = GetCReal( Material,'Reference Pressure')                      
             ELSE IF( CompressibilityModel == 'artificial compressible') THEN
               CompressibilityType = Compressibility_Artificial
             ELSE
@@ -663,8 +660,15 @@ CONTAINS
       ELSE
         MS = -Density * Gap**3 / (12 * Visc)
       END IF
-      HR = -Damp * Density
 
+      IF(CompressibilityType == Compressibility_GasIsothermal) THEN
+        HR = -Damp * ( Density + ExtPres ) / 2
+      ELSE IF(CompressibilityType == Compressibility_GasAdiabatic) THEN
+        HR = -Damp * ( Density  + ExtPres ** (1.0_dp/HeatRatio) ) / 2        
+      ELSE
+        HR = -Damp * Density
+      END IF
+        
       ! Multipliers of dp/dt: Mass matrix 
       MM = -DensityDer * Gap
 
@@ -1123,6 +1127,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
     CalculateMoment = stat .OR. CalculateMoment
   END IF
 
+  
 !------------------------------------------------------------------------------
 ! Iterate over any nonlinearity of material or source
 !------------------------------------------------------------------------------
@@ -1168,7 +1173,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
     
     IF(.NOT. ASSOCIATED(VarResult)) CYCLE
     Components = VarResult % Dofs
-
+    
     DO Component = 1, Components      
       CALL DefaultInitialize()
 
@@ -1201,6 +1206,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
         Velocity = 0.0_dp
         UseVelocity = .FALSE.
         GotIt = .FALSE.; GotIt2 = .FALSE.; GotIt3 = .FALSE.
+
         IF( ListCheckPrefix( Equation,'Surface Velocity') ) THEN
           Velocity(1,1:n) = GetReal(Equation,'Surface Velocity 1',GotIt)
           Velocity(2,1:n) = GetReal(Equation,'Surface Velocity 2',GotIt2)
@@ -1448,7 +1454,8 @@ CONTAINS
       END IF
       
       Pres = SUM(Basis(1:n) * ElemPressure(1:n))
-      TotPres = ReferencePressure + Pres
+      TotPres = Pres + ReferencePressure 
+      
       Gap = SUM(Basis(1:n) * GapHeight(1:n))
       DO i=1,3
         GradPres(i) = SUM(dBasisdx(1:n,i) * ElemPressure(1:n))
@@ -1518,7 +1525,8 @@ CONTAINS
         source = Spres + Sslide 
         
       CASE( 3 ) 
-        ! Flux resulting from pressure gradient and sliding 
+        ! Mean velocity resulting from pressure gradient and sliding.
+        ! Compared to above mainly missing one Gap.
 
         Spres = - (Gap**2 / (12 * Visc) ) * GradPres(Component)
         Sslide = TangentVelo(Component) / 2        
@@ -1604,8 +1612,7 @@ CONTAINS
     ! The dofs of force is fixed by default to 3 since there is a normal component
     ! as well as tangential components of force.
     !-------------------------------------------------------------------
-    Calculate = ListGetLogical(Params,'Calculate Force',Found)
-  
+    Calculate = ListGetLogical(Params,'Calculate Force',Found)  
     IF( Calculate ) THEN
       GivenDim = ListGetInteger(Params,'Calculate Force Dim',Found)
       IF( Dim == 1 .OR. GivenDim == 2 ) THEN
