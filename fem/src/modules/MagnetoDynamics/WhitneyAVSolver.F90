@@ -157,11 +157,11 @@ SUBROUTINE WhitneyAVSolver_Init0(Model,Solver,dt,Transient)
 
     
     IF( GetString(SolverParams,'Linear System Solver',Found) == 'block' ) THEN
-      IF ( PiolaVersion ) THEN
-        CALL Fatal('WhitneyAVSolver_Init0','Block strategy not applicable to piola version!')
-      ELSE
+!     IF ( PiolaVersion ) THEN
+!       CALL Fatal('WhitneyAVSolver_Init0','Block strategy not applicable to piola version!')
+!     ELSE
         CALL ListAddLogical( SolverParams, "Optimize Bandwidth", .FALSE.)
-      END IF
+!     END IF
     END IF
   END IF
 
@@ -190,11 +190,12 @@ SUBROUTINE WhitneyAVSolver_Init0(Model,Solver,dt,Transient)
         FoundAMS = ListGetString( SolverParams, 'Block '//I2S(i)//I2S(i)//': Linear System Preconditioning', Found) == 'ams' 
         IF (FoundAMS) EXIT
       END DO
+      IF (.NOT.FoundAMS) THEN
+        FoundAMS = ListGetInteger( SolverParams, 'Linear System Method Hypre Index', Found) == 2
+      END IF
     END IF
-    IF ( .NOT. FoundAMS ) THEN
-      FoundAMS = ListGetInteger( SolverParams, 'Linear System Method Hypre Index', Found) == 2
-    END IF
-    IF ( FoundAMS) THEN
+
+    IF ( FoundAMS ) THEN
       DO i=1,100
         IF ( .NOT.ListCheckPresent( SolverParams, 'Exported Variable '//I2S(i) ) ) EXIT
       END DO

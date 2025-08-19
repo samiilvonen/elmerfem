@@ -1118,7 +1118,6 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
    /* How many rows do I have? */
    local_size = *nrows;
    local_nodes = *nnodes;
-   fprintf( stderr, "%d %d\n", *nrows, *nnodes );
 
    ilower=1000000000;
    iupper=0;
@@ -1151,8 +1150,7 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
          if ( nlower > k ) nlower = k;
        }
 #endif
-
-   fprintf( stderr, "%d %d %d %d\n", ilower, iupper, nlower, nupper );
+//   fprintf( stderr, "%d %d %d %d\n", ilower, iupper, nlower, nupper );
 
    HYPRE_IJMatrixCreate(comm, ilower, iupper, nlower, nupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
@@ -1174,8 +1172,8 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
          for( k=0,j=grows[i]; j<grows[i+1]; j++,k++)
          {
            l = gcols[j-1]-1;
-           p = (gcols[j-1]-1) % 3;
-           q = (gcols[j-1]-1) / 3;
+           p = l % 3;
+           q = l / 3;
            rcols[k] = 3*globalnodes[q]+p;
          }
          HYPRE_IJMatrixAddToValues(G, 1, &nnz, &irow, rcols, &gvals[grows[i]-1]);
@@ -1198,9 +1196,8 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
          if ( nlower > k ) nlower = k;
        }
      }
-   fprintf( stderr, "%d %d %d %d\n", ilower, iupper, nlower, nupper );
+//   fprintf( stderr, "%d %d %d %d\n", ilower, iupper, nlower, nupper );
    HYPRE_IJMatrixCreate(comm, ilower, iupper, nlower, nupper, &Pi);
-
    HYPRE_IJMatrixSetObjectType(Pi, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(Pi);
    
@@ -1219,9 +1216,9 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
          irow = globaldofs[i];
          for( k=0,j=pirows[i]; j<pirows[i+1]; j++,k++)
          {
-           l = (picols[j-1]-1);
-           p = (picols[j-1]-1) % 6;
-           q = (picols[j-1]-1) / 6;
+           l = picols[j-1]-1;
+           p = l % 6;
+           q = l / 6;
            rcols[k] = 6*globalnodes[q]+p;
          }
          HYPRE_IJMatrixAddToValues(Pi, 1, &nnz, &irow, rcols, &pivals[pirows[i]-1]);

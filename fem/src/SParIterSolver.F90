@@ -2371,13 +2371,6 @@ BLOCK
              cdim=CurrentModel % Dimension, UseNodalPermArg=.FALSE. )
 
     Bperm = Bperm - 1
-
-!   nnd = GM % NumberOfRows
-!   ALLOCATE(xx_d(nnd),yy_d(nnd),zz_d(nnd) )
-!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % x,xx_d)
-!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % y,yy_d)
-!   CALL CRS_MatrixVectorMultiply(GM,Mesh % Nodes % z,zz_d)
-    
     nnd = Mesh % NumberOfNodes
 END BLOCK
   END SUBROUTINE PrepareHypreAMS
