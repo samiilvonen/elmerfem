@@ -86,7 +86,7 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
       Admittance(:), Impedance(:), ElemPressure(:), PrevElemPressure(:),  ExtPressure(:), &
       ElemDensity(:),ElemArtif(:),ExtPres(:),FluxPres(:),VeloPres(:),CoeffPres(:), &
       ElemPseudoPressure(:), PseudoPressure(:)
-  TYPE(Variable_t), POINTER :: SensVar, SaveVar
+  TYPE(Variable_t), POINTER :: SensVar, PresVar
 
   CHARACTER(LEN=MAX_NAME_LEN) :: ViscosityModel, CompressibilityModel, varname
   CHARACTER(*), PARAMETER :: Caller = 'ReynoldsSolver'
@@ -118,9 +118,10 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
   IF(Solver % Variable % Dofs /= 1) THEN
     CALL Fatal(Caller,'Impossible number of dofs! (should be 1)')    
   END IF  
-  Pressure     => Solver % Variable % Values
-  PressurePerm => Solver % Variable % Perm
-  Varname = TRIM(Solver % Variable % Name)
+  PresVar => Solver % Variable
+  Pressure => PresVar % Values
+  PressurePerm => PresVar % Perm
+  Varname = TRIM(PresVar % Name)
   IF( COUNT( PressurePerm > 0 ) <= 0) RETURN
 
 !------------------------------------------------------------------------------
@@ -254,20 +255,21 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
     IF( Solver % Variable % NonlinConverged > 0 ) EXIT
   END DO
   
-  IF( ListGetLogical( Params,'Gap Sensitivity', GotIt ) ) THEN
+  IF( ListGetLogical( Params,'Gap Sensitivity', GotIt ) ) THEN       
     CALL Info(Caller,'Computing FilmPressure sentivity to gap height',Level=5)
-
-    CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.TRUE.)
-    ApplyLimiter = ListGetLogical( Params,'Apply Limiter', GotIt )
-    IF( ApplyLimiter ) CALL ListAddLogical( Params,'Apply Limiter', .FALSE. ) 
     
     SensVar => VariableGet( Model % Variables,TRIM(Varname)//' Gap Sensitivity')
     IF( .NOT. ASSOCIATED( SensVar ) ) THEN
       CALL Fatal(Caller,'> '//TRIM(Varname)//' gap sensitivity < should exist!')
     END IF
-    SaveVar => Solver % Variable 
-    Solver % Variable => SensVar
 
+    CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.TRUE.)
+    ApplyLimiter = ListGetLogical( Params,'Apply Limiter', GotIt )
+    IF( ApplyLimiter ) CALL ListAddLogical( Params,'Apply Limiter', .FALSE. ) 
+    
+    Solver % Variable => SensVar
+    SensVar % Values = 0.0_dp
+    
     CALL DefaultInitialize()
     CALL GlobalBulkAssembly( 1 )
     CALL DefaultFinishBulkAssembly( )
@@ -279,9 +281,9 @@ SUBROUTINE ReynoldsSolver( Model,Solver,dt,TransientSimulation )
 !    Solve the system and we are done:
 !    ---------------------------------
     Norm = DefaultSolve()
-
+    
     CALL ListAddLogical(Params,'Skip Compute Nonlinear Change',.FALSE.)
-    Solver % Variable => SaveVar
+    Solver % Variable => PresVar
     IF( ApplyLimiter ) CALL ListAddLogical( Params,'Apply Limiter', .TRUE. ) 
   END IF
 
@@ -317,11 +319,11 @@ CONTAINS
       nd = GetElementNOFDOFs()
       
       CALL GetElementNodes( ElementNodes )
-      CALL GetScalarLocalSolution( ElemPressure )
+      CALL GetScalarLocalSolution( ElemPressure, UVariable = PresVar)
 
       IF( SensMode > 0 ) THEN
         IF( TransientSimulation ) THEN
-          CALL GetScalarLocalSolution( PrevElemPressure, tstep = -1 )
+          CALL GetScalarLocalSolution( PrevElemPressure, tstep = -1, UVariable = PresVar )
         END IF
       END IF
 
@@ -501,7 +503,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Basis(n),dBasisdx(n,3), detJ
     REAL(KIND=dp) :: x,y,z,Metric(3,3),SqrtMetric,Symb(3,3,3),dSymb(3,3,3,3)
-    REAL(KIND=dp) :: U, V, W, S, MS, MM, MA, L, A, B, HR, SL(3), SLR, SLL(3), F
+    REAL(KIND=dp) :: U, V, W, S, MS, MM, MA, L, A, B, HR, SL(3), SLR, SLL(3), F, AS
     REAL(KIND=dp) :: Normal(3), Velo(3), NormalVelo, TangentVelo(3), Damp, Pres, PrevPres, &
         TotPres, GradPres(3), AbsGradPres, dPdt, Gap, Visc, mfp, Kn, Density, DensityDer, &
         PseudoPres, ExtPres
@@ -713,6 +715,12 @@ CONTAINS
               A = A + SLL(j) * Metric(i,j) * dBasisdx(q,i) * Basis(p)
             END DO
           END DO          
+
+          IF( SensMode == 1 ) THEN
+            A = A + Damp * ExtPres * ( ExtPres/TotPres - 1.0_dp) / 2
+!            A = A + ( Damp / 2) * ( ExtPres**2/TotPres - 2*TotPres + ExtPres ) 
+          END IF
+            
           StiffMatrix(p,q) = StiffMatrix(p,q) + s * A 
 
           IF( TransientSimulation ) THEN
@@ -725,23 +733,26 @@ CONTAINS
           F = L + SLR + HR * ExtPres
           IF(GotAC) F = F + MA * PseudoPres
         ELSE IF( SensMode == 1 ) THEN
+
           IF( TransientSimulation ) THEN
             F = -2.0 * DensityDer * dPdt
           END IF
+          
           F = F - DensityDer * SUM( TangentVelo * GradPres )          
           DO i = 1,dim
             ! The plane element automatically omits the derivative in normal direction
             F = F - 1.5_dp * ( Density / Gap ) * SUM( dBasisdx(1:n,i) * Velocity(i,1:n) * GapHeight(1:n) ) 
           END DO
-          F = F - 3.0_dp * Damp * Density * Pres / Gap 
-          F = F - 3 * Density * NormalVelo / Gap
+
+          F = F - Density * NormalVelo * (3 / Gap )
+          F = F + HR * ( ExtPres - Pres) * ( 3 / Gap )
         END IF
 
         ForceVector(p) = ForceVector(p) + s * Basis(p) * F        
         
       END DO
     END DO
-
+    
 !------------------------------------------------------------------------------
   END SUBROUTINE LocalBulkMatrix
 !------------------------------------------------------------------------------
@@ -1011,7 +1022,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
 ! Local variables
 !------------------------------------------------------------------------------
-  TYPE(Variable_t), POINTER :: PressureVar, VarResult, SolverVar
+  TYPE(Variable_t), POINTER :: PressureVar, VarResult, SolverVar, SensVar
   TYPE(Nodes_t) :: ElementNodes
   TYPE(Element_t),POINTER :: Element
   TYPE(ValueList_t), POINTER :: Params, Material, Equation
@@ -1029,16 +1040,16 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
 
   REAL(KIND=dp), POINTER :: Pressure(:), gWork(:,:)
   REAL(KIND=dp) :: Norm, ReferencePressure, mfp0, HeatSlide, HeatPres, HeatTotal, &
-      Pforce(3), Vforce(3), TotForce, Moment(3), MomentAbout(3), AmbientPres, &
+      Pforce(3), Vforce(3), Sforce(3), TotForce, Moment(3), MomentAbout(3), AmbientPres, &
       ManningCoeff, GravityCoeff, MinGap
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), FORCE(:), Viscosity(:), GapHeight(:), &
-      Velocity(:,:), ElemPressure(:), BotHeight(:), ElemDensity(:)
+      Velocity(:,:), ElemPressure(:), SensPressure(:), BotHeight(:), ElemDensity(:)
   CHARACTER(LEN=MAX_NAME_LEN) :: ViscosityModel, PressureName
   CHARACTER(*), PARAMETER :: Caller = 'ReynoldsPostprocess'
 
 
   SAVE ElementNodes, Viscosity, Velocity, GapHeight, ElemDensity, BotHeight, &
-      FORCE, STIFF, ElemPressure, AllocationsDone
+      FORCE, STIFF, ElemPressure, SensPressure, AllocationsDone
 
  
 !------------------------------------------------------------------------------
@@ -1069,6 +1080,11 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
   IF(.NOT. ASSOCIATED(PressureVar)) THEN
     CALL Info(Caller,'Give pressure variable name with: "Reynolds Pressure Variable Name"',Level=3)
     CALL Fatal(Caller,'Could not find primary variable: '//TRIM(PressureName))
+  END IF
+
+  SensVar => VariableGet( Solver % Mesh % Variables,TRIM(PressureName)//' Gap Sensitivity')
+  IF(ASSOCIATED(SensVar)) THEN
+    CALL Info(Caller,'We got pressure sensitivity available!')
   END IF
   
   IF( ManningModel ) THEN
@@ -1109,6 +1125,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
         FORCE(n),           &
         STIFF(n,n), &
         ElemPressure(n), &
+        SensPressure(n), &
         STAT=istat )
 
     IF ( istat /= 0 ) CALL FATAL(Caller,'Memory allocation error')    
@@ -1136,6 +1153,7 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
   HeatSlide = 0.0_dp
   HeatPres = 0.0_dp
   Pforce = 0.0_dp
+  Sforce = 0.0_dp
   Vforce = 0.0_dp
   Moment = 0.0_dp
 
@@ -1146,7 +1164,6 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
 
   CALL Info(Caller,'Primary variable name: '//TRIM( Solver % variable % Name) )
 
-   
   DO Mode = 0, 4  
 
     SELECT CASE( Mode )
@@ -1190,6 +1207,10 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
         
         NodeIndexes => Element % NodeIndexes         
         ElemPressure(1:n) = Pressure(PressurePerm(NodeIndexes(1:n)))
+
+        IF(ASSOCIATED(SensVar)) THEN
+          SensPressure(1:n) = SensVar % Values(SensVar % Perm(NodeIndexes(1:n)))
+        END IF
         
         body_id =  Element % Bodyid
 	IF( body_id <= 0 ) CYCLE        
@@ -1308,7 +1329,6 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
       END IF
     END DO
 
-
     IF( Mode == 0) THEN
       CONTINUE
       
@@ -1330,6 +1350,15 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
       CALL Info(Caller,Message,Level=5)
       CALL ListAddConstReal( Model % Simulation,'res: Reynolds force',TotForce)
 
+      IF(ASSOCIATED(SensVar)) THEN
+        DO i=1,3
+          WRITE(Message,'(A,I1,A,T35,ES15.4)') 'Pressure spring ',i,' (N/m):',Sforce(i)
+          CALL Info(Caller,Message,Level=5)
+          CALL ListAddConstReal( Model % Simulation,'res: Pressure spring '&
+              //I2S(i),Sforce(i))
+        END DO
+      END IF
+        
       IF( CalculateMoment ) THEN
         DO i=1,3
           WRITE(Message,'(A,I1,A,T35,ES15.4)') 'Reynolds moment ',i,' (Nm):',Moment(i)
@@ -1338,7 +1367,6 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
               //I2S(i),Moment(i))
         END DO
       END IF
-
 
     ELSE IF( Mode == 2 ) THEN
       CONTINUE
@@ -1502,6 +1530,12 @@ CONTAINS
         Pforce(Component) = Pforce(Component) + s * Spres
         Vforce(Component) = Vforce(Component) + s * Sslide
 
+        IF( ASSOCIATED(SensVar) ) THEN
+          Sforce(Component) = Sforce(Component) + s * &
+              SUM(Basis(1:n) * SensPressure(1:n)) * Normal( Component ) 
+        END IF
+          
+        
         IF( CalculateMoment ) THEN
           IF( Component == 1 ) THEN
             Moment(2) = Moment(2) + Radius(3) * s * source
