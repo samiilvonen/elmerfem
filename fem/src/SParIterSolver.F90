@@ -2361,7 +2361,8 @@ BLOCK
     TYPE(Variable_t), POINTER :: Nvar
 
     Nvar => VariableGet( Solver % Mesh % Variables, 'ams nodal var' )
-
+    IF(.NOT. ASSOCIATED(NVar)) CALL Fatal(Caller,'Variable "ams nodal var" does not exist!')
+    
     PiM => Null()
     CALL NodalToNedelecInterpolation_GlobalMatrix(Mesh, Nvar, Solver % Variable, PiM, &
              cdim=CurrentModel % Dimension, UseNodalPermArg=.FALSE. )
