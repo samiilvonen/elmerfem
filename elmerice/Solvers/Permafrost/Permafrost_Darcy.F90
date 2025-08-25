@@ -486,7 +486,7 @@ CONTAINS
     !REAL(KIND=dp) , ALLOCATABLE :: CgwpI1AtNodes(:)
     INTEGER :: i,t,p,q,DIM, RockMaterialID, FluxDOFs,IPPerm,IPPermRhogw,IPPermFreshwaterHead
     LOGICAL :: Stat,Found, ConstantsRead=.FALSE., ConstVal=.FALSE., ConstantDispersion=.FALSE.,&
-         ConstantDiffusion=.FALSE., CryogenicSuction=.FALSE., swaptensor=.FALSE.
+         ConstantDiffusion=.FALSE., CryogenicSuction=.FALSE., swaptensor=.FALSE., TH1=.FALSE.
     TYPE(GaussIntegrationPoints_t) :: IP
     TYPE(ValueList_t), POINTER :: BodyForce, Material
     TYPE(Nodes_t) :: Nodes
@@ -567,6 +567,7 @@ CONTAINS
 
     Swres = GetConstReal( Material, "Interfrost Swres", Found)
     IFdeltaT = GetConstReal( Material, "Interfrost deltaT", Found)
+
     
     swaptensor = GetLogical(Material,'Swap Tensor',Found)
     
@@ -682,9 +683,13 @@ CONTAINS
              CurrentSolventMaterial % rhow0,GlobalRockMaterial % rhos0(RockMaterialID),&
              T0,TemperatureAtIP,PressureAtIP,PorosityAtIP)
       CASE('interfrost') ! simple Interfrost model
-        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT)
-        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT)
-        XiPAtIP = 0.0_dp 
+        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT,.FAlSE.)
+        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT,.FALSE.)
+        XiPAtIP = 0.0_dp
+      CASE('interfrostTH1') ! simple Interfrost model for TH1
+        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
+        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
+        XiPAtIP = 0.0_dp   
       CASE DEFAULT ! Hartikainen model
         CALL  GetXiHartikainen(RockMaterialID,&
              CurrentSoluteMaterial,CurrentSolventMaterial,&

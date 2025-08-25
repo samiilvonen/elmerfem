@@ -449,7 +449,11 @@ CONTAINS
       CASE('interfrost') ! simple Interfrost model
         XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT)
         XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT)
-        XiPAtIP = 0.0_dp  
+        XiPAtIP = 0.0_dp
+      CASE('interfrostTH1') ! simple Interfrost model for TH1
+        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
+        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
+        XiPAtIP = 0.0_dp   
       CASE DEFAULT ! Hartikainen model
         XiBefore =  XiAtIP(IPPerm)
         CALL  GetXiHartikainen(RockMaterialID,&

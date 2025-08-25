@@ -1152,16 +1152,38 @@ CONTAINS
   !---------------------------------------------------------------------------------------------
   ! functions specific to heat transfer and phase change in InterFrost suite
   !---------------------------------------------------------------------------------------------
-  FUNCTION GetXiInterfrost(T0,Temperature,Swres, deltaT) RESULT(XiInterfrost)
+  FUNCTION GetXiInterfrost(T0,Temperature,Swres, deltaT, TH1) RESULT(XiInterfrost)
     REAL(KIND=dp), INTENT(IN) ::T0,Temperature,Swres,deltaT
     REAL(KIND=dp) :: XiInterfrost
-    XiInterfrost = (1.0_dp - Swres)*EXP(-((MIN(Temperature,T0) - T0)/deltaT)**2.0_dp) + Swres
+    REAL(KIND=dp) :: slopefreezing
+    LOGICAL, OPTIONAL :: TH1
+    IF (TH1) THEN
+      IF (Temperature < (T0 - deltaT)) THEN
+        XiInterfrost = Swres
+      ELSE
+        slopefreezing = (1.0_dp - Swres)/(T0 - deltaT)
+        XiInterfrost = 1.0_dp + slopefreezing*(MIN(Temperature,T0) - T0)
+      END IF
+    ELSE
+      XiInterfrost = (1.0_dp - Swres)*EXP(-((MIN(Temperature,T0) - T0)/deltaT)**2.0_dp) + Swres
+    END IF
   END FUNCTION GetXiInterfrost
   !---------------------------------------------------------------------------------------------
-  REAL (KIND=dp) FUNCTION XiInterfrostT(T0,Temperature,Swres, deltaT)
+  REAL (KIND=dp) FUNCTION XiInterfrostT(T0,Temperature,Swres, deltaT, TH1)
     REAL(KIND=dp), INTENT(IN) ::T0,Temperature,Swres,deltaT
-    XiInterfrostT = -(1.0_dp - Swres) &
-         * EXP(-((MIN(Temperature,T0) -T0)/deltaT)**2.0_dp) * 2.0_dp*(MIN(Temperature,T0) -T0)/(deltaT*deltaT)
+    REAL(KIND=dp) :: slopefreezing
+    LOGICAL, OPTIONAL :: TH1
+    IF (TH1) THEN      
+      IF ((Temperature < (T0 - deltaT)) .OR. (Temperature > T0)) THEN
+        XiInterfrostT = 0.0
+      ELSE
+        slopefreezing = (1.0_dp - Swres)/(T0 - deltaT)
+        XiInterfrostT = slopefreezing
+      END IF
+    ELSE
+      XiInterfrostT = -(1.0_dp - Swres) &
+           * EXP(-((MIN(Temperature,T0) -T0)/deltaT)**2.0_dp) * 2.0_dp*(MIN(Temperature,T0) -T0)/(deltaT*deltaT)
+    END IF
   END FUNCTION XiInterfrostT
   !---------------------------------------------------------------------------------------------
   ! functions specific to heat transfer and phase change
