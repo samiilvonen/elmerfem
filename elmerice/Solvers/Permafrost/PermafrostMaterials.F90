@@ -1160,8 +1160,9 @@ CONTAINS
     IF (TH1) THEN
       IF (Temperature < (T0 - deltaT)) THEN
         XiInterfrost = Swres
+        !PRINT *, "TH1"
       ELSE
-        slopefreezing = (1.0_dp - Swres)/(T0 - deltaT)
+        slopefreezing = (1.0_dp - Swres)/(deltaT)
         XiInterfrost = 1.0_dp + slopefreezing*(MIN(Temperature,T0) - T0)
       END IF
     ELSE
@@ -1177,7 +1178,7 @@ CONTAINS
       IF ((Temperature < (T0 - deltaT)) .OR. (Temperature > T0)) THEN
         XiInterfrostT = 0.0
       ELSE
-        slopefreezing = (1.0_dp - Swres)/(T0 - deltaT)
+        slopefreezing = (1.0_dp - Swres)/(deltaT)
         XiInterfrostT = slopefreezing
       END IF
     ELSE

@@ -472,6 +472,7 @@ CONTAINS
 
       ! unfrozen pore-water content at IP
       IPPerm = XiAtIPPerm(ElementID) + t
+      !PRINT *, "PhaseChangeModel: ", PhaseChangeModel
       SELECT CASE(PhaseChangeModel)
       CASE('anderson')
         XiAtIP(IPPerm) = &
@@ -487,13 +488,15 @@ CONTAINS
              CurrentSolventMaterial % rhow0,GlobalRockMaterial % rhos0(RockMaterialID),&
              T0,TemperatureAtIP,PressureAtIP,PorosityAtIP)
       CASE('interfrost') ! simple Interfrost model
-        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT)
-        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,deltaT)
+        XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT,.FALSE.)
+        XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,deltaT,.FALSE.)
         XiPAtIP = 0.0_dp
-      CASE('interfrostTH1') ! simple Interfrost model for TH1
+      CASE('interfrostth1') ! simple Interfrost model for TH1
+        !PRINT *, "IF TH1"
         XiAtIP(IPPerm) = GetXiInterfrost(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
         XiTAtIP = XiInterfrostT(T0,TemperatureAtIP,Swres,IFdeltaT,.TRUE.)
-        XiPAtIP = 0.0_dp   
+        XiPAtIP = 0.0_dp
+        
       CASE DEFAULT ! Hartikainen model
         CALL  GetXiHartikainen (RockMaterialID,&
              CurrentSoluteMaterial,CurrentSolventMaterial,&
