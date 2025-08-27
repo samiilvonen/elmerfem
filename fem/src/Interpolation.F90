@@ -1003,7 +1003,7 @@ MODULE Interpolation
               k1 = Face % NodeIndexes(i)
               IF(UseNodalPerm) k1 = NodalPerm(k1)
               DO k=1,dim
-                CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 6*(k1-1)+2*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
+                CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 3*vdofs*(k1-1)+vdofs*(k-1)+dofi, FacePiMat(j,3*(i-1)+k) )
               END DO
             END DO
           END DO
