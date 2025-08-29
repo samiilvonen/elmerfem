@@ -1092,7 +1092,7 @@
     CHARACTER(MAX_NAME_LEN) :: str   
     INTEGER :: n
 !-------------------------------------------------------------------------------
-
+    
     Solver => CurrentModel % Solver
     Params => Solver % Values
     Mesh => Solver % Mesh 
@@ -1322,7 +1322,7 @@
           dx(1:n) = dx(1:n) * bnre
 #endif
           WRITE( Message,'(A,2ES12.3)') 'Preconditioning Normalizing Factor: ',bnre,bnim
-          CALL Info('SlavePrec',Message,Level=6) 
+          CALL Info('SlavePrecComplex',Message,Level=6) 
         END IF
       END IF
 
