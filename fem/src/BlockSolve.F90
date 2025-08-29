@@ -1236,7 +1236,7 @@ CONTAINS
       DO j=A % Rows(i+1)-1,A % Rows(i),-1
 
         k = A % Cols(j)
-        IF ( k>n) CYCLE
+!       IF ( k>n) CYCLE
         
         bcol = BlockIndex(k)
         bk = BlockNumbering(k)
