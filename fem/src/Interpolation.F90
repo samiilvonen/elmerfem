@@ -905,7 +905,7 @@ MODULE Interpolation
     END IF
     vdofs = VectorElementVar % DOFs
     IF(vdofs /=1 .AND. vdofs /= 2) THEN
-      CALL Fatal(Caller,'Vector dofs only makes sense for values 1 and 2!')
+      CALL Fatal(Caller,'Vector dofs only makes sense for values 1 (real) and 2 (complex)!')
     END IF
     
     NodalPerm => NodalVar % Perm
@@ -965,9 +965,7 @@ MODULE Interpolation
           k0 = vdofs*(k-1)+dofi
           DO i=1,dim
             CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 3*vdofs*(k1-1)+vdofs*(i-1)+dofi, PiMat(j,i) )
-            IF(vdofs==2) THEN
-              CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 3*vdofs*(k2-1)+vdofs*(i-1)+dofi, PiMat(j,3+i) )
-            END IF
+            CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 3*vdofs*(k2-1)+vdofs*(i-1)+dofi, PiMat(j,3+i) )
           END DO
         END DO
       END DO
