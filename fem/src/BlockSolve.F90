@@ -1209,6 +1209,12 @@ CONTAINS
       offset(i+1) = offset(i) + n
     END DO
 
+    DO i=1,NoVar
+      DO j=1,NoVar
+        B => TotMatrix % SubMatrix(i,j) % Mat
+        IF ( B % Format == MATRIX_CRS ) B % Values = 0
+      END DO
+    END DO
     
     n = Solver % Matrix % NumberOfRows      
     DO i=1, A % NumberOfRows 
@@ -2120,6 +2126,18 @@ CONTAINS
       END IF
     END DO
 
+    IF ( C1 % Format == MATRIX_CRS ) THEN
+      C1 % Values = 0
+      IF (.NOT.SkipPrec ) C1prec % Values = 0
+    END IF 
+
+    IF ( BlockAV ) THEN
+      IF ( C2 % Format == MATRIX_CRS ) THEN
+        C2 % Values = 0
+        IF (.NOT.SkipPrec ) C2prec % Values = 0
+      END IF 
+    END IF
+    
     DO DoPrec = 0, 1
       IF( DoPrec == 1 .AND. SkipPrec ) CYCLE
       
@@ -4600,7 +4618,7 @@ CONTAINS
     SolverVar => Solver % Variable
     Solver % Variable => MonolithicVar
 
-        
+
     IF(.NOT. Visited ) THEN
       n = 0
       m = 0
