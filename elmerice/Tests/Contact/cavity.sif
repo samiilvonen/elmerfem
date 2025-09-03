@@ -52,6 +52,10 @@ Simulation
   Output File = "$namerun".result"
   Post File = "$namerun".vtu"
   max output level = 5
+
+! This test has issues not finding TEST.PASSED. Maybe addring
+! a small time delay will help...
+  Test Passed Delay = Real 0.1 
 End
 
 !---------------------------------------------------

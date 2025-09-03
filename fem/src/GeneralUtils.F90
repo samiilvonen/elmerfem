@@ -293,9 +293,17 @@ CONTAINS
   END FUNCTION str2ints
 !------------------------------------------------------------------------------
 
+  SUBROUTINE WaitSec(t)
+    REAL(KIND=dp) :: t,t0,t1
 
-
-
+    t0 = RealTime()
+    DO WHILE(.TRUE.)
+      t1 = RealTime()
+      IF(t1-t0 > t) EXIT
+    END DO
+    
+  END SUBROUTINE WaitSec
+    
 !------------------------------------------------------------------------------
   SUBROUTINE SystemCommand( cmd ) 
 !------------------------------------------------------------------------------
