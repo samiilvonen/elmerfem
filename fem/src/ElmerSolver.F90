@@ -1145,7 +1145,7 @@
        LOGICAL, OPTIONAL :: Finalize 
 
        INTEGER :: i, j, k, n, solver_id, TestCount=0, PassCount=0, FailCount, Dofs
-       REAL(KIND=dp) :: Norm, RefNorm, Tol, Err, val, refval
+       REAL(KIND=dp) :: Norm, RefNorm, Tol, Err, val, refval, dt
        TYPE(Solver_t), POINTER :: Solver
        TYPE(Variable_t), POINTER :: Var
        LOGICAL :: Found, Success = .TRUE., FinalizeOnly, CompareNorm, CompareSolution, AbsoluteErr
@@ -1192,6 +1192,9 @@
              END IF
              CALL FLUSH( 10 )
              CLOSE( 10 )
+
+             dt = ListGetConstReal(CurrentModel % Simulation,'Test Passed Delay', Found )
+             IF(Found) CALL WaitSec(dt)
            END IF
          END IF
 
