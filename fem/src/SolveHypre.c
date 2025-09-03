@@ -1190,9 +1190,9 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
    for( i=0; i<local_nodes; i++ )
      {
        if  (nodeowner[i])  {
-         k = 6*globalnodes[i]+5;
+         k = 3*globalnodes[i]+2;
          if ( nupper < k ) nupper = k;
-         k = 6*globalnodes[i];
+         k = 3*globalnodes[i];
          if ( nlower > k ) nlower = k;
        }
      }
@@ -1217,9 +1217,9 @@ void STDCALLBULL FC_FUNC(createhypreams,CREATEHYPREAMS)
          for( k=0,j=pirows[i]; j<pirows[i+1]; j++,k++)
          {
            l = picols[j-1]-1;
-           p = l % 6;
-           q = l / 6;
-           rcols[k] = 6*globalnodes[q]+p;
+           p = l % 3;
+           q = l / 3;
+           rcols[k] = 3*globalnodes[q]+p;
          }
          HYPRE_IJMatrixAddToValues(Pi, 1, &nnz, &irow, rcols, &pivals[pirows[i]-1]);
       }
