@@ -261,7 +261,7 @@ CONTAINS
     nsize = j
     
 100 IF( nsize == 0 ) THEN
-      CALL Fatal('CreateBlockVariable','Variable '//TRIM(VarName)//' cannot be created')      
+      CALL Info('CreateBlockVariable','Variable '//TRIM(VarName)//' of size zero.', Level=10 )
     END IF
 
     CALL Info('CreateBlockVariable','Creating variable: '//TRIM(VarName), Level=6 )
@@ -3840,6 +3840,8 @@ CONTAINS
         END IF      
         ASolver => Solver
       END IF      
+
+      IF ( A % NumberOfRows == 0 ) CYCLE
         
       IF (isParallel) THEN
         ! copy part of full solution to block solution
