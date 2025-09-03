@@ -4433,11 +4433,14 @@ omstart:
 	  for(;;) { 
 	    for(l=0;l<LONGLINESIZE;l++) {
 	      if( longline[l] == '\n') {
-		j = l;
+		j = l+1;
 	    	break;	    
 	      }
 	    }
-	    if(j) break;
+	    if(j) {
+	      j--;
+	      break;	      
+	    }
 	    k += LONGLINESIZE;
 	    GETLONGLINE;
 	  }	   	    	      
@@ -5077,14 +5080,18 @@ omstart:
             for(;;) {
               for(l=0; l<LONGLINESIZE; l++) {
                 if( longline[l] == '\n') {
-                  j = l;
+		  // we should have positive j even when the newline is the 0th entry!
+                  j = l+1;
                   break;
                 }
               }
-              if(j) break;
-              k += LONGLINESIZE;
+              if(j) {
+		j--;
+		break;
+	      }
+	      k += LONGLINESIZE;
               GETLONGLINE;
-              printf("extra getlongline: %s\n",longline);
+              if(0) printf("extra getlongline: %s\n",longline);
               fflush(stdout);
             }
             if( k > 0 && !allocated) printf("Entity line %d has length %d.\n",i,k+j);
