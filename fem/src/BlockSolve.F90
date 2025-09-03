@@ -1032,7 +1032,7 @@ CONTAINS
     Perm => Solver % Variable % Perm 
     n = SIZE( Perm ) 
     BlockIndex = 0
-    
+   
     dofs = Solver % Variable % Dofs
     IF(dofs > 2) THEN
       CALL Fatal('BlockPickAV','Only implemented for 1 or 2 dofs: '//I2S(dofs))
@@ -1971,8 +1971,10 @@ CONTAINS
     TYPE(Variable_t), POINTER :: Var
     TYPE(Solver_t), POINTER :: PSolver
     LOGICAL :: InheritCM, PrecTrue 
+     
+    LOGICAL, ALLOCATABLE :: vflag(:)
 
-    INTEGER, ALLOCATABLE :: REdgePerm(:), RNodePerm(:), CEdgePerm(:), CNodePerm(:), InvPerm(:)
+    INTEGER, ALLOCATABLE :: REdgePerm(:), RNodePerm(:), BlockNumbering(:), InvPerm(:)
     
     CALL Info('BlockPickConstraint','Picking constraints to block matrix',Level=10)
 
@@ -2075,41 +2077,48 @@ CONTAINS
       DO i=1,CM % NumberOFRows
         j = CM % InvPerm(i)
         j = MOD(j-1,A % NumberOfRows)+1
+        j = InvPerm(j)
         IF ( j >  n ) THEN
            i2 = i2+1
            rEdgePerm(i) = i2
         ELSE IF ( j>0 .AND. j <= n ) THEN
-          i1 = i1 +1 
-          rNodePerm(i) = i1
+           i1 = i1 +1 
+           rNodePerm(i) = i1
         ELSE
           stop 'cm invperm'
         END IF
       END DO
 !     print*, 'edges: ', i2, 'nodes: ', i1, cm % numberofrows
-
-      j = Solver % Matrix % NumberOfRows
-      ALLOCATE( cEdgePerm(j), cNodePerm(j) )
-      cEdgePerm = 0
-      cNodePerm = 0
-      i1 = 0
-      i2 = 0
-      DO i=1,Solver % Matrix % NumberOfRows
-        IF ( InvPerm(i) >  n ) THEN
-          i2 = i2+1
-          cEdgePerm(i) = i2
-        ELSE IF ( InvPerm(i) > 0 .AND. InvPerm(i) <= n ) THEN
-          i1 = i1 +1 
-          cNodePerm(i) = i1
-        ELSE
-          stop 'invperm'
-        END IF
-      END DO
-!     print*, 'edges: ', i2, 'nodes: ', i1, solver %  matrix % numberofrows
     END IF
 
+    j = Solver % Matrix % NumberOfRows
+    ALLOCATE( vFlag(j), BlockNumbering(j) )
+    IF (BlockAV) THEN
+      i1 = 0; i2 = 0
+      k = SIZE(Solver % Variable % Perm)
+      DO i=1,k
+        j = Solver % variable % Perm(i)
+        IF ( j<= 0 ) CYCLE
+        vFlag(j) = i <= n
+      END DO
+    ELSE
+      vFlag = .TRUE.
+    END IF
+!   print*, 'edges: ', COUNT(.NOT. vFlag), 'nodes: ', COUNT(vFlag), solver %  matrix % numberofrows
 
-    cm => a % constraintmatrix
-    print*,maxval(cm % cols), maxval(cm % invperm)
+
+    k = Solver % Matrix % NumberOfRows
+    i1 = 0; i2=0
+    BlockNumbering = 0
+    DO i=1,k
+      IF ( vFlag(i) ) THEN
+        i1 = i1 + 1
+        BlockNumbering(i) = i1
+      ELSE
+        i2 = i2 + 1
+        BlockNumbering(i) = i2
+      END IF
+    END DO
 
     DO DoPrec = 0, 1
       IF( DoPrec == 1 .AND. SkipPrec ) CYCLE
@@ -2127,12 +2136,7 @@ CONTAINS
           rb = 1          
           i1 = i1 + 1
           IF( BlockAV ) THEN
-            IF( rEdgePerm(i)>0 ) THEN
-              rb = 2
-            ELSE IF  (rNodePerm(i)<= 0) THEN
-              STOP 'rowi'
-            END IF
-
+            IF( rEdgePerm(i)>0 ) rb = 2
             IF( rb == 1 ) THEN
               i1 = rNodePerm(i)
             ELSE
@@ -2143,7 +2147,7 @@ CONTAINS
           ! First round initialize the ConsPerm
           IF( DoPrec == 0 ) THEN
             IF ( rb == 1 ) THEN
-              ConsPerm(rowi) = i1
+              ConsPerm(rowi)  = i1
             ELSE
               ConsPerm2(rowi) = i2
             END IF
@@ -2155,15 +2159,9 @@ CONTAINS
             colj = CM % Cols(j)
             cb = 1
             IF( BlockAV ) THEN
-              IF( cEdgePerm(colj)>0 ) THEN
-                cb = 2
-                colj = cEdgePerm(colj)
-              ELSE IF ( cNodePerm(colj)> 0 ) THEN
-                colj = cNodePerm(colj)
-              ELSE
-                STOP 'colj'
-              END IF
+              IF( .NOT. vFlag(colj) ) cb = 2
             END IF
+            colj = BlockNumbering(colj)
 
             val = CM % Values(j)
 
@@ -2174,7 +2172,7 @@ CONTAINS
                 IF ( cb == 1 ) THEN
                   CALL AddToMatrixElement(C1prec,i1,ConsPerm(colj),val)
                 ELSE
-                  CALL AddToMatrixElement(C2prec,i2,ConsPerm(colj),val)
+                  CALL AddToMatrixElement(C2prec,i2,ConsPerm2(colj),val)
                 END IF
               END IF                
             ELSE IF( .NOT. InheritCM ) THEN
@@ -2244,14 +2242,14 @@ CONTAINS
         CALL Info('BlockPickConstraint','Using existing variable > '//VarName//' <')
       ELSE
         CALL Info('BlockPickConstraint','Variable > '//VarName//' < does not exist, creating')
-        Var => CreateBlockVariable(PSolver, NoVar+2, VarName, 1, ConsPerm2 )
-
         n = MAXVAL(ConsPerm2)
-        TotMatrix % SubVector(NoVar+2) % Var => Var      
-        TotMatrix % Offset(NoVar+3) = TotMatrix % Offset(NoVar+2) + n
-        TotMatrix % MaxSize = MAX( TotMatrix % MaxSize, n )
-        TotMatrix % TotSize = TotMatrix % TotSize + n
+        Var => CreateBlockVariable(PSolver, NoVar+2, VarName, 1, ConsPerm2 )
       END IF
+
+      TotMatrix % SubVector(NoVar+2) % Var => Var      
+      TotMatrix % Offset(NoVar+3) = TotMatrix % Offset(NoVar+2) + n
+      TotMatrix % MaxSize = MAX( TotMatrix % MaxSize, n )
+      TotMatrix % TotSize = TotMatrix % TotSize + n
 
       TotMatrix % SubMatrix(NoVar+2,2) % Mat => C2
       TotMatrix % SubMatrix(2,NoVar+2) % Mat => CRS_Transpose(C2)
