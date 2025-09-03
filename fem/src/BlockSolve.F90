@@ -2126,20 +2126,22 @@ CONTAINS
       END IF
     END DO
 
-    IF ( C1 % Format == MATRIX_CRS ) THEN
-      C1 % Values = 0
-      IF ( ASSOCIATED(C1prec) ) THEN
-        IF ( ASSOCIATED(C1prec % Values) ) C1prec % Values = 0
-      END IF
-    END IF 
-
-    IF ( BlockAV ) THEN
-      IF ( C2 % Format == MATRIX_CRS ) THEN
-        C2 % Values = 0
-        IF ( ASSOCIATED(C2prec) ) THEN
-          IF ( ASSOCIATED(C2prec % Values) ) C2prec % Values = 0
+    IF ( .NOT. InheritCM ) THEN
+      IF ( C1 % Format == MATRIX_CRS ) THEN
+        C1 % Values = 0
+        IF ( ASSOCIATED(C1prec) ) THEN
+          IF ( ASSOCIATED(C1prec % Values) ) C1prec % Values = 0
         END IF
       END IF 
+
+      IF ( BlockAV ) THEN
+        IF ( C2 % Format == MATRIX_CRS ) THEN
+          C2 % Values = 0
+          IF ( ASSOCIATED(C2prec) ) THEN
+            IF ( ASSOCIATED(C2prec % Values) ) C2prec % Values = 0
+          END IF
+        END IF 
+      END IF
     END IF
     
     DO DoPrec = 0, 1
