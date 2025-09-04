@@ -85,8 +85,6 @@ CONTAINS
 
     S % FORMAT = MATRIX_LIST
 
-    print*,n, MAXVAL(p % cols), Q % numberofrows, MAXVAL(q % cols), A % Numberofrows, MAXVAL(a % cols)
-          
     ! Add the corner entry to give the max size for list.  
     CALL List_AddToMatrixElement(S % ListMatrix, n, n, 0.0_dp ) 
 
@@ -1969,7 +1967,7 @@ CONTAINS
 
     LOGICAL :: BlockAV
     INTEGER::i,j,k,l,n,i1,i2,i3,rowi,colj,NoCon,rb,cb
-    TYPE(Matrix_t), POINTER :: A,CM,C1,C2,C3,C1prec,C2prec,C3prec
+    TYPE(Matrix_t), POINTER :: A,CM,C1,C2,C3,C1prec,C2prec,C3prec,Tmat
     REAL(KIND=dp) :: PrecCoeff,val
     INTEGER, POINTER :: ConsPerm(:), ConsPerm2(:)
     INTEGER :: DoPrec
@@ -1987,7 +1985,8 @@ CONTAINS
     
     SolverMatrix => Solver % Matrix 
     Params => Solver % Values
-    BlockAV = ListGetLogical( Params,'Block A-V System Old', Found)
+    BlockAV = ListGetLogical( Params,'Block A-V System', Found)
+    BlockAV = BlockAV .OR. ListGetLogical( Params,'Block A-V System Old', Found)
 
     A => SolverMatrix
     n = Solver % Mesh % NumberOfNodes
@@ -2239,6 +2238,7 @@ CONTAINS
     Var => VariableGet( Solver % Mesh % Variables, VarName )
     IF(ASSOCIATED( Var ) ) THEN
       n = SIZE( Var % Values ) 
+      DEALLOCATE(ConsPerm)
       CALL Info('BlockPickConstraint','Using existing variable > '//VarName//' <')
     ELSE
       CALL Info('BlockPickConstraint','Variable > '//VarName//' < does not exist, creating')
@@ -2253,6 +2253,9 @@ CONTAINS
     TotMatrix % TotSize = TotMatrix % TotSize + n
 
     TotMatrix % SubMatrix(NoVar+1,1) % Mat => C1
+
+    Tmat => TotMatrix % SubMatrix(1,NoVar+1) % Mat
+    IF ( ASSOCIATED(Tmat) ) CALL FreeMatrix(Tmat)
     TotMatrix % SubMatrix(1,NoVar+1) % Mat => CRS_Transpose(C1)
 
     TotMatrix % SubMatrix(1,NoVar+1) % ParallelIsolatedMatrix = &
@@ -2263,6 +2266,7 @@ CONTAINS
       Var => VariableGet( Solver % Mesh % Variables, VarName )
       IF(ASSOCIATED( Var ) ) THEN
         n = SIZE( Var % Values ) 
+        DEALLOCATE(ConsPerm2)
         CALL Info('BlockPickConstraint','Using existing variable > '//VarName//' <')
       ELSE
         CALL Info('BlockPickConstraint','Variable > '//VarName//' < does not exist, creating')
@@ -2276,6 +2280,9 @@ CONTAINS
       TotMatrix % TotSize = TotMatrix % TotSize + n
 
       TotMatrix % SubMatrix(NoVar+2,2) % Mat => C2
+
+      Tmat => TotMatrix % SubMatrix(2,NoVar+2) % Mat
+      IF ( ASSOCIATED(Tmat) ) CALL FreeMatrix(Tmat)
       TotMatrix % SubMatrix(2,NoVar+2) % Mat => CRS_Transpose(C2)
 
       TotMatrix % SubMatrixActive(2,NoVar+2) = .TRUE.
@@ -2435,6 +2442,12 @@ CONTAINS
         CALL Fatal('BlockPrecMatrix','We should have more than one block')
       END IF
       IF ( NoVar == 4 ) THEN
+        Pmat => TotMatrix % Submatrix(3,3) % PrecMat 
+        IF ( ASSOCIATED(Pmat) ) CALL FreeMatrix(Pmat)
+
+        Pmat => TotMatrix % Submatrix(4,4) % PrecMat 
+        IF ( ASSOCIATED(Pmat) ) CALL FreeMatrix(Pmat)
+
         Pmat => CreateSchurApproximation( &
             TotMatrix % Submatrix(1,1) % Mat, &
             TotMatrix % Submatrix(3,1) % Mat, &
@@ -2447,6 +2460,9 @@ CONTAINS
             TotMatrix % Submatrix(2,4) % Mat )
         TotMatrix % Submatrix(4,4) % PrecMat => Pmat
       ELSE
+        Pmat => TotMatrix % Submatrix(2,2) % PrecMat 
+        IF ( ASSOCIATED(Pmat) ) CALL FreeMatrix(Pmat)
+
         Pmat => CreateSchurApproximation( &
             TotMatrix % Submatrix(1,1) % Mat, &
             TotMatrix % Submatrix(2,1) % Mat, &
