@@ -1129,17 +1129,33 @@
       !
       CALL ScaleLinearSystemVectors(AMat, b, n, x)
     END IF
-    
+   
     IF( ListCheckPresent( Params,'MG Smoother') ) THEN
       ALLOCATE(r(n))
-      
-      CALL ExperimentalStuff()
 
+      ! This is just to test that the suggested search direction is a good one.
+      ! Ideally we need to multiply by "1" to get minimum norm. 
+      CALL ExperimentalStuff()
+            
       CALL CRS_MatrixVectorMultiply( Amat, x, r )
       !CALL MGmv( Amat, x, r, .TRUE. )
       r(1:n) = b(1:n) - r(1:n)
-      RNorm = MGSmooth( Solver, Amat, Mesh, x, b, r, &
-          1, pVar % dofs, PreSmooth = .FALSE.)
+
+      IF(LIstGetString(Params,'MG Smoother') == 'masked sgs') THEN
+        BLOCK
+          LOGICAL, POINTER :: SkipMask(:)
+          ALLOCATE(SkipMask(n))
+          SkipMask = .FALSE.
+          CALL CreateEdgeSkipMask(SkipMask)
+
+          RNorm = MGSmooth( Solver, Amat, Mesh, x, b, r, &
+              1, pVar % dofs, PreSmooth = .FALSE., SkipMask = SkipMask )
+          DEALLOCATE(SkipMask)
+        END BLOCK
+      ELSE
+        RNorm = MGSmooth( Solver, Amat, Mesh, x, b, r, &
+            1, pVar % dofs, PreSmooth = .FALSE.)
+      END IF
     END IF
           
     u(1:n) = x(1:n) 

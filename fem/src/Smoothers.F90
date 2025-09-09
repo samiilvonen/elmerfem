@@ -53,7 +53,7 @@ CONTAINS
 
 !------------------------------------------------------------------------------
     FUNCTION MGSmooth( Solver, A, Mesh, x, b, r, Level, DOFs, &
-        PreSmooth, LowestSmooth, CF) RESULT(RNorm)
+        PreSmooth, LowestSmooth, CF, SkipMask ) RESULT(RNorm)
 !------------------------------------------------------------------------------
       TYPE(Solver_t), POINTER :: Solver
       TYPE(Matrix_t), POINTER :: A
@@ -63,6 +63,7 @@ CONTAINS
       REAL(KIND=dp) :: RNorm, rphi=5.0_dp
       LOGICAL, OPTIONAL :: PreSmooth, LowestSmooth
       INTEGER, POINTER, OPTIONAL :: CF(:)
+      LOGICAL, POINTER, OPTIONAL :: SkipMask(:)
 !------------------------------------------------------------------------------
       CHARACTER(:), ALLOCATABLE :: IterMethod
       LOGICAL :: Parallel, Found, Lowest, Pre
@@ -243,6 +244,12 @@ CONTAINS
         
       CASE( 'psgs' )                                     
         CALL PostSGS( n, A, M, Mx, Mb, Mr, CF, Rounds)
+
+      CASE( 'masked sgs' )
+        IF(.NOT. PRESENT(SkipMask)) THEN
+          CALL Fatal('MGSmooth','"masked sgs" requires SkipMask to be present!')
+        END IF
+        CALL MaskedSGS( n, A, M, Mx, Mb, Mr, SkipMask, Rounds)
 
       CASE( 'direct1d' )                                     
         ALLOCATE( dx(n) )
@@ -694,6 +701,54 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+!------------------------------------------------------------------------------
+!> Masked symmetric-gauss-seidel for cases where we don't want to change the
+!> interface values (at the rotating boundary).  
+!------------------------------------------------------------------------------
+      SUBROUTINE MaskedSGS( n, A, M, x, b, r, Mask, Rounds )
+!------------------------------------------------------------------------------
+        TYPE(Matrix_t), POINTER :: A, M
+        INTEGER :: Rounds
+        REAL(KIND=dp) CONTIG :: x(:),b(:),r(:)
+        INTEGER :: i,j,k,n
+        REAL(KIND=dp) :: s
+        INTEGER, POINTER CONTIG :: Cols(:),Rows(:)
+        REAL(KIND=dp), POINTER CONTIG :: Values(:)
+        LOGICAL, POINTER :: Mask(:)
+        
+        Rows   => A % Rows
+        Cols   => A % Cols 
+        Values => A % Values
+        
+        DO k=1,Rounds
+          DO i=1,A % NumberOFRows
+            ! Skip the interface elements as the gauss-seidel cannot be used to update them
+            IF( Mask(i) ) CYCLE
+            s = 0.0d0
+            DO j=Rows(i),Rows(i+1)-1
+              !IF( Mask(Cols(j)) ) CYCLE
+              s = s + x(Cols(j)) * Values(j)
+            END DO
+            r(i) = (b(i)-s) / A % Values(A % Diag(i))
+            x(i) = x(i) + r(i)
+          END DO
+          
+          DO i=A % NumberOfRows,1,-1
+            IF(Mask(i)) CYCLE
+            s = 0.0d0
+            DO j=Rows(i),Rows(i+1)-1
+              !IF( Mask(Cols(j)) ) CYCLE
+              s = s + x(Cols(j)) * Values(j)
+            END DO
+            r(i) = (b(i)-s) / (A % Values(A % Diag(i)))
+            x(i) = x(i) + r(i)
+          END DO
+        END DO
+      END SUBROUTINE MaskedSGS
+!------------------------------------------------------------------------------
+
+
+      
 !------------------------------------------------------------------------------
 ! Block Symmetric Gauss Seidel 
 !------------------------------------------------------------------------------

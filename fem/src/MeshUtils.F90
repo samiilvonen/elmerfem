@@ -10020,8 +10020,10 @@ CONTAINS
         MaxMinBasis = -HUGE(MaxMinBasis)
 
         IF( FullCircle ) THEN
+          ! x is in [-180,180] and the right part of circle is [-90,90].
           LeftCircle = ABS( x1 ) > ArcCoeff * 90.0_dp
           IF( LeftCircle ) THEN
+            ! Map the angle to [0,360] eliminating the discontinuity at -180/+180. 
             IF( x1 < 0.0 ) x1 = x1 + ArcCoeff * 360.0_dp
           END IF
         END IF
@@ -10052,7 +10054,7 @@ CONTAINS
           IF( Dist > Ytol ) CYCLE
 
           ! The x nodes should be in the interval
-          NodesM % x(1:nM) = BMesh2 % Nodes % x(IndexesM(1:nM))
+          NodesM % x(1:nM) = ArcCoeff * BMesh2 % Nodes % x(IndexesM(1:nM))
 
           ! Transform the master element on-the-fly around the problematic angle
           ! Full 2D circle is never repeating
@@ -10067,7 +10069,7 @@ CONTAINS
           xmaxm = MAXVAL( NodesM % x(1:nM) )
           xminm = MINVAL( NodesM % x(1:nM) )
 
-          ! Eliminate this special case since it could otherwise give a faulty hit
+          ! Eliminate the case with +180/-180 continuity since it could otherwise give a faulty hit.
           IF( FullCircle .AND. .NOT. LeftCircle ) THEN
             IF( xmaxm - xminm > ArcCoeff * 180.0_dp ) CYCLE
           END IF

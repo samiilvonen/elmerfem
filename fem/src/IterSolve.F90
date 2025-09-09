@@ -195,6 +195,195 @@ CONTAINS
   END SUBROUTINE fm_MatVec
 !------------------------------------------------------------------------------
 
+
+  !------------------------------------------------------------------------------
+  !> Create mask for skipping edges on a given boundary. 
+  !------------------------------------------------------------------------------
+  SUBROUTINE CreateEdgeSkipMask(SkipMask)
+
+    LOGICAL, POINTER :: SkipMask(:)
+    INTEGER :: t,n0,e0,t0,bc_id
+    LOGICAL :: Found, Piola
+    TYPE(ValueList_t), POINTER :: BC
+    TYPE(Element_t), POINTER :: Element
+    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Variable_t), POINTER :: pVar    
+
+    Mesh => CurrentModel % Mesh
+
+    NULLIFY(pVar)
+    DO t=1,CurrentModel % NumberOfSolvers
+      IF(ListGetLogical(CurrentModel % Solvers(t) % Values,'Edge Basis',Found ) ) THEN
+        pVar => CurrentModel % Solvers(t) % Variable
+        EXIT
+      END IF
+    END DO
+    IF(.NOT. ASSOCIATED(pVar)) THEN
+      CALL Fatal('CreateEdgeSkipMask','Could not find "Edge Basis" variable!')
+    END IF
+
+    n0 = Mesh % NumberOfNodes
+    t0 = Mesh % NumberOfBulkElements
+
+    Piola = ListGetLogicalAnySolver( CurrentModel,'Use Piola Transform' ) 
+
+    SkipMask = .FALSE.
+
+    DO t=t0+1,t0+Mesh % NumberOfBoundaryElements
+      Element => Mesh % Elements(t)
+
+      IF(.NOT. ASSOCIATED( Element % BoundaryInfo ) ) CYCLE
+      DO bc_id=1,CurrentModel % NumberOfBCs
+        IF ( Element % BoundaryInfo % Constraint == CurrentModel % BCs(bc_id) % Tag ) EXIT
+      END DO
+      IF ( bc_id > CurrentModel % NumberOfBCs ) CYCLE
+      BC => CurrentModel % BCs(bc_id) % Values
+
+      IF(ListGetLogical(BC,'Edge Skip Mask',Found ) ) THEN
+        SkipMask(pVar % Perm(n0+Element % EdgeIndexes)) = .TRUE.
+      END IF
+    END DO
+
+    ! It is not self-evident that we should include the additional Piola nodes
+    ! in the set of nodes to be skipped in smoothing / krylov iteration.
+    ! Numerical evidence seems to suggest that this is a good idea. 
+    IF(Piola) THEN
+      e0 = Mesh % NumberOfEdges
+      DO t=1, Mesh % NumberOfFaces
+        Element => Mesh % Faces(t)
+
+        IF(Element % TYPE % ElementCode / 100 == 4 ) THEN
+          IF(ALL(SkipMask(pVar % Perm(n0+Element % EdgeIndexes)))) THEN
+            SkipMask(pVar % Perm(n0+e0+2*t-1)) = .TRUE.
+            SkipMask(pVar % Perm(n0+e0+2*t-0)) = .TRUE.
+          END IF
+        END IF
+      END DO
+    END IF
+    
+    n0 = COUNT(SkipMask)
+    CALL Info('CreateEdgeSkipMask','Created mask for skipping edges on BC: '//I2S(n0),Level=7)   
+
+  END SUBROUTINE CreateEdgeSkipMask
+
+
+  !------------------------------------------------------------------------------
+  !> Create mask for skipping nodes on a given boundary. 
+  !------------------------------------------------------------------------------
+  SUBROUTINE CreateNodeSkipMask(SkipMask, pVar )
+
+    LOGICAL, POINTER :: SkipMask(:)
+    TYPE(Variable_t), POINTER :: pVar    
+
+    INTEGER :: t,n0,e0,t0,bc_id
+    LOGICAL :: Found
+    TYPE(ValueList_t), POINTER :: BC
+    TYPE(Element_t), POINTER :: Element
+    TYPE(Mesh_t), POINTER :: Mesh
+    
+    CALL Info('CreateNodeSkipMask','Creating mask for skipping nodes')
+
+    Mesh => CurrentModel % Mesh      
+    t0 = Mesh % NumberOfBulkElements
+    SkipMask = .FALSE.
+    
+    DO t=t0+1,t0+Mesh % NumberOfBoundaryElements
+      Element => Mesh % Elements(t)
+
+      IF(.NOT. ASSOCIATED( Element % BoundaryInfo ) ) CYCLE
+      DO bc_id=1,CurrentModel % NumberOfBCs
+        IF ( Element % BoundaryInfo % Constraint == CurrentModel % BCs(bc_id) % Tag ) EXIT
+      END DO
+      IF ( bc_id > CurrentModel % NumberOfBCs ) CYCLE
+      BC => CurrentModel % BCs(bc_id) % Values
+
+      IF(ListGetLogical(BC,'Edge Skip Mask',Found ) ) THEN
+        WHERE(pVar % Perm(Element % NodeIndexes) > 0) 
+          SkipMask(pVar % Perm(Element % NodeIndexes)) = .TRUE.
+        END WHERE
+      END IF
+    END DO
+
+    n0 = COUNT(SkipMask)
+    CALL Info('CreateNodeSkipMask','Creating mask for skipping nodes: '//I2S(n0),Level=7)
+    
+  END SUBROUTINE CreateNodeSkipMask
+
+  
+
+!> Computed masked dot product.
+!----------------------------------------------------------------------
+FUNCTION MaskedDotProd( ndim, x, xind, y, yind ) RESULT(dres)
+!----------------------------------------------------------------------
+  IMPLICIT NONE
+
+  ! Parameters
+  INTEGER :: ndim, xind, yind
+  REAL(KIND=dp) :: x(*)
+  REAL(KIND=dp) :: y(*)
+  REAL(KIND=dp) :: dres
+
+  ! Local variables
+  REAL(KIND=dp) :: s
+  INTEGER :: i
+
+  LOGICAL, POINTER, SAVE :: SkipMask(:) => NULL()
+  
+  IF(.NOT. ASSOCIATED(SkipMask)) THEN
+    ALLOCATE(SkipMask(ndim))
+    CALL CreateEdgeSkipMask(SkipMask)
+  END IF
+    
+  dres = 0
+  !$OMP PARALLEL DO REDUCTION(+:dres)
+  DO i = 1, ndim
+    IF(SkipMask(i)) CYCLE
+    dres = dres + y(i) * x(i)
+  END DO
+  !$OMP END PARALLEL DO 
+!!!CALL SParActiveSUM(dres,0)
+  
+!----------------------------------------------------------------------
+ END FUNCTION MaskedDotProd
+!----------------------------------------------------------------------
+
+
+!> Compute global 2-norm of vector x
+!----------------------------------------------------------------------
+FUNCTION MaskedNorm( ndim, x, xind ) RESULT(dres)
+!----------------------------------------------------------------------
+  IMPLICIT NONE
+
+  ! Parameters
+
+  INTEGER :: ndim, xind
+  REAL(KIND=dp) :: x(*)
+  REAL(KIND=dp) :: dres
+
+  ! Local variables
+  INTEGER :: i
+  LOGICAL, POINTER, SAVE :: SkipMask(:) => NULL()
+  
+  IF(.NOT. ASSOCIATED(SkipMask)) THEN
+    ALLOCATE(SkipMask(ndim))
+    CALL CreateEdgeSkipMask(SkipMask)
+  END IF
+
+  dres = 0
+  !$OMP PARALLEL DO REDUCTION(+:dres)
+  DO i = 1, ndim
+    IF(SkipMask(i)) CYCLE
+    dres = dres + x(i)*x(i)
+  END DO
+  !$OMP END PARALLEL DO
+!!!CALL SParActiveSUM(dres,0)
+  dres = SQRT(dres)
+  
+!----------------------------------------------------------------------
+END FUNCTION MaskedNorm
+!----------------------------------------------------------------------
+
+    
   
 !> \}
 !> \}  
@@ -952,8 +1141,12 @@ CONTAINS
       END SELECT
       
       IF( Internal ) THEN
-        
-        IF( PseudoComplexSystem ) THEN
+
+        IF( ListGetLogical( Params,'Linear System Skip Mask',Found ) ) THEN
+          CALL Info('IterSolver','Using skip mask for linear system solver!')
+          dotProc = AddrFunc(MaskedDotProd)
+          normproc = AddrFunc(MaskedNorm)        
+        ELSE IF( PseudoComplexSystem ) THEN
           IF( HUTI_PSEUDOCOMPLEX == 1 ) THEN
             CALL Info('IterSolver','Setting dot product function to: PseudoZDotProd',Level=15)
             dotProc = AddrFunc( PseudoZDotProd )

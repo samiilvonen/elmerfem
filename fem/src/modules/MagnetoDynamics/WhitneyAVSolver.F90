@@ -353,7 +353,7 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
                                 ThinLineCrossect(:),ThinLineCond(:)
 
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), MASS(:,:), DAMP(:,:), FORCE(:), &
-            JFixFORCE(:), JFixVec(:,:),PrevSol(:)
+            JFixFORCE(:), JFixVec(:,:),PrevSol(:),nSTIFF(:,:),nFORCE(:)
 
   CHARACTER(LEN=MAX_NAME_LEN):: LaminateStackModel, CoilType
   LOGICAL :: LaminateStack, CoilBody, HasHBCurve, HasReluctivityFunction, &
@@ -397,11 +397,15 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
   REAL(KIND=dp) :: TorqueTol
   LOGICAL :: UseTorqueTol
 
+  TYPE(Matrix_t), POINTER :: PrecMat
+  TYPE(Solver_t), POINTER :: PrecSolver
+  INTEGER :: PrecI
+  
   CHARACTER(*), PARAMETER :: Caller = 'WhitneyAVSolver'
   
   SAVE STIFF, LOAD, MASS, DAMP, FORCE, JFixFORCE, JFixVec, Tcoef, GapLength, AirGapMu, &
        Acoef, Cwrk, LamThick, LamCond, Wbase, RotM, AllocationsDone, &
-       Acoef_t, ThinLineCrossect, ThinLineCond
+       Acoef_t, ThinLineCrossect, ThinLineCond, nSTIFF, nFORCE
 !------------------------------------------------------------------------------
   IF ( .NOT. ASSOCIATED( Solver % Matrix ) ) RETURN	
 
@@ -429,6 +433,17 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
   SteadyGauge = GetLogical(SolverParams, 'Use Lagrange Gauge', Found) .AND. .NOT. Transient
   TransientGauge = GetLogical(SolverParams, 'Use Lagrange Gauge', Found) .AND. Transient
 
+  NULLIFY(PrecMat)
+  NULLIFY(PrecSolver)
+  PrecI = ListGetInteger(SolverParams,'Prec Solvers',Found )
+  IF(PrecI > 0) THEN
+    PrecSolver => Model % Solvers(PrecI)
+    PrecMat => Model % Solvers(PrecI) % Matrix    
+  END IF
+  IF(ASSOCIATED(PrecMat)) THEN
+    CALL Info(Caller,'Using special nodal component-wise preconditioning matrix!')
+  END IF
+  
   CoilCurrentName = GetString( SolverParams,'Current Density Name',UseCoilCurrent ) 
   IF(.NOT. UseCoilCurrent ) THEN
     UseCoilCurrent = GetLogical(SolverParams,'Use Nodal CoilCurrent',Found )
@@ -544,14 +559,15 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
 
      IF(ALLOCATED(FORCE)) THEN
        DEALLOCATE(FORCE, JFixFORCE, JFixVec, LOAD, STIFF, MASS, DAMP, TCoef, GapLength, AirGapMu, &
-             Acoef, LamThick, LamCond, WBase, RotM, ThinLineCrossect, ThinLineCond )
+             Acoef, LamThick, LamCond, WBase, RotM, ThinLineCrossect, ThinLineCond, nSTIFF, nFORCE )
      END IF
 
      ALLOCATE( FORCE(N), JFixFORCE(n), JFixVec(3,n), LOAD(7,N), STIFF(N,N), &
           MASS(N,N), DAMP(N,N), Tcoef(3,3,N), GapLength(N), &
           AirGapMu(N), Acoef(N), LamThick(N), &
           LamCond(N), Wbase(N), RotM(3,3,N),  &
-          ThinLineCrossect(N), ThinLineCond(N), STAT=istat )
+          ThinLineCrossect(N), ThinLineCond(N), &
+          nSTIFF(N,N), nFORCE(N), STAT=istat )
      IF ( istat /= 0 ) THEN
         CALL Fatal( Caller, 'Memory allocation error.' )
      END IF
@@ -741,6 +757,7 @@ CONTAINS
   ! Timing
   CALL ResetTimer('MGDynAssembly')
   CALL DefaultInitialize()
+  IF(ASSOCIATED(PrecMat)) PrecMat % Values = 0.0_dp
   Active = GetNOFActive()
   
   IF( ListCheckPresentAnyMaterial(Model,'Reluctivity Function') ) THEN
@@ -879,10 +896,10 @@ CONTAINS
 
      !Get element local matrix and rhs vector:
      !----------------------------------------
-       CALL LocalMatrix( MASS, DAMP, STIFF, FORCE, JFixFORCE, JFixVec, LOAD, &
+     CALL LocalMatrix( MASS, DAMP, STIFF, FORCE, JFixFORCE, JFixVec, LOAD, &
          Tcoef, Acoef, LaminateStack, LaminateStackModel, &
          LamThick, LamCond, CoilBody, CoilType, RotM, ConstraintActive, &
-         Element, n, nd+nb, PiolaVersion, SecondOrder)
+         Element, n, nd+nb, PiolaVersion, SecondOrder, nSTIFF )
        
      ! Update global matrix and rhs vector from local matrix & vector:
      !---------------------------------------------------------------
@@ -899,6 +916,12 @@ CONTAINS
 
      CALL DefaultUpdateEquations(STIFF,FORCE)
 
+     IF(ASSOCIATED(PrecMat)) THEN
+       nFORCE = 0.0_dp
+       CALL DefaultUpdateEquations(nSTIFF,nFORCE,USolver=PrecSolver)       
+     END IF
+
+     
      ! Memorize stuff for the fixing potential
      ! 1) Divergence of the source term
      ! 2) The source terms at the surface to determine the direction
@@ -1315,6 +1338,11 @@ END BLOCK
 ! CALL WriteResults  ! debugging helper
 
 
+  IF( ASSOCIATED(PrecMat) ) THEN
+  PRINT *,'PrecMat:',MINVAL(PrecMat % Values), MAXVAL(PrecMat % Values)
+  
+  END IF
+  
 !------------------------------------------------------------------------------
  END FUNCTION DoSolve
 !------------------------------------------------------------------------------
@@ -1971,7 +1999,7 @@ END SUBROUTINE LocalConstraintMatrix
   SUBROUTINE LocalMatrix( MASS, DAMP, STIFF, FORCE, JFixFORCE, JFixVec, LOAD, &
             Tcoef, Acoef, LaminateStack, LaminateStackModel, &
             LamThick, LamCond, CoilBody, CoilType, RotM, ConstraintActive, &
-            Element, n, nd, PiolaVersion, SecondOrder )
+            Element, n, nd, PiolaVersion, SecondOrder, nSTIFF )
 !------------------------------------------------------------------------------
     IMPLICIT NONE
     REAL(KIND=dp) :: STIFF(:,:), FORCE(:), MASS(:,:), DAMP(:,:), JFixFORCE(:), JFixVec(:,:)
@@ -1983,6 +2011,8 @@ END SUBROUTINE LocalConstraintMatrix
     TYPE(Element_t), POINTER :: Element
     INTEGER :: n, nd
     LOGICAL :: PiolaVersion, SecondOrder
+    REAL(KIND=dp) :: nSTIFF(:,:)
+    
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Aloc(nd), JAC(nd,nd), mu, muder, B_ip(3), Babs
     REAL(KIND=dp) :: WBasis(nd,3), RotWBasis(nd,3), C(3,3), &
@@ -2012,7 +2042,8 @@ END SUBROUTINE LocalConstraintMatrix
     MASS  = 0.0_dp
     DAMP  = 0.0_dp
     JAC = 0.0_dp
-
+    IF(ASSOCIATED(PrecMat)) nSTIFF = 0.0_dp
+    
     IF( JFix ) THEN
       ! If we are solving for the JFix field we cannot yet use it!
       ! This happens on the first iteration
@@ -2178,7 +2209,7 @@ END SUBROUTINE LocalConstraintMatrix
          ! so they have an effect on a conductor only.
          ! --------------------------------------------------------
          CONDUCTOR: IF ( SUM(ABS(C)) > AEPS .OR. ElectroDynamics .OR. Darwin) THEN
-           IF ( Transient.OR.EigenSystem ) THEN
+           IF ( Transient .OR. EigenSystem ) THEN
              DO p=1,np
                DO q=1,np
 
@@ -2394,8 +2425,19 @@ END SUBROUTINE LocalConstraintMatrix
         END DO
        END IF
 
-    END DO
+       ! Assembly of the special nodal preconditioning matrix
+       !-------------------------------------------------------
+       IF(ASSOCIATED(PrecMat)) THEN
+         DO p = 1,n
+           DO q = 1,n
+             nSTIFF(p,q) = nSTIFF(p,q) + mu * SUM(dBasisdx(p,:)*dBasisdx(q,:))*detJ*IP%s(t)              
+           END DO
+         END DO
+       END IF
+              
+     END DO
 
+     
     IF ( Newton ) THEN
       IF( HasHBCurve .OR. HasReluctivityFunction ) THEN
         STIFF(1:nd,1:nd) = STIFF(1:nd,1:nd) + JAC
