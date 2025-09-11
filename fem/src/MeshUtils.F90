@@ -8582,7 +8582,7 @@ CONTAINS
     INTEGER, ALLOCATABLE :: PeriodicFace(:)
     REAL(KIND=dp), ALLOCATABLE :: FaceX(:), FaceY(:), FaceMX(:), FaceMY(:)
     REAL(KIND=dp) :: coordprod, indexprod, ss, minss, maxminss
-    INTEGER :: minuscount, samecount, mini, doubleusecount, swap(20)
+    INTEGER :: minuscount, samecount, mini, doubleusecount, swap(6)
     LOGICAL :: Parallel, AntiPer, Radial, Piola
     LOGICAL, ALLOCATABLE :: FaceUsed(:)
     CHARACTER(*), PARAMETER :: Caller = 'ConformingFacePerm'
@@ -8700,8 +8700,7 @@ CONTAINS
         
       CALL CheckFaceBasisDirections(Face, FaceM, edofs, fdofs, .FALSE., Radial, swap)
 
-      !PRINT *,'Swap:',e,em,Swap(1:6)
-      
+#if 0
       ! We flip if the system is AntiPeriodic OR the edge basis are opposite, not both!
       IF(.TRUE.) THEN
         DO i=1,edofs
@@ -8715,7 +8714,8 @@ CONTAINS
           !PerPerm(ne0+j) = ne0 + FaceM % EdgeIndexes(ABS(swap(i)))
         END DO
       END IF
-
+#endif
+      
       IF( fdofs == 2 ) THEN
         PerFlip(nf0+2*eind-1) = ( AntiPer .NEQV. swap(edofs+1)<0 )
         PerFlip(nf0+2*eind-0) = ( AntiPer .NEQV. swap(edofs+2)<0 )        
@@ -8773,6 +8773,10 @@ CONTAINS
       
       n = edofs 
       kmax = edofs
+
+      ! For now we use this only to check the face dofs
+      kmax = 0
+      
       uvw = 0.0_dp
       swap = 0 
       
@@ -8816,11 +8820,10 @@ CONTAINS
 
           Lstat = EdgeElementInfo( pElement, Nodes, uvw(1), uvw(2), uvw(3), &
               DetF=DetJ, Basis=Basis, EdgeBasis=pEdgeBasis, BasisDegree=BasisDegree, &
-              ApplyPiolaTransform=.TRUE. ) !, TangentialTrMapping=.TRUE.)
+              ApplyPiolaTransform=.TRUE. ) 
 
-          ! Assume that this is "radial projector" for now...
-          IF(Radial) Phi = ATAN2(Nodes % x(1), Nodes % y(1) ) 
-          !PRINT *,'Phi:',elem,phi
+          ! If we have a radial projector rotate this to plane with this angle.
+          IF(Radial) Phi = ATAN2(r2(1), r2(2) ) 
 
           ! Rotate the edge basis to reference angle and 
           ! normalize the edge basis to unity.
@@ -8832,6 +8835,7 @@ CONTAINS
               pEdgeBasis(i,2) = SIN(phi)*x1 + COS(phi)*y1
             END IF
 
+            ! Normalize the edgeBasis such that the inner product will be one when direction is the same. 
             s = SQRT(SUM(pEdgeBasis(i,:)**2))
             IF(s>EPSILON(s)) pEdgeBasis(i,:) = pEdgeBasis(i,:) / s
 
@@ -8852,11 +8856,11 @@ CONTAINS
             DO j=1,fdofs
               s = SUM(EdgeBasis(i,:)*EdgeBasisB(edofs+j,:))
               IF( ABS(s-1.0_dp) < 1.0e-2 ) THEN
-                !PRINT *,'EdgeProd plus:',s,i-edofs,j,EdgeBasis(i,:),EdgeBasis(edofs+j,:)
+                ! PRINT *,'EdgeProd plus:',s,i-edofs,j,EdgeBasis(i,:),EdgeBasis(edofs+j,:)
                 swap(i) = j
                 EXIT
               ELSE IF( ABS(s+1.0_dp) < 1.0e-2 ) THEN
-                !PRINT *,'EdgeProd minus:',s,i-edofs,j,EdgeBasis(i,:),EdgeBasis(edofs+j,:)
+                ! PRINT *,'EdgeProd minus:',s,i-edofs,j,EdgeBasis(i,:),EdgeBasis(edofs+j,:)
                 swap(i) = -j
                 EXIT
               END IF
@@ -8868,7 +8872,7 @@ CONTAINS
               PRINT *,'EdgeBasis:',i,EdgeBasis(i,:)
               PRINT *,'EdgeBasisB:',i,EdgeBasisB(i,:)
             END DO
-            CALL Fatal(Caller,'Could not ensure edge basis directions')
+            CALL Fatal(Caller,'Could not ensure face edge basis directions')
           END IF
                    
         ELSE
@@ -8886,10 +8890,6 @@ CONTAINS
           END DO
         END IF
       END DO
-
-      IF(SUM(r1**2)-SUM(r2**2) > 1.0e-8) THEN
-        PRINT *,'R comp:',r1,r2
-      END IF
       
     !------------------------------------------------------------------------------
     END SUBROUTINE CheckFaceBasisDirections

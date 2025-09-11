@@ -202,7 +202,7 @@ CONTAINS
   SUBROUTINE CreateEdgeSkipMask(SkipMask)
 
     LOGICAL, POINTER :: SkipMask(:)
-    INTEGER :: t,n0,e0,t0,bc_id
+    INTEGER :: t,n0,e0,t0,bc_id,i,j
     LOGICAL :: Found, Piola
     TYPE(ValueList_t), POINTER :: BC
     TYPE(Element_t), POINTER :: Element
@@ -249,13 +249,21 @@ CONTAINS
     ! Numerical evidence seems to suggest that this is a good idea. 
     IF(Piola) THEN
       e0 = Mesh % NumberOfEdges
+
+      IF(SIZE(pVar % Perm) < n0+e0+2*Mesh % NumberOfFaces) THEN
+        CALL Fatal('CreateEdgeSkipMask','Size of Perm too small for Piola!')
+      END IF
+      
       DO t=1, Mesh % NumberOfFaces
         Element => Mesh % Faces(t)
 
+        ! Only for quads do we have the extra dofs related to Piola transformed edge elements.
         IF(Element % TYPE % ElementCode / 100 == 4 ) THEN
           IF(ALL(SkipMask(pVar % Perm(n0+Element % EdgeIndexes)))) THEN
-            SkipMask(pVar % Perm(n0+e0+2*t-1)) = .TRUE.
-            SkipMask(pVar % Perm(n0+e0+2*t-0)) = .TRUE.
+            DO i=0,1
+              j = pVar % Perm(n0+e0+2*t-i)
+              IF(j>0) SkipMask(j) = .TRUE.
+            END DO
           END IF
         END IF
       END DO

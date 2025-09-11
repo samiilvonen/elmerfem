@@ -870,7 +870,7 @@ MODULE Interpolation
         vdofs, edgej, facej
     REAL(KIND=dp) :: PiMat(MaxEDOFs,6), FacePiMat(MaxFDOFs,12)
     CHARACTER(*), PARAMETER :: Caller = 'NodalToNedelecInterpolation_GlobalMatrix'
-    LOGICAL :: UseNodalPerm, DoFatal
+    LOGICAL :: UseNodalPerm, DoFatal, SkipPeriodicSlave
     INTEGER, POINTER :: VectorPerm(:), NodalPerm(:)
 !------------------------------------------------------------------------------
 
@@ -897,7 +897,10 @@ MODULE Interpolation
     
     IF (.NOT. ASSOCIATED(Mesh % Edges)) CALL Fatal(Caller, 'Mesh edges not associated!')
 
+    ! We only want to apply the projetor to the master nodes/edges of the conforming system. 
+    SkipPeriodicSlave = ASSOCIATED( Mesh % PeriodicPerm )
 
+    
     IF (PRESENT(cdim)) THEN
       dim = cdim
     ELSE
@@ -937,6 +940,7 @@ MODULE Interpolation
     IF (.NOT. ALLOCATED(Ind)) THEN
       ALLOCATE( Ind(Mesh % MaxElementDOFs), stat=istat )
     END IF
+
     
     ! Here we need separate loops over edges, faces and elements so that all DOFs are handled
     !
@@ -962,6 +966,12 @@ MODULE Interpolation
       DO dofi=1, vdofs
         DO j=1,EDOFs
           k = VectorPerm(Ind(j))
+          IF(k==0) CYCLE
+
+          IF(SkipPeriodicSlave) THEN
+            IF(Mesh % PeriodicPerm(Ind(j)) > 0) CYCLE
+          END IF
+            
           k0 = vdofs*(k-1)+dofi
           DO i=1,dim
             CALL List_AddToMatrixElement(GlobalPiMat % ListMatrix, k0, 3*vdofs*(k1-1)+vdofs*(i-1)+dofi, PiMat(j,i) )
@@ -996,6 +1006,12 @@ MODULE Interpolation
         DO dofi=1, vdofs
           DO j=1,Face % BDOFs
             k2 = VectorPerm(Ind(j+i0))
+            IF(k2==0) CYCLE
+
+            IF(SkipPeriodicSlave) THEN
+              IF(Mesh % PeriodicPerm(Ind(j+i0)) > 0) CYCLE
+            END IF
+            
             k0 = vdofs*(k2-1)+dofi
             DO i=1,Face % TYPE % NumberOfNodes
               k1 = Face % NodeIndexes(i)
