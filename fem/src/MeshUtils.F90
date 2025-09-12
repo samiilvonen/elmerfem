@@ -362,6 +362,8 @@ CONTAINS
 
      TYPE(ValueList_t), POINTER :: BodyParams
      CHARACTER(:), ALLOCATABLE :: ElementDefBody
+
+     CALL Info('GetMaxDefs','Checking for other constructs of element definitions', Level=20)
      
      BodyParams => Model % Bodies(BodyId) % Values
 
@@ -3486,6 +3488,11 @@ CONTAINS
           ! indicate that re-reading is not needed here
           UpdateDefDofs(Solver_id) = .FALSE.
         END IF
+      ELSE
+        ! If an element definition is given in an equation section, the above code
+        ! does not indicate for which solvers the definition is active, so
+        ! the following array update is conditional 
+        IF (.NOT. FoundEqDefs) UpdateDefDofs(Solver_id) = .FALSE.
       END IF
     END DO
 
