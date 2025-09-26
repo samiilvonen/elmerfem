@@ -1148,7 +1148,7 @@ CONTAINS
 !           used only if coefficient of the convection term (C1) is nonzero
 !
 !  LOGICAL :: Stabilize
-!     INPUT: Should stabilzation be used ? Used only if coefficient of the
+!     INPUT: Should stabilization be used ? Used only if coefficient of the
 !            convection term (C1) is nonzero
 !
 !  TYPE(Element_t) :: Element
@@ -1389,7 +1389,7 @@ CONTAINS
             END DO
 
 !------------------------------------------------------------------------------
-!           Compute residual & stablization vectors
+!           Compute residual & stabilization vectors
 !------------------------------------------------------------------------------
             DO p=1,N
               SU(p) = C0 * Basis(p)
@@ -1781,7 +1781,7 @@ CONTAINS
 !          used only if coefficient of the convection term (C1) is nonzero
 !
 !  LOGICAL :: Stabilize
-!     INPUT: Should stabilzation be used ? Used only if coefficient of the
+!     INPUT: Should stabilization be used ? Used only if coefficient of the
 !            convection term (C1) is nonzero
 !
 !  TYPE(Element_t) :: Element

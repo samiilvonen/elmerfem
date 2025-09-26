@@ -149,7 +149,7 @@ MODULE Interpolation
     REAL(KIND=dp), DIMENSION(:) :: LocalCoordinates  !< Local coordinates corresponding to the global ones.
     REAL(KIND=dp), OPTIONAL :: GlobalEps !< Required accuracy of global coordinates
     REAL(KIND=dp), OPTIONAL :: LocalEps  !< Required accuracy of local coordinates
-    REAL(KIND=dp), OPTIONAL :: NumericEps !< Accuracy of numberical operations
+    REAL(KIND=dp), OPTIONAL :: NumericEps !< Accuracy of numerical operations
     REAL(KIND=dp), OPTIONAL :: GlobalDistance !< Returns the distance from the element in global coordinates.
     REAL(KIND=dp), OPTIONAL :: LocalDistance  !< Returns the distance from the element in local coordinates.
     LOGICAL, OPTIONAL :: EdgeBasis
@@ -243,7 +243,7 @@ MODULE Interpolation
         Element, ElementNodes )
 
 ! Currently the eps of global coordinates is mixed with the eps of local
-! coordinates which is a bit disturbin. There could be sloppier global
+! coordinates which is a bit disturbing. There could be sloppier global
 ! coordinate search and a more rigorous local coordinate search.
 
     SELECT CASE ( Element % TYPE % ElementCode / 100 )

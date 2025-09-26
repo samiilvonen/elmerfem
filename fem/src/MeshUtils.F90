@@ -949,7 +949,7 @@ CONTAINS
      ELSE IF( ASSOCIATED( RightElem ) ) THEN
        Moving = ANY( RightElem % NodeIndexes > NoNodes )
      ELSE
-       CALL Fatal(Caller,'Boundary BC has no parants!')
+       CALL Fatal(Caller,'Boundary BC has no parents!')
      END IF
 
      ! Otherwise we follow the majority rule
@@ -1343,14 +1343,14 @@ CONTAINS
        DO i = 1, Mesh % NumberOfNodes
          IF(DiscontNode(i) ) THEN
            IF( BoundaryNode(i) ) THEN
-             ! On boundary we relase the discontinuity when the
+             ! On boundary we release the discontinuity when the
              ! angle is ~90 degs i.e. on corner nodes, hopefully. 
              IF( NodePhi(i) < 100.0_dp ) THEN
                DiscontNode(i) = .FALSE.
                j = j+1
              END IF
            ELSE
-             ! Elsewhere we relase the discontinuity when angle is <360 degs.
+             ! Elsewhere we release the discontinuity when angle is <360 degs.
              IF( NodePhi(i) < 350.0_dp ) THEN
                DiscontNode(i) = .FALSE.
                k = k+1
@@ -3157,7 +3157,7 @@ CONTAINS
        IF(bndry /= 0) CYCLE
 
        ! The internal/external is defined by the number of parent.
-       ! This is meaningfull only for dim-1 elements. Others are ignored. 
+       ! This is meaningful only for dim-1 elements. Others are ignored. 
        IF(dim == 3 ) THEN
          IF( Element % TYPE % ElementCode < 300 ) CYCLE
        ELSE IF( dim == 2 ) THEN
@@ -7584,7 +7584,7 @@ CONTAINS
 
           DO k=1,kmax-2                         
 
-            ! This check over area also automatically elimiates redundant nodes
+            ! This check over area also automatically eliminates redundant nodes
             ! that were detected twice.
             dArea = 0.5_dp*ABS( (x(k+1)-x(1))*(y(k+2)-y(1)) -(x(k+2)-x(1))*(y(k+1)-y(1)))
             
@@ -10393,7 +10393,7 @@ CONTAINS
 
               eindm = ElementM % EdgeIndexes(j)
               
-              ! Eliminate the possibilitity that the same edge is accounted for twice
+              ! Eliminate the possibility that the same edge is accounted for twice
               ! in two different boundary elements. 
               IF( ANY( coeffi(ncoeff0+1:ncoeff) == eindm ) ) CYCLE
               
@@ -10969,7 +10969,7 @@ CONTAINS
 
           DO k=1,kmax-2                         
 
-            ! This check over area also automatically elimiates redundant nodes
+            ! This check over area also automatically eliminates redundant nodes
             ! that were detected twice.
             dArea = 0.5_dp*ABS( (x(k+1)-x(1))*(y(k+2)-y(1)) -(x(k+2)-x(1))*(y(k+1)-y(1)))
             IF( dArea < RelTolY**2 * RefArea ) CYCLE
@@ -11969,7 +11969,7 @@ CONTAINS
           
           DO k=1,kmax-2                         
             
-            ! This check over area also automatically elimiates redundant nodes
+            ! This check over area also automatically eliminates redundant nodes
             ! that were detected twice.
             dArea = 0.5_dp*ABS( (x(k+1)-x(1))*(y(k+2)-y(1)) -(x(k+2)-x(1))*(y(k+1)-y(1)))
 
@@ -12962,7 +12962,7 @@ CONTAINS
             CALL SortR(k+2,CutsInd,Cuts)
           END IF
 
-          ! Go through the pieces of each egde and apply numerical integration to each of them.
+          ! Go through the pieces of each edge and apply numerical integration to each of them.
           DO ic=1,k+1
             ! We may have cut at almost the same coordinate. 
             IF( ABS(Cuts(ic)-Cuts(ic+1)) < 1.0e-8 ) THEN
@@ -12988,7 +12988,7 @@ CONTAINS
               yc = c(2)*y1 + c(1)*y2
               zc = 0.0_dp
 
-              ! Intergration point at slave element.
+              ! Integration point at slave element.
               ! We do this the hard way so that we get the direction of the edge basis correctly. 
               CALL GlobalToLocal( u, v, w, xc, yc, zc, Element, Nodes )              
               stat = ElementInfo( Element, Nodes, u, v, w, detJ, Basis )                                            
@@ -14317,7 +14317,7 @@ CONTAINS
 
     WRITE( Message,'(A,3ES12.4)') 'Mesh inertia eigenvalues:',EigVal
     CALL Info('ComputeEntityIntertiaNormal',Message,Level=30)
-    INormal = EigVec(:,3)  ! axis of maximum intertia
+    INormal = EigVec(:,3)  ! axis of maximum inertia
 
     ! Check the sign of the normal using the right-hand-rule.
     ! This is not generic but a rule is still a rule
@@ -14420,7 +14420,7 @@ CONTAINS
     ! Do we have the fitting done already? 
     IF( GotNormal .AND. GotCenter .AND. GotRadius ) THEN
       IF( PRESENT(FitParams) ) THEN
-        CALL Info('CylinderFit','Using cylinder paramaters from list',Level=25)
+        CALL Info('CylinderFit','Using cylinder parameters from list',Level=25)
         FitParams(1:cdim) = Coord(1:cdim)
         IF( cdim == 2 ) THEN
           FitParams(3) = Rad
@@ -15631,7 +15631,7 @@ CONTAINS
   
   !------------------------------------------------------------------------------------------------
   !> Finds nodes for which CandNodes are True such that their mutual distance is somehow
-  !> maximized. We first find lower left corner, then the node that is furtherst apart from it,
+  !> maximized. We first find lower left corner, then the node that is furthest apart from it,
   !> and continue as long as there are nodes to find. Typically we would be content with two nodes
   !> on a line, three nodes on a plane, and four nodes on a volume.
   !-------------------------------------------------------------------------------------------------
@@ -18611,7 +18611,7 @@ CONTAINS
         SELECT CASE(m)
         CASE(4)
           Elem_out % TYPE => GetElementType(404)
-          ! We need to reoder for the quad element!
+          ! We need to reorder for the quad element!
           k = ind(3); ind(3)=ind(4); ind(4) = k
         CASE(6)
           Elem_out % TYPE => GetElementType(706)
@@ -19564,7 +19564,7 @@ CONTAINS
 
     CALL Info('IncreaseElementOrder','Adding node to each edge: '//I2S(n1),Level=8)
     
-    ! Increase size of coorinate vectors
+    ! Increase size of coordinate vectors
     ALLOCATE(xtmp(n0))
     xtmp = Mesh % Nodes % x
     DEALLOCATE( Mesh % Nodes % x)
@@ -21095,7 +21095,7 @@ CONTAINS
              Edges(Edge) % BoundaryInfo % Right => NULL()
            END IF
 
-           ! These stuctures need to be updated to both new and old edge.
+           ! These structures need to be updated to both new and old edge.
            Element % EdgeIndexes(k) = Edge
            IF (i <= Mesh % NumberofBulkElements) THEN
              IF(ASSOCIATED(Edges(Edge) % BoundaryInfo % Left)) THEN
@@ -23957,11 +23957,11 @@ END SUBROUTINE FindNeighbourNodes
       CALL ReleaseMeshEdgeTables( Mesh )
       CALL ReleaseMeshFaceTables( Mesh )
     ELSE
-      CALL Info(Caller,'Generating edges in the new mesh as thet were present in the old!',Level=20)
+      CALL Info(Caller,'Generating edges in the new mesh as they were present in the old!',Level=20)
       CALL FindMeshEdges( NewMesh )
     END IF
 
-    ! Our boundary may be a circle, cylider or sphere surface.
+    ! Our boundary may be a circle, cylinder or sphere surface.
     ! Honor those shapes when splitting the mesh!
     CALL FollowCurvedBoundary( CurrentModel, NewMesh, .FALSE. ) 
     
@@ -24706,7 +24706,7 @@ CONTAINS
       END IF
     END DO
 
-    ! Release old elements and rplace them with new elements and element counts
+    ! Release old elements and replace them with new elements and element counts
     CALL ReleaseMeshElements( Mesh ) 
 
     Mesh % Elements => NewElements
@@ -24783,11 +24783,11 @@ CONTAINS
     !Mesh % NumberOfEdges = 0 
     
     IF( FacesPresent ) THEN 
-      CALL Info(Caller,'Generating faces in the new mesh as thet were present in the old!',Level=20)
+      CALL Info(Caller,'Generating faces in the new mesh as they were present in the old!',Level=20)
       CALL FindMeshFaces3D( Mesh )
     END IF
     IF( EdgesPresent ) THEN 
-      CALL Info(Caller,'Generating faces in the new mesh as thet were present in the old!',Level=20)
+      CALL Info(Caller,'Generating faces in the new mesh as they were present in the old!',Level=20)
       CALL FindMeshEdges( Mesh )
     END IF
 
@@ -24948,7 +24948,7 @@ CONTAINS
         END IF
       END IF
 
-      ! Create new refrence!
+      ! Create new reference!
       IF(.NOT. Similar) THEN
         r0 = r1
         n0 = n
@@ -31390,7 +31390,7 @@ CONTAINS
               Enew % BoundaryInfo % Right => Eptr
             END IF
           ELSE
-            IF(k==1) CALL Warn(Caller,'Could not find even 1 parant!')
+            IF(k==1) CALL Warn(Caller,'Could not find even 1 parent!')
           END IF
             
         END DO
@@ -31569,7 +31569,7 @@ CONTAINS
       ParentBCs => ListGetIntegerArray( BC,'Intersection BC',Found )
       k = 0 
       IF(.NOT. Found ) THEN
-        ! If the intersection is between two bodies mark it seperately!
+        ! If the intersection is between two bodies mark it separately!
         ParentBCs => ListGetIntegerArray( BC,'Intersection Body',Found )
         k = 1
       END IF

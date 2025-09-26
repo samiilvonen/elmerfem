@@ -1506,7 +1506,7 @@ CONTAINS
          RETURN
       END IF
 
-      ! If the variable is of type "global" do not do all the stupid hazzle to interpolate it. 
+      ! If the variable is of type "global" do not do all the stupid hassle to interpolate it. 
       IF( pVar % TYPE == Variable_global ) THEN
         IF(.NOT. ASSOCIATED(Var)) THEN
           ALLOCATE(Var)
@@ -6232,7 +6232,7 @@ CONTAINS
            ValueType <= List_TYPE_CONSTANT_SCALAR_PROC ) THEN         
 
          IF( PRESENT( DummyCount ) ) THEN
-           ! If we feed internal variables then the eveluation cannot be global
+           ! If we feed internal variables then the evaluation cannot be global
            AllGlobal = .FALSE.
          ELSE
            ! If the matc depends on only global variable, like time, we know that the values
@@ -9227,7 +9227,7 @@ CONTAINS
 
 !------------------------------------------------------------------------------
 !> Given the body of a keyword find the 1st free keyword in the list structure.
-!> The intended use for this is in Solver_init to decleare exported variables
+!> The intended use for this is in Solver_init to declare exported variables
 !> without the risk of running over some existing ones. 
 !------------------------------------------------------------------------------
   FUNCTION NextFreeKeyword(keyword0,List) RESULT (Keyword)
@@ -10387,7 +10387,7 @@ END SUBROUTINE ElmerEvalLuaS
      LOGICAL :: Unused, GotFile
 
      IF(ReportMode == 1 ) THEN
-       ! Just initialize the lists from -1 to 0 such that only orginal keywords will be
+       ! Just initialize the lists from -1 to 0 such that only original keywords will be
        ! reported in mode 2.
        GOTO 100
      END IF

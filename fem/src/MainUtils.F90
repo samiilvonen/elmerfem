@@ -1294,7 +1294,7 @@ CONTAINS
         ( IsBlockSolver .AND. .NOT. IsProcedure ) 
     IsStepsSolver = ( Solver % SolverMode == SOLVER_MODE_STEPS ) 
 
-    ! Get the procudure that really runs the solver
+    ! Get the procedure that really runs the solver
     !------------------------------------------------------------------------------
     IF( IsProcedure ) THEN
       IF( IsStepsSolver ) THEN
@@ -4047,7 +4047,7 @@ CONTAINS
               
           ! These two constraints are based on moving already assembled information
           ! rather than assembling new information. If the row is already treated cycle.
-          ! The constrainst have been tested only with one-component cases.
+          ! The constraints have been tested only with one-component cases.
           !-----------------------------------------------------------------------------
           IF( ConsType == 'floating' .OR. ConsType == 'equality') THEN
 
@@ -4879,7 +4879,7 @@ CONTAINS
     END IF
         
       
-    ! Load the assembly procudure
+    ! Load the assembly procedure
     !-----------------------------------------
     IF( BulkMode ) THEN
       WRITE (str,'(A,I0,I0)') 'Bulk Assembly Procedure ',RowVar,ColVar
@@ -4898,7 +4898,7 @@ CONTAINS
       END IF
       ProcName = ListGetString( SolverParams, TRIM(str), GotIt )
       IF(.NOT. GotIt) THEN
-         CALL Fatal('BlockSystemAssembly','Bulk Assembly Precedure not given!')
+         CALL Fatal('BlockSystemAssembly','Bulk Assembly Procedure not given!')
       END IF
     END IF
 

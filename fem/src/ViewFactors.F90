@@ -917,7 +917,7 @@
 
 
      
-!> View factors are normalized in order to improve the numberical accuracy. With 
+!> View factors are normalized in order to improve the numerical accuracy. With 
 !> normalization it is ensured that all boundary elements see exactly half 
 !> space. 
 !------------------------------------------------------------------------------

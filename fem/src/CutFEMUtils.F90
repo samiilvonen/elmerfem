@@ -217,7 +217,7 @@ CONTAINS
     UseAbsEps = ListGetLogical(Params,'CutFEM Epsilon Absolute',Found ) 
 
 
-    ! First mark the cutted nodes.
+    ! First mark the cut nodes.
     ! These could maybe be part of the same loop as well but I separated when testing something.
     DO i=1, Mesh % NumberOfEdges
       NodeIndexes => Mesh % Edges(i) % NodeIndexes
@@ -311,7 +311,7 @@ CONTAINS
         j = j+1 
         CutDof(nn+i) = .TRUE.
 
-        ! The iterpolation weight should always be [0,1]
+        ! The interpolation weight should always be [0,1]
         IF(r < 0.0 .OR. r > 1.0) THEN
           PRINT *,'Invalid cutinterp:',i,j,r
         END IF    
@@ -921,7 +921,7 @@ CONTAINS
 
 
   ! Given Element, levelset function and the CutDof field return the elements created at the interface.
-  ! In 2D and also for straigth cuts in 3D we should expect to have just one element but it could
+  ! In 2D and also for straight cuts in 3D we should expect to have just one element but it could
   ! be changed. This includes also wedges even if the above does not just to model how they could
   ! work in 3D. 
   !----------------------------------------------------------------------------------------------
@@ -1651,7 +1651,7 @@ CONTAINS
     END IF
 
     
-    ! Entend values using FEM strategies beyond value set above. 
+    ! Extend values using FEM strategies beyond value set above. 
     ! We can extrapolate much but the extrapolation method is nonhysical.
     IF( CutExtend ) THEN
       CALL Info('CutFEMVariableFinalize','Extending values from inside to outside using FEM!',Level=10)
@@ -2451,7 +2451,7 @@ CONTAINS
             IF(i==MyPe) CYCLE              
             IF(PolylineData(i) % nLines == 0 .OR. PolylineData(MyPe) % nNodes == 0 ) CYCLE
             
-            ! Recieve data from partition i to MyPe
+            ! Receive data from partition i to MyPe
             k = PolylineData(i) % nLines * nCol
             CALL MPI_RECV( PolylineData(i) % Vals, k, MPI_DOUBLE_PRECISION,i-1, &
                 1001, comm, status, ierr )
@@ -2597,7 +2597,7 @@ CONTAINS
       END IF
 
       ! We can carry the fields with the zero levelset. This is like pure advection.
-      ! We should make this less laborious my fecthing the pointers first...
+      ! We should make this less laborious my fetching the pointers first...
       IF( nVar > 0 .AND. CutPerm(node) == 0 ) THEN                
         i0 = IsoMesh % Elements(imin) % NodeIndexes(1)
         i1 = IsoMesh % Elements(imin) % NodeIndexes(2)

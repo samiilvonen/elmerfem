@@ -317,7 +317,7 @@ void STDCALLBULL FC_FUNC(solvehypre1,SOLVEHYPRE1)
 
    
    /* Create preconditioner for Krylov methods. */
-   /* Some methods may act as preconditioners and solvers and are also intialized here
+   /* Some methods may act as preconditioners and solvers and are also initialized here
       and later changes the pointer to solvers. */
 
    if ( hypre_pre == 1 || hypre_sol == 1 )  {
@@ -993,18 +993,18 @@ void STDCALLBULL FC_FUNC(solvehypre4,SOLVEHYPRE4)
    hypre_pre = Container->hypre_method % 100;
 
    
-   if(myverb > 10 ) fprintf(stdout,"SolveHypre: Detroying Hypre solver structures!\n");
+   if(myverb > 10 ) fprintf(stdout,"SolveHypre: Destroying Hypre solver structures!\n");
 
    /* Destroy Hypre preconditioner */
    if ( hypre_pre == 1 ) {
-     if(myverb > 10) fprintf(stdout,"SolveHypre: Detroying BoomerAMG preconditioner\n");
+     if(myverb > 10) fprintf(stdout,"SolveHypre: Destroying BoomerAMG preconditioner\n");
      HYPRE_BoomerAMGDestroy(Container->precond);
    } 
    else if ( hypre_pre == 2 ) {
-     if(myverb > 10) fprintf(stdout,"SolveHypre: Detroying AMS preconditioner\n");
+     if(myverb > 10) fprintf(stdout,"SolveHypre: Destroying AMS preconditioner\n");
      HYPRE_AMSDestroy(Container->precond);
      if (Container->G) {
-       // This leas to core dump...
+       // This leads to core dump...
        // HYPRE_IJMatrixDestroy(Container->G);
      }
    }
@@ -1017,14 +1017,14 @@ void STDCALLBULL FC_FUNC(solvehypre4,SOLVEHYPRE4)
    
    /* Destroy Hypre solver */
    if ( hypre_sol == 1) { /* boomer AMG */
-     if(myverb > 10) fprintf(stdout,"SolveHypre: Detroying BoomerAMG solver\n");
+     if(myverb > 10) fprintf(stdout,"SolveHypre: Destroying BoomerAMG solver\n");
      HYPRE_BoomerAMGDestroy(Container->solver);
    }
    else if ( hypre_sol == 2 ) {
-     if(myverb > 10) fprintf(stdout,"SolveHypre: Detroying AMS solver\n");
+     if(myverb > 10) fprintf(stdout,"SolveHypre: Destroying AMS solver\n");
      HYPRE_AMSDestroy(Container->solver);
      if (Container->G) {
-       // This leas to core dump...
+       // This leads to core dump...
        // HYPRE_IJMatrixDestroy(Container->G);
      }
    }

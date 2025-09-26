@@ -6338,7 +6338,7 @@ CONTAINS
 
 !------------------------------------------------------------------------------
 !> Set values related to a rigid plane boundary such that any node on the boundary
-!> is expressed as linear combinination of the selected three (or two if on line)
+!> is expressed as linear combination of the selected three (or two if on line)
 !> nodes.
 !------------------------------------------------------------------------------
     SUBROUTINE SetRigidRows(inds0,bcind,n)
@@ -10646,7 +10646,7 @@ END FUNCTION SearchNodeL
     
     ! The update of exported variables on nonlinear or steady state level.
     ! In nonlinear level the nonlinear iteration may depend on the updated values.
-    ! Steady-state level is often sufficient if the dependendence is on some other solver.
+    ! Steady-state level is often sufficient if the dependence is on some other solver.
     !-----------------------------------------------------------------------------------------    
     IF( SteadyState ) THEN
       DoIt = ListGetLogical( SolverParams,&
@@ -10940,7 +10940,7 @@ END FUNCTION SearchNodeL
             //I2S(SIZE(x))//' vs. '//I2S(SIZE(x0))//')!',Level=10)
 
          ! Try to account for differing sizes of the x & x0 (effectively "Relaxation Factor=1"
-         ! for the additional "x"-vector dofs."ResidualMode" -case unhandeled.
+         ! for the additional "x"-vector dofs."ResidualMode" -case unhandled.
          IF (n > SIZE(x0) .AND. .NOT. ResidualMode) THEN
            BLOCK
               REAL(KIND=dp), ALLOCATABLE :: y(:)
@@ -11288,7 +11288,7 @@ END FUNCTION SearchNodeL
     END IF
     
     ! Optional a posteriori scaling for the computed fields
-    ! May be useful for some floating systems where one want to impose some intergral 
+    ! May be useful for some floating systems where one want to impose some integral 
     ! constraints without actually using them. Then first use just one Dirichlet point
     ! and then fix the level a posteriori using this condition. 
     !----------------------------------------------------------------------------------
@@ -11640,7 +11640,7 @@ END FUNCTION SearchNodeL
                 END IF
                   
                 m = COUNT(LocalInds > 0)
-                IF(m<3 .OR. m>4) CALL Fatal('GaussPointsAdapt','This is neither triange or quad?')
+                IF(m<3 .OR. m>4) CALL Fatal('GaussPointsAdapt','This is neither triangle or quad?')
                 
                 PieceElement % TYPE => GetElementType( 101*m )   
                 IP = GaussPoints( PieceElement, PReferenceElement = .FALSE. )
@@ -14849,7 +14849,7 @@ END FUNCTION SearchNodeL
         CALL Info(Caller,'Creating parallel matrix structures',Level=8)
         CALL ParallelInitMatrix( Solver, A )
         IF(A % ParallelInfo % NothingShared ) THEN
-          CALL Info(Caller,'No dofs shared in paralell matrix!',Level=6)
+          CALL Info(Caller,'No dofs shared in parallel matrix!',Level=6)
         END IF
       ELSE
         CALL Info(Caller,'Using previously created parallel matrix structures!',Level=15)
@@ -14902,7 +14902,7 @@ END FUNCTION SearchNodeL
     END IF
     
 !------------------------------------------------------------------------------
-!  These definitions are needed if chanching the iterative solver on-the-fly
+!  These definitions are needed if changing the iterative solver on-the-fly
 
     Solver % MultiGridSolver = ( ListGetString( Params, &
         'Linear System Solver', GotIt ) == 'multigrid' )
@@ -20423,7 +20423,7 @@ CONTAINS
       
       f = 0.0_dp
       DO iControl = 1, nControl
-       ! This is inhereted from previous control iterations.
+       ! This is inherited from previous control iterations.
        str = 'Control Amplitude'
        IF(nControl > 1) str = TRIM(str)//' '//I2S(iControl)
        cAmp(iControl) = ListGetCReal( Params, str, Found )

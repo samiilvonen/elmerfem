@@ -710,7 +710,7 @@ SUBROUTINE Get_MMG3D_Mesh(NewMesh, Parallel, FixedNodes, FixedElems, Calving)
     ! This still related to the old mesh
     Perm => Solver % Variable % Perm
     IF(.NOT. ASSOCIATED(Perm)) THEN
-      CALL Fatal(FuncName,'Perm vector not assoicated!?')
+      CALL Fatal(FuncName,'Perm vector not associated!?')
     END IF
 
     EquationName = ListGetString( Solver % Values, 'Equation', Found)                
@@ -1620,7 +1620,7 @@ SUBROUTINE RemeshMMG3D(Model, InMesh,OutMesh,EdgePairs,PairCount,&
     IF(PRESENT(ElemFixed)) THEN
       IF( InfoActive(20) ) THEN
         j = COUNT(ElemFixed)
-        CALL Info(FuncName,'Set reuired elements: '//I2S(j))
+        CALL Info(FuncName,'Set required elements: '//I2S(j))
       END IF
       DO i=1,NBulk + NBdry
         IF(ElemFixed(i)) THEN
@@ -1704,7 +1704,7 @@ SUBROUTINE RemeshMMG3D(Model, InMesh,OutMesh,EdgePairs,PairCount,&
   ! And delete the unneeded BC elems
   ! Important note for calving. mmg adds boundary nodes to upstream user defined boundary.
   ! these need to be removed
-  ! this is a temp fix as calving algo has mutliple inputs
+  ! this is a temp fix as calving algo has multiple inputs
   IF(MultipleInputs) THEN
     ALLOCATE(RmElement(NBulk+NBdry))
     RmElement = .FALSE.
@@ -3006,7 +3006,7 @@ END SUBROUTINE DistributedRemeshParMMG
       ! This still related to the old mesh
       Perm => Solver % Variable % Perm
       IF(.NOT. ASSOCIATED(Perm)) THEN
-        CALL Fatal(FuncName,'Perm vector not assoicated!?')
+        CALL Fatal(FuncName,'Perm vector not associated!?')
       END IF
       
       EquationName = ListGetString( Solver % Values, 'Equation', Found)                
@@ -3069,7 +3069,7 @@ END SUBROUTINE DistributedRemeshParMMG
       END DO
     END IF
     
-    ! Initialize the new mesh stucture
+    ! Initialize the new mesh structure
     NewMesh => AllocateMesh(nt + nt0,na + na0,np + np0,ParEnv%PEs > 1)
     IF (MeshNumber > 0 ) THEN
       NewMesh % Name = TRIM(OutPutFileName) // '_N' // I2S(MeshNumber)
@@ -3518,7 +3518,7 @@ CONTAINS
       CALL Info(FuncName,'Setting only the active part of mesh')
       Perm => Solver % Variable % Perm
       IF(.NOT. ASSOCIATED(Perm)) THEN
-        CALL Fatal(FuncName,'Perm vector not assoicated!?')
+        CALL Fatal(FuncName,'Perm vector not associated!?')
       END IF
       ii = Mesh % NumberOfNodes
       NVert = COUNT( Perm(1:ii) > 0 )
