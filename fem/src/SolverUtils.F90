@@ -19106,7 +19106,7 @@ SUBROUTINE EliminateLinearRestriction( StiffMatrix, ForceVector, RestMatrix, &
   REAL(KIND=dp), ALLOCATABLE, TARGET :: SlaveDiag(:), MasterDiag(:), DiagDiag(:)
   INTEGER, POINTER :: UsePerm(:), UseIPerm(:)
   REAL(KIND=dp), POINTER :: UseDiag(:)
-  REAL(KIND=dp) :: scl
+  REAL(KIND=dp) :: scl, val
   REAL(KIND=dp), POINTER :: TVals(:), Vals(:)
   REAL(KIND=dp), POINTER :: CollectionVector(:), RestVector(:)
   TYPE(ListMatrix_t), POINTER :: Lmat(:)
@@ -19171,11 +19171,12 @@ SUBROUTINE EliminateLinearRestriction( StiffMatrix, ForceVector, RestMatrix, &
   !------------------------------------------
   CALL Info(Caller,'Extracting diagonal entries for constraints',Level=15)
 
+
   DO i=1, RestMatrix % NumberOfRows
     m = RestMatrix % InvPerm(i)
 
     IF( m == 0 ) THEN
-      PRINT *,'InvPerm is zero:',ParEnv % MyPe, i
+      CALL Warn(Caller,'InvPerm is zero for row: '//I2S(i))      
       CYCLE
     END IF
 
@@ -19185,23 +19186,32 @@ SUBROUTINE EliminateLinearRestriction( StiffMatrix, ForceVector, RestMatrix, &
 
     DO j=RestMatrix % Rows(i), RestMatrix % Rows(i+1)-1
       k = RestMatrix % Cols(j)
+      val = Tvals(j)
+
       IF(k>n) THEN
-        DiagDiag(i) = Tvals(j)
+        IF(ABS(val) > ABS(DiagDiag(i))) DiagDiag(i) = val
         CYCLE
       END IF
 
-      IF( ABS( TVals(j) ) < TINY( 1.0_dp ) ) THEN
-        PRINT *,'Tvals too small',ParEnv % MyPe,j,i,k,RestMatrix % InvPerm(i),Tvals(j)
-      END IF
-
+      ! Don't really really remember/understand the logic here but it seems better to
+      ! choose the biggest value in case there are many of them. 
       IF(k == RestMatrix % InvPerm(i)) THEN
-        SlaveDiag(i) = Tvals(j)
+        IF(ABS(val) > ABS(SlaveDiag(i))) THEN
+          SlaveDiag(i) = val
+        END IF
       ELSE
-        MasterDiag(i) = Tvals(j)
-        MasterPerm(k)  = i
-        MasterIperm(i) = k
+        IF(ABS(val) > ABS(MasterDiag(i))) THEN
+          MasterDiag(i) = val
+          MasterPerm(k)  = i
+          MasterIperm(i) = k
+        END IF
       END IF
     END DO
+
+    ! This is less conservative complaint than the original. 
+    IF(ABS(SlaveDiag(i)) < TINY(val) .OR. ABS(MasterDiag(i)) < TINY(val)) THEN
+      PRINT *,'Diagvals too small',ParEnv % MyPe,i,SlaveDiag(i),MasterDiag(i)
+    END IF        
   END DO
 
   IF(InfoActive(25)) THEN
