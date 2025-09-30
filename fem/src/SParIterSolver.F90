@@ -1014,7 +1014,7 @@ END SUBROUTINE ZeroSplittedMatrix
       CALL Fatal(Caller,'Invalid solver for Hypre: '//TRIM(IterativeMethod))
     END IF
 
-    ! We map the precondtioner + solver to one figure. 
+    ! We map the preconditioner + solver to one figure. 
     hypremethod = 100 * hypre_sol + hypre_pre
     CALL Info(Caller,'Hypre method index: '//I2S(hypremethod),Level=6)
     
@@ -3184,7 +3184,7 @@ SUBROUTINE CombineCRSMatIndices ( SMat1, SMat2, DMat )
         
   !----------------------------------------------------------------------
   !
-  ! First we have to compute the strorage allocations
+  ! First we have to compute the storage allocations
   !
   !----------------------------------------------------------------------
   CALL CRS_SortBasicMatrix( SMat1 )

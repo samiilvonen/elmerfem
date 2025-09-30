@@ -64,7 +64,7 @@ MODULE LinearAlgebra
    !  */
    CALL LUDecomp( a,n,pivot,erroneous  )
 
-   IF (erroneous) CALL Fatal('InvertMatrix', 'inversion needs successfull LU-decomposition')
+   IF (erroneous) CALL Fatal('InvertMatrix', 'inversion needs successful LU-decomposition')
 
    ! /*  
    !  *  INV(U)
@@ -268,7 +268,7 @@ MODULE LinearAlgebra
    !  */
    CALL ComplexLUDecomp( a,n,pivot,erroneous )
 
-   IF (erroneous) CALL Fatal('ComplexInvertMatrix', 'inversion needs successfull LU-decomposition')
+   IF (erroneous) CALL Fatal('ComplexInvertMatrix', 'inversion needs successful LU-decomposition')
 
    DO i=1,n
      IF ( ABS(A(i,i))==0.0d0 ) THEN

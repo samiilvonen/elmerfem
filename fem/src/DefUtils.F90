@@ -650,8 +650,8 @@ CONTAINS
                x(i) = Values(j)
              END IF
            ELSE
-             ! This is an additional node of the fictious domain method. 
-             ! When we know where the isoline cuts the edge we can use linear iterpolation
+             ! This is an additional node of the fictitious domain method. 
+             ! When we know where the isoline cuts the edge we can use linear interpolation
              ! on the edge to get the value at the intersetion on-the-fly.
              r = Solver % CutInterp(j-nn)
              j1 = Variable % Perm(Solver % Mesh % Edges(j-nn) % NodeIndexes(1))
@@ -3674,7 +3674,7 @@ CONTAINS
          ALLOCATE( Solver % LocalSystem(n) )
          Solver % LocalSystem(1:n) % eind = 0         
          ! If the stiffness matrix is constant the 1st element gives stiffness matrix for all!
-         ! This could be inhereted differently too for splitted meshes, for example. 
+         ! This could be inherited differently too for splitted meshes, for example. 
          IF( ListGetLogical( Params,'Local Matrix Identical', Found )  ) THEN
            CALL Info('DefaultStart','Assuming all elements to be identical!')
            Solver % LocalSystem(1:n) % eind = 1         

@@ -654,7 +654,7 @@ CONTAINS
    
     DO i=1,NoVar
       IF(BlockMatrix % SubVector(i) % AddVector ) THEN
-        CALL Info('BlockBackCopyVar','Skipping AddVector '//I2S(i)//' that is not associcated to the original vector!',Level=20)
+        CALL Info('BlockBackCopyVar','Skipping AddVector '//I2S(i)//' that is not associated to the original vector!',Level=20)
         CYCLE
       END IF
       
@@ -678,7 +678,7 @@ CONTAINS
         END IF
       END IF
 
-      ! Note that confusingly InvPerm has different defintion in serial and parallel.
+      ! Note that confusingly InvPerm has different definition in serial and parallel.
       ! In serial it points just to indexes of the original matrix.
       ! In parallel it points to all possible indexes that could be present. 
       IF( ParEnv % PEs > 1 ) THEN
@@ -1846,7 +1846,7 @@ CONTAINS
       IF(k==0) CYCLE
 
       ! If BlockTag array were created for all DOFs with DOFs>1,
-      ! it would have a repeated entries occuring in clusters of
+      ! it would have a repeated entries occurring in clusters of
       ! size DOFs. Therefore a smaller array can be used to tag DOFs.
       IF( dofs == 1 ) THEN
         BlockTag(k) = 1

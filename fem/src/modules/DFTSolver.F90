@@ -715,7 +715,7 @@ SUBROUTINE PoissonSolver( Model, Solver, dt, TransientSimulation )
     GlobSize = SIZE(Solver % Variable % Values)
     ALLOCATE( OldSolution(GlobSize) , STAT=istat )
     IF (istat /= 0) CALL ERROR('PoissonSolver', &
-        'Error when allocating memory for previous solution strorage.')
+        'Error when allocating memory for previous solution storage.')
     
     OldSolution = 0.0d0
     
@@ -1199,7 +1199,7 @@ CONTAINS
             Coefficients(1:3)
         CALL INFO('PoissonSolver, GRPulay3', Message)
         
-        WRITE(Message,*) 'Lagrange multiplier of the minization problem', &
+        WRITE(Message,*) 'Lagrange multiplier of the minimization problem', &
             Coefficients(4)
         CALL INFO('PoissonSolver, GRPulay3', Message)
         

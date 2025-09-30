@@ -766,7 +766,7 @@ CONTAINS
               DEALLOCATE(inds)
               ALLOCATE(inds(maxnodes*NumberOfFactors),STAT=istat)
             END IF
-            IF ( istat /= 0 ) CALL Fatal(Caller,'Memory allocation error fo inds.')
+            IF ( istat /= 0 ) CALL Fatal(Caller,'Memory allocation error for inds.')
 
             cnt = 0
             DO n=1,NumberOfFactors
@@ -1097,7 +1097,7 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
-  ! Pick thet correct indexes for radition when using discontinuous Galerkin.
+  ! Pick the correct indexes for radition when using discontinuous Galerkin.
   ! In internal BCs we expect to find 'emissivity' given on either side.
   !--------------------------------------------------------------------------
   SUBROUTINE DgRadiationIndexes(Element,n,ElemInds,DiffuseGray)

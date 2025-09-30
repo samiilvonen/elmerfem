@@ -3623,7 +3623,7 @@ CONTAINS
      CASE(605)
 
         IF(SerendipityPBasis) THEN
-          CALL Fatal('ElementInfo', 'p-Pyramid not implented for serendipity scheme, ' // &
+          CALL Fatal('ElementInfo', 'p-Pyramid not implemented for serendipity scheme, ' // &
                       'please use the full scheme instead.')
         END IF
 
@@ -10662,7 +10662,7 @@ END SUBROUTINE PickActiveFace
 
        TYPE(Element_t), TARGET :: Element        !< Element structure
        TYPE(Nodes_t) :: Nodes                    !< Data corresponding to the classic element nodes
-       INTEGER :: PermVec(:)                     !< At exit the permution vector for performing reordering
+       INTEGER :: PermVec(:)                     !< At exit the permutation vector for performing reordering
        REAL(KIND=dp) :: SignVec(:)               !< At exit the vector for performing sign changes
 !---------------------------------------------------------------------------------------------------
        TYPE(Mesh_t), POINTER :: Mesh       
@@ -12683,7 +12683,7 @@ BLOCK
 
 
 !------------------------------------------------------------------------------
-!>    Figure out element diameter parameter for stablization.
+!>    Figure out element diameter parameter for stabilization.
 !------------------------------------------------------------------------------
    FUNCTION ElementDiameter( elm, nodes, UseLongEdge ) RESULT(hK)
 !------------------------------------------------------------------------------
@@ -14360,7 +14360,7 @@ END FUNCTION PointFaceDistance
       h2 = ElemPhi(i2)
       hprod = h1*h2            
 
-      ! First mark the cutted nodes.        
+      ! First mark the cut nodes.        
       IF( hprod < 0.0_dp ) THEN
         r = ABS(h2)/(ABS(h1)+ABS(h2))        
         IF( r <= Eps ) THEN

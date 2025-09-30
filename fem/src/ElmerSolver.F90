@@ -2777,7 +2777,7 @@
          END IF
        END IF
        IF( MODULO( ParEnv % PEs, nSlices ) /= 0 ) THEN
-         CALL Fatal(Caller,'For hybrid parallellism #np must be divisible with "Number of Slices"')
+         CALL Fatal(Caller,'For hybrid parallelism #np must be divisible with "Number of Slices"')
        END IF
        nTimes = ParEnv % PEs / nSlices 
        CALL ListAddInteger( CurrentModel % Simulation,'Number Of Times',nTimes )

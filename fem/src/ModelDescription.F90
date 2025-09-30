@@ -1537,7 +1537,7 @@ CONTAINS
        END IF
 
        ! Ok, we didn't find the keyword. Test whether it ends to 1, 2 or 3 integers
-       ! preceeded with empty space. The replace the integers with "1" and try to find
+       ! preceded with empty space. The replace the integers with "1" and try to find
        ! the type again. This reduced the keywords needed to be listed in SOLVER.KEYWORDS.
        j = LEN_TRIM(str)
        IF(j>2) THEN
@@ -3587,7 +3587,7 @@ CONTAINS
 
     ! This is intended to simplify the setting up of command file for structure-structure
     ! coupling. In effect only one keyword should be needed for the coupling.
-    ! This hack is of course prone to errors if the underlaying assumptions change. 
+    ! This hack is of course prone to errors if the underlying assumptions change. 
     DO i=1,Model % NumberOfSolvers
       List => Model % Solvers(i) % Values
             
@@ -6503,7 +6503,7 @@ END SUBROUTINE GetNodalElementSize
 
 
  !------------------------------------------------------------------------------
- !> This routine add ths parameters as coefficients for the keywords in the sif
+ !> This routine add this parameters as coefficients for the keywords in the sif
  !> file referred to as "-rpar 1", "-rpar 2", etc. 
  !-----------------------------------------------------------------------------
  SUBROUTINE SetRealParametersKeywordCoeff(NoParam,Param,count)

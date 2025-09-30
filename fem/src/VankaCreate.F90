@@ -343,7 +343,7 @@
          TYPE(Mesh_t), POINTER :: Mesh
          INTEGER :: n0
 
-         CALL Info('VankaCreate','Using agressive block created around edge')
+         CALL Info('VankaCreate','Using aggressive block created around edge')
          
          Mesh => Solver % Mesh
          IF(.NOT. ASSOCIATED(Mesh % Edges)) THEN

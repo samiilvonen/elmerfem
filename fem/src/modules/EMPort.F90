@@ -280,7 +280,7 @@ CONTAINS
 
       ! NOTE: There seems to be an issue with getting the values of model parameters
       ! by using variables of type ValueHandle_t when the keyword Body Id is used to
-      ! create body indentifiers. We use the traditional way to read the material parameters
+      ! create body identifiers. We use the traditional way to read the material parameters
       ! until this trouble is resolved.
       
 !      Nu = ListGetElementComplex(NuCoeff_h, Basis, Element, CreateNu, GaussPoint = t)      
