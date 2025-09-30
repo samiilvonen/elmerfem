@@ -849,7 +849,7 @@ MODULE Interpolation
 !> element (Nedelec) interpolant.
 !------------------------------------------------------------------------------
   SUBROUTINE NodalToNedelecInterpolation_GlobalMatrix(Mesh, NodalVar, &
-      VectorElementVar, GlobalPiMat, cdim, UseNodalPermArg )
+      VectorElementVar, GlobalPiMat, cdim, UseNodalPermArg, SkipFaces )
 !------------------------------------------------------------------------------
     IMPLICIT NONE
     TYPE(Mesh_t), POINTER :: Mesh
@@ -858,19 +858,20 @@ MODULE Interpolation
     TYPE(Matrix_t), POINTER :: GlobalPiMat  !< Used for the global representation
     INTEGER, OPTIONAL :: cdim      !< The number of spatial coordinates
     LOGICAL, OPTIONAL :: UseNodalPermArg
+    LOGICAL, OPTIONAL :: SkipFaces
 !------------------------------------------------------------------------------
     INTEGER, PARAMETER :: MaxEDOFs = 2
     INTEGER, PARAMETER :: MaxFDOFs = 2
 
     TYPE(Nodes_t), SAVE :: Nodes
     TYPE(Element_t), POINTER :: Edge, Face
-    LOGICAL :: PiolaVersion, SecondKindBasis, SecondOrder
+    LOGICAL :: PiolaVersion, SecondKindBasis, SecondOrder, Found
     INTEGER, ALLOCATABLE, SAVE :: Ind(:)
     INTEGER :: dim, istat, EDOFs, i, j, k, i1, i2, k1, k2, nd, dofi, i0, k0, &
         vdofs, edgej, facej
     REAL(KIND=dp) :: PiMat(MaxEDOFs,6), FacePiMat(MaxFDOFs,12)
     CHARACTER(*), PARAMETER :: Caller = 'NodalToNedelecInterpolation_GlobalMatrix'
-    LOGICAL :: UseNodalPerm, DoFatal, SkipPeriodicSlave
+    LOGICAL :: UseNodalPerm, DoFatal, SkipPeriodicSlave, DoFaces
     INTEGER, POINTER :: VectorPerm(:), NodalPerm(:)
 !------------------------------------------------------------------------------
 
@@ -900,7 +901,11 @@ MODULE Interpolation
     ! We only want to apply the projetor to the master nodes/edges of the conforming system. 
     SkipPeriodicSlave = ASSOCIATED( Mesh % PeriodicPerm )
 
-    
+    DoFaces = ASSOCIATED(Mesh % Faces)
+    IF(PRESENT(SkipFaces)) THEN
+      IF(SkipFaces) DoFaces = .FALSE.
+    END IF
+        
     IF (PRESENT(cdim)) THEN
       dim = cdim
     ELSE
@@ -981,7 +986,7 @@ MODULE Interpolation
       END DO
     END DO
 
-    IF (ASSOCIATED(Mesh % Faces)) THEN
+    IF (DoFaces) THEN
       DO facej=1, Mesh % NumberOfFaces
         Face => Mesh % Faces(facej)
         IF (Face % BDOFs < 1) CYCLE
