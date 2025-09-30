@@ -400,6 +400,7 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
   TYPE(Matrix_t), POINTER :: PrecMat
   TYPE(Solver_t), POINTER :: PrecSolver
   INTEGER :: PrecI
+  LOGICAL :: PrecMatCyl
   
   CHARACTER(*), PARAMETER :: Caller = 'WhitneyAVSolver'
   
@@ -435,13 +436,18 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
 
   NULLIFY(PrecMat)
   NULLIFY(PrecSolver)
+  PrecMatCyl = .FALSE.
   PrecI = ListGetInteger(SolverParams,'Prec Solvers',Found )
   IF(PrecI > 0) THEN
     PrecSolver => Model % Solvers(PrecI)
     PrecMat => Model % Solvers(PrecI) % Matrix    
+    PrecMatCyl = ListGetLogicalAnySolver(Model,'Prec Matrix Cylindrical')
   END IF
   IF(ASSOCIATED(PrecMat)) THEN
     CALL Info(Caller,'Using special nodal component-wise preconditioning matrix!')
+    IF(PrecMatCyl) THEN
+      CALL Info(Caller,'Assembling cylindrically symmetric preconditioning matrix!')
+    END IF
   END IF
   
   CoilCurrentName = GetString( SolverParams,'Current Density Name',UseCoilCurrent ) 
@@ -559,19 +565,25 @@ SUBROUTINE WhitneyAVSolver( Model,Solver,dt,Transient )
 
      IF(ALLOCATED(FORCE)) THEN
        DEALLOCATE(FORCE, JFixFORCE, JFixVec, LOAD, STIFF, MASS, DAMP, TCoef, GapLength, AirGapMu, &
-             Acoef, LamThick, LamCond, WBase, RotM, ThinLineCrossect, ThinLineCond, nSTIFF, nFORCE )
+             Acoef, LamThick, LamCond, WBase, RotM, ThinLineCrossect, ThinLineCond )
+       IF(ASSOCIATED(PrecMat)) THEN
+         DEALLOCATE(nSTIFF, nFORCE)
+       END IF
      END IF
 
      ALLOCATE( FORCE(N), JFixFORCE(n), JFixVec(3,n), LOAD(7,N), STIFF(N,N), &
           MASS(N,N), DAMP(N,N), Tcoef(3,3,N), GapLength(N), &
           AirGapMu(N), Acoef(N), LamThick(N), &
           LamCond(N), Wbase(N), RotM(3,3,N),  &
-          ThinLineCrossect(N), ThinLineCond(N), &
-          nSTIFF(N,N), nFORCE(N), STAT=istat )
+          ThinLineCrossect(N), ThinLineCond(N), STAT=istat )
      IF ( istat /= 0 ) THEN
         CALL Fatal( Caller, 'Memory allocation error.' )
      END IF
-
+     IF(ASSOCIATED(PrecMat)) THEN
+       i = PrecSolver % Variable % dofs
+       ALLOCATE(nSTIFF(i*n,i*n), nFORCE(i*n))
+     END IF
+            
      IF(GetString(SolverParams,'Linear System Solver',Found)=='block') THEN
        n = Mesh % NumberOfNodes
        n_n = COUNT(Perm(1:n)>0)
@@ -918,9 +930,8 @@ CONTAINS
 
      IF(ASSOCIATED(PrecMat)) THEN
        nFORCE = 0.0_dp
-       CALL DefaultUpdateEquations(nSTIFF,nFORCE,USolver=PrecSolver)       
+       CALL DefaultUpdateEquations(nSTIFF,nFORCE,UElement=Element,USolver=PrecSolver)       
      END IF
-
      
      ! Memorize stuff for the fixing potential
      ! 1) Divergence of the source term
@@ -954,8 +965,7 @@ CONTAINS
     END IF
 
     CALL JFixPotentialSolver(Model,Solver,dt,Transient)
-   
-    
+       
     CALL Info(Caller,'Adding the fixing potential to the r.h.s. of AV equation',Level=10)   
     DO t=1,active
       Element => GetActiveElement(t)
@@ -1337,12 +1347,6 @@ END BLOCK
 
 ! CALL WriteResults  ! debugging helper
 
-
-  IF( ASSOCIATED(PrecMat) ) THEN
-  PRINT *,'PrecMat:',MINVAL(PrecMat % Values), MAXVAL(PrecMat % Values)
-  
-  END IF
-  
 !------------------------------------------------------------------------------
  END FUNCTION DoSolve
 !------------------------------------------------------------------------------
@@ -2428,13 +2432,53 @@ END SUBROUTINE LocalConstraintMatrix
        ! Assembly of the special nodal preconditioning matrix
        !-------------------------------------------------------
        IF(ASSOCIATED(PrecMat)) THEN
-         DO p = 1,n
-           DO q = 1,n
-             nSTIFF(p,q) = nSTIFF(p,q) + mu * SUM(dBasisdx(p,:)*dBasisdx(q,:))*detJ*IP%s(t)              
-           END DO
-         END DO
+         BLOCK
+           REAL(KIND=dp) :: x,y,weight,Laplace
+           
+           weight = detJ * IP % s(t)
+           IF(PrecSolver % Variable % Dofs == 1 ) THEN 
+             DO p = 1,n
+               DO q = 1,n
+                 Laplace = SUM(dBasisdx(p,:)*dBasisdx(q,:)) * weight
+                 nSTIFF(p,q) = nSTIFF(p,q) + mu * Laplace 
+               END DO
+             END DO
+           ELSE IF( PrecMatCyl ) THEN
+             x = SUM(Basis(1:n) * Nodes % x(1:n))
+             y = SUM(Basis(1:n) * Nodes % y(1:n))
+             DO p = 1,n
+               DO q = 1,n
+                 Laplace = SUM(dBasisdx(p,:)*dBasisdx(q,:)) * weight
+                 
+                 ! Equation for: a_r/r
+                 nSTIFF(3*p-2,3*q-2) = nSTIFF(3*p-2,3*q-2) + x * mu * Laplace 
+                 nSTIFF(3*p-2,3*q-1) = nSTIFF(3*p-2,3*q-1) - y * mu * Laplace 
+                 nSTIFF(3*p-2,3*q-2) = nSTIFF(3*p-2,3*q-2) - mu * Basis(p) * dBasisdx(q,1) * weight
+                 nSTIFF(3*p-2,3*q-1) = nSTIFF(3*p-2,3*q-1) + mu * Basis(p) * dBasisdx(q,2) * weight
+                 
+                 ! Equation for: a_phi/r
+                 nSTIFF(3*p-1,3*q-1) = nSTIFF(3*p-1,3*q-1) + x * mu * Laplace 
+                 nSTIFF(3*p-1,3*q-2) = nSTIFF(3*p-1,3*q-2) + y * mu * Laplace 
+                 nSTIFF(3*p-1,3*q-2) = nSTIFF(3*p-1,3*q-2) - mu * Basis(p) * dBasisdx(q,2) * weight
+                 nSTIFF(3*p-1,3*q-1) = nSTIFF(3*p-1,3*q-1) - mu * Basis(p) * dBasisdx(q,1) * weight
+                 
+                 ! Equation for: a_z
+                 nSTIFF(3*p,3*q) = nSTIFF(3*p,3*q) + mu * Laplace 
+               END DO
+             END DO
+           ELSE
+             DO p = 1,n
+               DO q = 1,n
+                 Laplace = SUM(dBasisdx(p,:)*dBasisdx(q,:)) * weight
+                 nSTIFF(3*p-2,3*q-2) = nSTIFF(3*p-2,3*q-2) + mu * Laplace 
+                 nSTIFF(3*p-1,3*q-1) = nSTIFF(3*p-1,3*q-1) + mu * Laplace 
+                 nSTIFF(3*p,3*q) = nSTIFF(3*p,3*q) + mu * Laplace 
+               END DO
+             END DO
+           END IF
+         END BLOCK
+           
        END IF
-              
      END DO
 
      
