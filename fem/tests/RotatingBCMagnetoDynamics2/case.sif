@@ -241,7 +241,6 @@ Boundary Condition 3
   Level Projector = Logical True
   Level Projector Plane Edges Strong = Logical True
   Level Projector Extruded Edges Strong = Logical True
-  Level Projector Skew Edges Strong = Logical False
 
 ! electric conductivity zero so we can skip this
   Projector Skip Nodes = Logical True
@@ -260,7 +259,6 @@ Boundary Condition 4
   Level Projector Nodes Strong = Logical True
   Level Projector Plane Edges Strong = Logical True
   Level Projector Extruded Edges Strong = Logical True
-  Level Projector Skew Edges Strong = Logical False
 
 !  Save Projector = Logical True
 End
@@ -280,7 +278,6 @@ Boundary Condition 6
   Level Projector = Logical True
   Level Projector Plane Edges Strong = Logical True
   Level Projector Extruded Edges Strong = Logical True
-  Level Projector Skew Edges Strong = Logical False
 
   Projector Skip Nodes = Logical True
 !  Save Projector = Logical True

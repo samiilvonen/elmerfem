@@ -609,7 +609,7 @@ CONTAINS
      
    
 
-   !> Create permutation for discontinuous galerking type of fields optionally
+   !> Create permutation for discontinuous Galerkin type of fields optionally
    !> with a given mask.
    !-----------------------------------------------------------------------------------
    SUBROUTINE CreateDGPerm( Solver, DGPerm, DGCount, MaskName, SecName )

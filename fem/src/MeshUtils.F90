@@ -9137,7 +9137,7 @@ CONTAINS
     LOGICAL ::  StrongNodes, StrongEdges, StrongLevelEdges, StrongExtrudedEdges, &
         StrongConformingEdges, StrongConformingNodes
     LOGICAL :: Found, Parallel, SelfProject, EliminateUnneeded, SomethingUndone, &
-        SomethingStrong, EdgeBasis, PiolaVersion, GenericIntegrator, Rotational, &
+        EdgeBasis, PiolaVersion, GenericIntegrator, Rotational, &
         Cylindrical, WeakProjector, StrongProjector, CreateDual, HaveMaxDistance
     REAL(KIND=dp) :: XmaxAll, XminAll, YminAll, YmaxAll, Xrange, Yrange, &
         RelTolX, RelTolY, XTol, YTol, RadTol, MaxSkew1, MaxSkew2, SkewTol, &
@@ -9223,10 +9223,15 @@ CONTAINS
 
     ! We have a weak projector if it is requested 
     WeakProjector = ListGetLogical( BC, 'Galerkin Projector', Found )    
-
-    StrongProjector = ListGetLogical( BC,'Level Projector Strong',Found )
-    IF( StrongProjector .AND. WeakProjector ) THEN
-      CALL Fatal(Caller,'Projector cannot be weak (Galerkin) and strong at the same time!')
+    IF (Found) THEN
+      StrongProjector = .NOT. WeakProjector
+    ELSE
+      StrongProjector = ListGetLogical( BC,'Level Projector Strong',Found )
+      IF (.NOT. Found) THEN
+        StrongProjector = .NOT. WeakProjector
+      ELSE
+        WeakProjector = .NOT. StrongProjector 
+      END IF
     END IF
     
     MeshDim = Mesh % MeshDim
@@ -9297,34 +9302,31 @@ CONTAINS
     ! be recovered.
                
     IF( DoNodes ) THEN
-      StrongNodes = ListGetLogical( BC,'Level Projector Nodes Strong',Found ) 
-
       StrongConformingNodes = ListGetLogical( BC,'Level Projector Conforming Nodes Strong', Found ) 
 
-      IF(.NOT. Found) StrongNodes = ListGetLogical( BC,'Level Projector Strong',Found ) 
-      IF(.NOT. Found) StrongNodes = .NOT. GenericIntegrator
+      StrongNodes = ListGetLogical( BC,'Level Projector Nodes Strong',Found ) 
+      IF(.NOT. Found) THEN
+        StrongNodes = StrongProjector
+      END IF
     END IF
 
     IF( DoEdges ) THEN
-      StrongEdges = ListGetLogical( BC,'Level Projector Strong',Found )
-      IF(.NOT. Found ) StrongEdges = ListGetLogical( BC,'Level Projector Plane Edges Strong', Found ) 
-      IF(.NOT. Found ) StrongEdges = .NOT. GenericIntegrator
+      StrongConformingEdges = ListGetLogical( BC,'Level Projector Conforming Edges Strong', Found )
+      
+      StrongEdges = StrongProjector
       
       StrongLevelEdges = ListGetLogical( BC,'Level Projector Plane Edges Strong', Found ) 
-      IF( .NOT. Found ) StrongLevelEdges = StrongEdges
-      IF( StrongLevelEdges .AND. GenericIntegrator ) THEN
+      IF( .NOT. Found ) StrongLevelEdges = StrongProjector
+      IF( StrongLevelEdges .AND. WeakProjector ) THEN
         CALL Info(Caller,'Using strong level edges with partially weak projector',Level=7)
       END IF
-
-      StrongConformingEdges = ListGetLogical( BC,'Level Projector Conforming Edges Strong', Found ) 
       
       StrongExtrudedEdges = ListGetLogical( BC,'Level Projector Extruded Edges Strong', Found ) 
-      IF( .NOT. Found ) StrongExtrudedEdges = StrongEdges
-      IF( StrongExtrudedEdges .AND. GenericIntegrator ) THEN
+      IF( .NOT. Found ) StrongExtrudedEdges = StrongProjector
+      IF( StrongExtrudedEdges .AND. WeakProjector ) THEN
         CALL Info(Caller,'Using strong extruded edges with partially weak projector',Level=7)
       END IF
     END IF
-
 
     ! If the number of periods is enforced use that instead since
     ! the Xrange periodicity might not be correct if the mesh has skew.
@@ -9677,21 +9679,18 @@ CONTAINS
     ! If after strong projectors there are still something undone they must 
     ! be dealt with the weak projectors. 
     SomethingUndone = .FALSE.
-    SomethingStrong = .FALSE.
 
     ! If requested, create strong mapping for node dofs
     !------------------------------------------------------------------   
     IF( DoNodes ) THEN
       IF( StrongConformingNodes ) THEN
         CALL AddNodeProjectorStrongConforming()
-        SomethingStrong = .TRUE.
       ELSE IF( StrongNodes ) THEN
         IF( GenericIntegrator ) THEN 
           CALL AddNodalProjectorStrongGeneric()
         ELSE
           CALL AddNodalProjectorStrongStrides()
         END IF
-        SomethingStrong = .TRUE.
       ELSE
         ! If strong projector is applied they can deal with all nodal dofs
         SomethingUndone = .TRUE.
@@ -9713,8 +9712,7 @@ CONTAINS
         IF( StrongConformingEdges ) THEN
           CALL AddEdgeProjectorStrongConforming()
         ELSE         
-          IF( ListGetLogical( BC,'Level Projector Edges Generic', Found ) .OR. &
-              ListGetLogical( BC,'Level Projector Generic', Found ) ) THEN
+          IF( ListGetLogical( BC,'Level Projector Generic', Found ) ) THEN
             CALL AddEdgeProjectorStrongGeneric()
           ELSE         
             CALL AddEdgeProjectorStrongStrides()
@@ -9730,7 +9728,6 @@ CONTAINS
           SomethingUndone = .TRUE.
           EdgeBasis = .TRUE.
         END IF
-        SomethingStrong = .TRUE.
       ELSE
         SomethingUndone = .TRUE.
         EdgeBasis = .TRUE.
@@ -12581,7 +12578,7 @@ CONTAINS
       TYPE(Element_t), POINTER :: Element, ElementM, ElementP, TrueElement
       TYPE(GaussIntegrationPoints_t) :: IP
       LOGICAL :: AnyQuad
-      TYPE(Nodes_t) :: Nodes, NodesM, FaceNodes
+      TYPE(Nodes_t) :: Nodes, NodesM
       REAL(KIND=dp) :: x(10),y(10),xt,yt,zt,xmax,ymax,xmin,ymin,xmaxm,ymaxm,&
           xminm,yminm,DetJ,q,ArcTol,u,v,w,um,vm,wm,val,SlaveSum,MasterSum,&
           SumArea,uvw(3),ArcRange, dAlpha, uq, vq, s0
@@ -12630,7 +12627,6 @@ CONTAINS
 
       ALLOCATE( Nodes % x(n), Nodes % y(n), Nodes % z(n), &
           NodesM % x(n), NodesM % y(n), NodesM % z(n), &
-          FaceNodes % x(n), FaceNodes % y(n), FaceNodes % z(n), &
           Basis(n), BasisM(n), dBasisdx(n,3), STAT = AllocStat )
       IF( AllocStat /= 0 ) CALL Fatal(Caller,'Allocation error 1')
 

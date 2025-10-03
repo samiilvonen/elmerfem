@@ -1413,7 +1413,7 @@ CONTAINS
 
 !------------------------------------------------------------------------------
 !> Find a variable by its name from the list of variables. 
-!> If it not to be found in the current mesh, interpolation between
+!> If it is not found in the current mesh, interpolation between
 !> meshes is automatically requested for.
 !------------------------------------------------------------------------------
     RECURSIVE FUNCTION VariableGet( Variables, Name, ThisOnly, MaskName, UnfoundFatal, &
