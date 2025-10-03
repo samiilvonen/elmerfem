@@ -80,7 +80,8 @@
          UpdateIpPerm, VectorValuesRange
      USE MeshUtils, ONLY : MeshExtrude, MeshExtrudeSlices, PeriodicProjector, &
          CoordinateTransformation, InitializeElementDescriptions, ReleaseMesh, &
-         CalculateMeshPieces, SetActiveElementsTable, SetCurrentMesh
+         CalculateMeshPieces, SetActiveElementsTable, SetCurrentMesh, &
+         MarkSharpEdges
      USE MainUtils, ONLY : AddEquationBasics, AddEquationSolution, AddExecWhenFlag, &
          PredictorCorrectorControl, SingleSolver, SolveEquations, SolverActivate, &
          SwapMesh
@@ -455,6 +456,18 @@
                CurrentModel % Simulation, .TRUE. )
          END IF
 
+         IF( ListGetLogical( CurrentModel % Simulation,'Mark Sharp Edges',GotIt) ) THEN
+           BLOCK
+             LOGICAL, ALLOCATABLE :: SharpEdge(:)
+             REAL(KIND=dp) :: phi
+
+             phi = ListGetConstReal( CurrentModel % Simulation,'Sharp Edge',GotIt)
+             IF(.NOT. GotIt) phi = 30.0_dp
+             CALL MarkSharpEdges( CurrentModel % Meshes, SharpEdge, phi )
+             STOP
+           END BLOCK
+         END IF
+         
          IF(.NOT. Silent ) THEN
             CALL Info( 'MAIN', '-------------------------------------')
           END IF 

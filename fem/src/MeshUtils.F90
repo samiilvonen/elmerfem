@@ -21990,6 +21990,122 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 
+  !------------------------------------------------------------------------------
+  !> Mark edges that define the geometry.
+  !> We first identify potential face elements at interface and create mapping
+  !> from edges to these faces. Then we check whether any face pair is beyond
+  !> a critical angle. 
+  !------------------------------------------------------------------------------
+  SUBROUTINE MarkSharpEdges( Mesh, SharpEdge, phi0 )
+    TYPE(Mesh_t), POINTER :: Mesh
+    LOGICAL, ALLOCATABLE :: SharpEdge(:)
+    REAL(KIND=dp) :: phi0
+
+    INTEGER :: t,i,i1,i2,j,n,Sweep
+    REAL(KIND=dp) :: cosphi, cosphi0, Normal1(3), Normal2(3)
+    INTEGER, ALLOCATABLE :: EdgeUses(:), EdgeToFaceMap(:,:)
+    TYPE(Element_t), POINTER :: Face1, Face2
+    TYPE(Nodes_t), SAVE :: Nodes1, Nodes2
+
+    IF(.NOT. ASSOCIATED(Mesh % Faces)) THEN
+      CALL FindMeshFaces3D( Mesh )
+    END IF    
+    IF(.NOT. ASSOCIATED(Mesh % Edges)) THEN
+      CALL FindMeshEdges3D(Mesh)
+    END IF
+
+    cosphi0 = COS(pi*phi0/180.0_dp)
+    
+    IF(.NOT. ALLOCATED(SharpEdge)) THEN
+      ALLOCATE(SharpEdge(Mesh % NumberOfEdges))
+    END IF
+    SharpEdge = .FALSE.
+    
+    n = Mesh % NumberOfEdges
+    CALL Info('MarkSharpEdges','Total number of edges '//I2S(n),Level=10)
+    ALLOCATE(EdgeUses(n))
+    EdgeUses = 0
+
+    ! First mark those face elements that are at interface of two different bodies,
+    ! or at outer interface. Note: this does not work yeat in parallel!
+    DO Sweep=0,1    
+      DO t=1,Mesh % NumberOfFaces
+        PRINT *,'t',t
+        Face1 => Mesh % Faces(t)
+        IF(.NOT. ASSOCIATED(Face1 % BoundaryInfo)) CYCLE
+        i1 = 0; i2 = 0
+        IF(ASSOCIATED(Face1 % BoundaryInfo % Left)) THEN
+          i1 = Face1 % BoundaryInfo % Left % BodyId
+        END IF
+        IF(ASSOCIATED(Face1 % BoundaryInfo % Right)) THEN
+          i2 = Face1 % BoundaryInfo % Right % BodyId
+        END IF
+        IF(i1 == i2) CYCLE
+        
+        IF(Sweep == 0) THEN
+          ! At first round only count the appearances.
+          EdgeUses(Face1 % EdgeIndexes) = EdgeUses(Face1 % EdgeIndexes) + 1
+        ELSE
+          ! At second round create the mapping from edges to interface faces.
+          DO i=1,Face1 % Type % NumberOfEdges
+            j = Face1 % EdgeIndexes(i)
+            EdgeUses(j) = EdgeUses(j) + 1
+            EdgeToFaceMap(j,EdgeUses(j)) = t            
+          END DO          
+        END IF          
+      END DO
+
+      IF(Sweep==0) THEN
+        n = MAXVAL(EdgeUses)
+        CALL Info('MaskSharpEdges','Edge associated at max. '//I2S(n)//' interface faces',Level=6)
+        ALLOCATE(EdgeToFaceMap(Mesh % NumberOfEdges,n))
+        EdgeUses = 0
+        EdgeToFaceMap = 0
+      END IF      
+    END DO
+
+    ! Now compute the angle between normals related to faces of the  
+    DO t=1,Mesh % NumberOfEdges    
+      DO i1=1, EdgeUses(t)
+        Face1 => Mesh % Faces(EdgeToFaceMap(t,i1))
+        CALL CopyElementNodesFromMesh(Nodes1,Mesh,&
+            Face1 % TYPE % NumberOfNodes,Face1 % NodeIndexes)
+        Normal1 = NormalVector(Face1,Nodes1)
+        DO i2=i1+1, EdgeUses(t)
+          Face2 => Mesh % Faces(EdgeToFaceMap(t,i2))
+          CALL CopyElementNodesFromMesh(Nodes2,Mesh,&
+              Face2 % TYPE % NumberOfNodes,Face2 % NodeIndexes)
+          Normal2 = NormalVector(Face2,Nodes2)
+          
+          ! Compare cosphi rather than phi since we save one trigonometric operation. 
+          cosphi = ABS(SUM(Normal1 * Normal2))
+          IF(cosphi < cosphi0) SharpEdge(t) = .TRUE.
+        END DO
+      END DO
+    END DO
+       
+    n = COUNT(SharpEdge)
+    CALL Info('MaskSharpEdges','Number of sharp edges is '//I2S(n),Level=5)
+
+    DEALLOCATE(EdgeUses,EdgeToFaceMap)
+
+#if 1
+    ! For debugging reasons we may want to save the edges. 
+    ! plot3(sharp(
+    OPEN( 10, FILE = 'sharp.dat' )    
+    DO t=1, Mesh % NumberOfEdges
+      IF(.NOT. SharpEdge(t)) CYCLE
+      i1 = Mesh % Edges(t) % NodeIndexes(1)
+      i2 = Mesh % Edges(t) % NodeIndexes(2)
+      WRITE(10,*) t,Mesh % Nodes % x(i1),Mesh % Nodes % y(i1),Mesh % Nodes % z(i1), &
+          Mesh % Nodes % x(i2),Mesh % Nodes % y(i2),Mesh % Nodes % z(i2)
+    END DO
+    CLOSE(10)
+#endif
+    
+  END SUBROUTINE MarkSharpEdges
+
+  
 !------------------------------------------------------------------------------
 !> Finds neighbours of the nodes in given direction.
 !> The algorithm finds the neighbour that within 45 degrees of the 
