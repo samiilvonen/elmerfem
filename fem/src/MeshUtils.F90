@@ -9244,11 +9244,10 @@ CONTAINS
     END IF
     
     ! Generic integrator does not make any assumptions on the way the mesh 
-    ! is constructured. Otherwise constant strides in y-direction is assumed. 
-    ! For weak strategy always use the generic integrator. 
-    GenericIntegrator = ListGetLogical( BC,'Level Projector Generic',Found ) 
-    IF(.NOT. Found ) GenericIntegrator = WeakProjector
-
+    ! is constructured. 
+    !GenericIntegrator = ListGetLogical( BC,'Level Projector Generic',Found ) 
+    GenericIntegrator = .TRUE.
+    
     ! Maximum skew in degrees before treating edges as skewed
     SkewTol = 0.1_dp
 
@@ -9686,13 +9685,13 @@ CONTAINS
       IF( StrongConformingNodes ) THEN
         CALL AddNodeProjectorStrongConforming()
       ELSE IF( StrongNodes ) THEN
-        IF( GenericIntegrator ) THEN 
-          CALL AddNodalProjectorStrongGeneric()
-        ELSE
-          CALL AddNodalProjectorStrongStrides()
-        END IF
+!        IF( GenericIntegrator ) THEN 
+        CALL AddNodalProjectorStrongGeneric()
+!        ELSE
+!          CALL AddNodalProjectorStrongStrides()
+!        END IF
       ELSE
-        ! If strong projector is applied they can deal with all nodal dofs
+        ! If strong projector is applied, it can deal with all nodal dofs
         SomethingUndone = .TRUE.
       END IF
     END IF
@@ -9712,11 +9711,11 @@ CONTAINS
         IF( StrongConformingEdges ) THEN
           CALL AddEdgeProjectorStrongConforming()
         ELSE         
-          IF( ListGetLogical( BC,'Level Projector Generic', Found ) ) THEN
-            CALL AddEdgeProjectorStrongGeneric()
-          ELSE         
-            CALL AddEdgeProjectorStrongStrides()
-          END IF
+!          IF( ListGetLogical( BC,'Level Projector Generic', Found ) ) THEN
+          CALL AddEdgeProjectorStrongGeneric()
+!          ELSE         
+!            CALL AddEdgeProjectorStrongStrides()
+!          END IF
         END IF
         ! Compute the unset edge dofs. 
         ! Some of the dofs may have been set by the strong projector. 
@@ -9748,11 +9747,12 @@ CONTAINS
       IF( MeshDim == 2 ) THEN
         CALL Info(Caller,'Initial mesh is 2D, using 1D projectors!',Level=10) 
         CALL AddProjectorWeak1D()
-      ELSE IF( GenericIntegrator ) THEN
-        CALL AddProjectorWeakGeneric()
       ELSE
-        CALL AddProjectorWeakStrides()
-      END IF
+!        IF( GenericIntegrator ) THEN
+        CALL AddProjectorWeakGeneric()
+!      ELSE
+!        CALL AddProjectorWeakStrides()
+!      END IF
     END IF
 
     ! Now change the matrix format to CRS from list matrix
@@ -9869,6 +9869,7 @@ CONTAINS
       TYPE(Nodes_t) :: NodesM
       LOGICAL :: LeftCircle
 
+      CALL Fatal('AddNodalProjectorStrongStrides','Obsolete subroutine')
       CALL Info('AddNodalProjectorStrongStrides','Creating strong stride projector for nodal dofs',Level=10)
 
       n = Mesh % MaxElementNodes
@@ -10303,7 +10304,7 @@ CONTAINS
       LOGICAL :: YConst, YConstM, XConst, XConstM, EdgeReady, Repeated, LeftCircle, &
           SkewEdge, AtRangeLimit
 
-
+      CALL Fatal('AddEdgeProjectorStrongStrides','Obsolete subroutine')
       CALL Info('AddEdgeProjectorStrongStrides','Creating strong stride projector for edges assuming strides',Level=10)
 
       n = Mesh % NumberOfEdges
@@ -10821,6 +10822,7 @@ CONTAINS
       LOGICAL :: LeftCircle, Stat
       TYPE(Mesh_t), POINTER :: Mesh
 
+      CALL Fatal('AddProjectorWeakStrides','Obsolete subroutine')
       CALL Info('AddProjectorWeakStrides','Creating weak projector for stride mesh',Level=8)      
 
       Mesh => CurrentModel % Solver % Mesh 
