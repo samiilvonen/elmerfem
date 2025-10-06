@@ -67,7 +67,7 @@ jobs:
           brew install \
             cmake openblas open-mpi \
             ${{ matrix.openmp == 'with' && 'libomp suitesparse' || '' }} \
-            qwt vtk opencascade
+            qwt vtk opencascade expat
           echo "HOMEBREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
 
       - name: configure
@@ -105,6 +105,7 @@ jobs:
             -DWITH_QT6=ON \
             -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
             -DWITH_VTK=ON \
+            -DEXPAT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/expat/include" \
             -DWITH_OCC=ON \
             -DWITH_MATC=ON \
             -DWITH_PARAVIEW=ON \
