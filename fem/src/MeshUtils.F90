@@ -9730,7 +9730,7 @@ CONTAINS
       ELSE
         SomethingUndone = .TRUE.
         EdgeBasis = .TRUE.
-      END IF      
+      END IF
     END IF
 
     ! And the rest
@@ -9752,7 +9752,7 @@ CONTAINS
         CALL AddProjectorWeakGeneric()
 !      ELSE
 !        CALL AddProjectorWeakStrides()
-!      END IF
+      END IF
     END IF
 
     ! Now change the matrix format to CRS from list matrix
