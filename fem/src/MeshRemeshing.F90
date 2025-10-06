@@ -35,7 +35,7 @@ MODULE MeshRemeshing
 USE Types
 USE Lists
 USE Messages
-USE MeshUtils, ONLY : PrepareMesh
+USE MeshUtils, ONLY : PrepareMesh, MarkSharpEdges
 USE MeshPartition
 USE SparIterComm
 
@@ -98,6 +98,8 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
   INTEGER :: i,j,NNodes,NVerts, NTetras, NPrisms, NTris, NQuads, NEdges, nbulk, nbdry,ref,ierr
   INTEGER, ALLOCATABLE :: NodeRefs(:)
   LOGICAL :: Warn101=.FALSE., Warn202=.FALSE.,Debug=.FALSE.,Elem202,Found
+  LOGICAL, ALLOCATABLE :: SharpEdge(:)
+  REAL(KIND=dp) :: phi
   INTEGER, POINTER :: Perm(:)
   CHARACTER(:), ALLOCATABLE :: EquationName                              
   CHARACTER(*), PARAMETER :: FuncName="Set_MMG3D_Mesh"
@@ -128,8 +130,9 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
   ntris = 0
   nquads = 0
   nedges = 0
-  IF(PRESENT(PairCount)) NEdges= PairCount
+  IF(PRESENT(PairCount)) NEdges = PairCount
 
+  
   DO i=1,Mesh % NumberOfBulkElements + Mesh % NumberOfBoundaryElements
     Element => Mesh % Elements(i)
     IF( PRESENT( Solver ) ) THEN
@@ -166,8 +169,16 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
   Nbulk = NTetras + NPrisms
   Nbdry = NTris + Nquads
 
+  IF( ListGetLogical(CurrentModel % Solver % Values,'mmg External Angle detection',Found) ) THEN
+    phi = ListGetConstReal(CurrentModel % Solver % Values,'mmg angle detection',Found )
+    IF(.NOT. Found) phi = 30.0_dp    
+    CALL MarkSharpEdges( Mesh, SharpEdge, phi )
+    Nedges = Nedges + COUNT(SharpEdge)
+  END IF
+  
   CALL Info(FuncName,'Set number of bulk elements: '//I2S(Nbulk),Level=20)
   CALL Info(FuncName,'Set number of boundary elements: '//I2S(Nbdry),Level=20)
+  CALL Info(FuncName,'Set number of edge elements: '//I2S(Nedges),Level=20)
 
   
   IF(Warn101) CALL Warn(FuncName,"101 elements detected - these won't be remeshed")
@@ -268,8 +279,7 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
       CALL Info(FuncName,'Fixed number of nodes at interface: '//I2S(j),Level=10)
     END BLOCK
   END IF
-    
-  
+
   ! use element pairs '202' elements
   Elem202 = (PRESENT(EdgePairs))
   IF (Elem202) THEN
@@ -279,9 +289,22 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
       CALL MMG3D_Set_ridge(mmgMesh, nedges, ierr)
       !CALL MMG3D_Set_requiredEdge(mmgMesh, Nedges, ierr)
     END DO
+    CALL Info(FuncName,'Set EdgePairs elements done',Level=20)
   END IF
 
-  CALL Info(FuncName,'Set edge elements done',Level=20)
+  IF( ALLOCATED(SharpEdge)) THEN
+    DO i=1,Mesh % NumberOfEdges
+      IF(SharpEdge(i)) THEN
+        NEdges = NEdges + 1 
+        CALL MMG3D_Set_edge(mmgMesh, Mesh % Edges(i) % NodeIndexes(1), &
+            Mesh % Edges(i) % NodeIndexes(2), 1, nedges, ierr)
+        CALL MMG3D_Set_ridge(mmgMesh, nedges, ierr)
+      END IF
+    END DO
+    DEALLOCATE(SharpEdge)
+    CALL Info(FuncName,'Set sharp edge elements done',Level=20)
+  END IF
+    
 
 #else
   CALL Fatal('Set_MMG3D_Mesh',&
@@ -412,6 +435,7 @@ SUBROUTINE Set_MMG3D_Parameters(SolverParams, ReTrial)
 
   ! !< [1/0], Avoid/allow automatic angle detection */
   NoAngleDetect = ListGetLogical(SolverParams,'mmg No Angle detection',Found)
+  IF(.NOT. Found) NoAngleDetect = ListGetLogical(SolverParams,'mmg External Angle detection',Found)
   IF (NoAngleDetect) THEN
     CALL MMG3D_SET_IPARAMETER(mmgMesh,mmgSol,MMG3D_IPARAM_angle,0,ierr)
     IF ( ierr == 0 ) CALL Fatal(FuncName,&
@@ -601,6 +625,7 @@ SUBROUTINE Set_PMMG_Parameters(SolverParams, ReTrial )
 
   ! !< [1/0], Avoid/allow surface modifications */ 
   NoAngleDetect = ListGetLogical(SolverParams,'mmg No Angle detection',Found)
+  IF(.NOT. Found) NoAngleDetect = ListGetLogical(SolverParams,'mmg External Angle detection',Found)
   IF (NoAngleDetect) THEN
     CALL PMMG_SET_IPARAMETER(pmmgMesh,PMMGPARAM_angle,0,ierr)
     IF ( ierr == 0 ) CALL Fatal(FuncName, &
@@ -1460,7 +1485,6 @@ SUBROUTINE RemeshMMG3D(Model, InMesh,OutMesh,EdgePairs,PairCount,&
   IF(UseHvar) UseHvar = ASSOCIATED(HVar)
   
   UseTargetLength = ListCheckPresent( FuncParams,'MMG Target Length' )
-
   
   IF( UseHvar ) THEN
     CALL Info(FuncName,'Using external field for mesh metric: '//TRIM(HVar % Name),Level=10)

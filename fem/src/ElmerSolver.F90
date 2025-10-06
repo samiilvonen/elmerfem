@@ -460,11 +460,9 @@
            BLOCK
              LOGICAL, ALLOCATABLE :: SharpEdge(:)
              REAL(KIND=dp) :: phi
-
              phi = ListGetConstReal( CurrentModel % Simulation,'Sharp Edge',GotIt)
              IF(.NOT. GotIt) phi = 30.0_dp
              CALL MarkSharpEdges( CurrentModel % Meshes, SharpEdge, phi )
-             STOP
            END BLOCK
          END IF
          

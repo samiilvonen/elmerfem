@@ -22032,7 +22032,6 @@ CONTAINS
     ! or at outer interface. Note: this does not work yeat in parallel!
     DO Sweep=0,1    
       DO t=1,Mesh % NumberOfFaces
-        PRINT *,'t',t
         Face1 => Mesh % Faces(t)
         IF(.NOT. ASSOCIATED(Face1 % BoundaryInfo)) CYCLE
         i1 = 0; i2 = 0
@@ -22091,7 +22090,7 @@ CONTAINS
 
     DEALLOCATE(EdgeUses,EdgeToFaceMap)
 
-#if 1
+#if 0
     ! For debugging reasons we may want to save the edges. 
     ! plot3(sharp(
     OPEN( 10, FILE = 'sharp.dat' )    
