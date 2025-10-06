@@ -9292,7 +9292,7 @@ CONTAINS
         CALL Fatal(Caller,'We cannot use fully strong projector as wished in this geometry!')
       END IF
     END IF
-      
+    
     ! The projectors for nodes and edges can be created either in a strong way 
     ! or weak way in the special case that the nodes are located in extruded layers. 
     ! The strong way results to a sparse projector. For constant 
@@ -10100,6 +10100,7 @@ CONTAINS
       Nundefined = 0
       z1 = 0.0_dp
 
+      ! For rotational thing "x" is in degress but we search for the hit in distance multiplied by Pi*R/180. 
       ArcTol = ArcCoeff * Xtol
       ArcRange = ArcCoeff * Xrange 
 
@@ -10139,7 +10140,7 @@ CONTAINS
         IF( SelfProject ) sgn0 = -sgn0
         
         ! Currently a cheap n^2 loop but it could be improved
-        ! Looping over master elements. Look for constant-y strides only. 
+        ! Looping over master elements. x coordinate may be periodic, y not. 
         !--------------------------------------------------------------------
         DO indM = 1, BMesh2 % NumberOfBulkElements
           
@@ -10181,11 +10182,11 @@ CONTAINS
           END IF
 
           IF( Repeating ) THEN
-            Nrange = FLOOR( (xmaxm-x1) / XRange )
+            Nrange = FLOOR( (xmaxm-x1) / ArcRange )
             IF( Nrange /= 0 ) THEN
-              xminm = xminm - Nrange * ArcRange
-              xmaxm = xmaxm - Nrange * ArcRange
               NodesM % x(1:nM) = NodesM % x(1:nM) - NRange * ArcRange 
+              xmaxm = MAXVAL( NodesM % x(1:nM) )
+              xminm = MINVAL( NodesM % x(1:nM) )
             END IF
 
             ! Check whether there could be a intersection in an other interval as well
@@ -10216,9 +10217,9 @@ CONTAINS
           
           IF( Repeating ) THEN
             IF( NRange2 /= 0 ) THEN
-              xminm = xminm + ArcCoeff * Nrange2 * ArcRange
-              xmaxm = xmaxm + ArcCoeff * Nrange2 * ArcRange
               NodesM % x(1:nM) = NodesM % x(1:nM) + NRange2 * ArcRange 
+              xmaxm = MAXVAL( NodesM % x(1:nM) )
+              xminm = MINVAL( NodesM % x(1:nM) )
               NRange = NRange + NRange2
               NRange2 = 0
               GOTO 100
@@ -10234,7 +10235,7 @@ CONTAINS
           ELSE
             Nundefined = Nundefined + 1
             IF( .NOT. HaveMaxDistance ) THEN
-              WRITE( Message,'(A,2I8,3ES12.3)') 'Problematic node: ',&
+              WRITE( Message,'(A,2I8,3ES15.6)') 'Problematic node: ',&
                   ind,ParEnv % MyPe,x1,y1,MaxMinBasis
               CALL Warn(Caller,Message )
             END IF
