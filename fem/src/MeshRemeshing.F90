@@ -35,7 +35,7 @@ MODULE MeshRemeshing
 USE Types
 USE Lists
 USE Messages
-USE MeshUtils, ONLY : PrepareMesh, MarkSharpEdges
+USE MeshUtils, ONLY : PrepareMesh, MarkSharpEdges, MarkSharpNodes
 USE MeshPartition
 USE SparIterComm
 
@@ -97,8 +97,8 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
   
   INTEGER :: i,j,NNodes,NVerts, NTetras, NPrisms, NTris, NQuads, NEdges, nbulk, nbdry,ref,ierr
   INTEGER, ALLOCATABLE :: NodeRefs(:)
-  LOGICAL :: Warn101=.FALSE., Warn202=.FALSE.,Debug=.FALSE.,Elem202,Found
-  LOGICAL, ALLOCATABLE :: SharpEdge(:)
+  LOGICAL :: Warn101=.FALSE., Warn202=.FALSE.,Debug=.FALSE.,Elem202,Found, UsePerm
+  LOGICAL, ALLOCATABLE :: SharpEdge(:), SharpNode(:)
   REAL(KIND=dp) :: phi
   INTEGER, POINTER :: Perm(:)
   CHARACTER(:), ALLOCATABLE :: EquationName                              
@@ -110,18 +110,23 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
 
   IF(Parallel) CALL Assert(ASSOCIATED(Mesh % ParallelInfo % GlobalDOFs), FuncName,&
       "Parallel sim but no ParallelInfo % GlobalDOFs")
-  
-  IF( PRESENT( Solver ) ) THEN
-    CALL Info(FuncName,'Setting only the active part of mesh')
-    EquationName = ListGetString( Solver % Values, 'Equation', Found)                 
+
+  NULLIFY(Perm)
+  UsePerm = .FALSE.
+  IF(PRESENT( Solver ) ) THEN
     Perm => Solver % Variable % Perm
     IF(.NOT. ASSOCIATED(Perm)) THEN
-      CALL Fatal(FuncName,'Perm vector not associated!?')
+      CALL Fatal(FuncName,'Perm vector not associated but Solver given!?')
     END IF
     NVerts = COUNT( Perm(1:Mesh % NumberOfNodes) > 0 )
+    UsePerm = (NVerts < Mesh % NumberOfNodes )
   ELSE
-    NULLIFY( Perm )
     NVerts = Mesh % NumberOfNodes    
+  END IF  
+    
+  IF( UsePerm ) THEN
+    CALL Info(FuncName,'Using only the active part of mesh')
+    EquationName = ListGetString( Solver % Values, 'Equation', Found)                 
   END IF
   CALL Info(FuncName,'Set number of nodes: '//I2S(Nverts),Level=20)
   
@@ -173,7 +178,17 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
     phi = ListGetConstReal(CurrentModel % Solver % Values,'mmg angle detection',Found )
     IF(.NOT. Found) phi = 30.0_dp    
     CALL MarkSharpEdges( Mesh, SharpEdge, phi )
-    Nedges = Nedges + COUNT(SharpEdge)
+    IF(UsePerm) THEN
+      DO i=1,Mesh % NumberOfEdges
+        IF(SharpEdge(i)) THEN
+          NodeRefs(1:2) = Perm(Mesh % Edges(i) % NodeIndexes)
+          IF(ANY(NodeRefs(1:2)==0)) CYCLE
+        END IF        
+        Nedges = Nedges + 1
+      END DO
+    ELSE
+      Nedges = Nedges + COUNT(SharpEdge)
+    END IF
   END IF
   
   CALL Info(FuncName,'Set number of bulk elements: '//I2S(Nbulk),Level=20)
@@ -218,7 +233,7 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
     NNodes = Element % TYPE % NumberOfNodes
     NodeIndexes => Element % NodeIndexes
 
-    IF(PRESENT(Solver)) THEN
+    IF(UsePerm) THEN
       NodeRefs(1:NNodes) = Perm(NodeIndexes(1:NNodes))
       IF(ANY(NodeRefs(1:NNodes) == 0 ) ) CYCLE      
       IF(i<=Mesh % NumberOfBulkElements) THEN
@@ -256,7 +271,7 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
 
 
   ! Freeze nodes at the interface of remeshed and omitted volume
-  IF( PRESENT( Solver ) ) THEN
+  IF( UsePerm ) THEN
     BLOCK
       LOGICAL, ALLOCATABLE :: TagNode(:)
       ALLOCATE(TagNode(Mesh % NumberOfNodes))
@@ -295,17 +310,34 @@ SUBROUTINE Set_MMG3D_Mesh(Mesh, Parallel, EdgePairs, PairCount, Solver)
   IF( ALLOCATED(SharpEdge)) THEN
     DO i=1,Mesh % NumberOfEdges
       IF(SharpEdge(i)) THEN
+        NodeRefs(1:2) = Mesh % Edges(i) % NodeIndexes
+        IF(UsePerm) THEN
+          NodeRefs(1:2) = Perm(NodeRefs(1:2))
+          IF(ANY(NodeRefs(1:2)==0)) CYCLE
+        END IF        
         NEdges = NEdges + 1 
-        CALL MMG3D_Set_edge(mmgMesh, Mesh % Edges(i) % NodeIndexes(1), &
-            Mesh % Edges(i) % NodeIndexes(2), 1, nedges, ierr)
+        CALL MMG3D_Set_edge(mmgMesh, NodeRefs(1), NodeRefs(2), 1, nedges, ierr)
         CALL MMG3D_Set_ridge(mmgMesh, nedges, ierr)
       END IF
     END DO
-    DEALLOCATE(SharpEdge)
-    CALL Info(FuncName,'Set sharp edge elements done',Level=20)
-  END IF
-    
+    CALL Info(FuncName,'Sharp edge elements set!',Level=20)
 
+    IF( ListGetLogical(CurrentModel % Solver % Values,'mmg External Corner detection',Found) ) THEN
+      CALL MarkSharpNodes( Mesh, SharpEdge, SharpNode, phi )     
+      DO i=1,Mesh % NumberOfNodes
+        IF(SharpNode(i)) THEN
+          j = i
+          IF(UsePerm) j=Perm(i)
+          CALL MMG3D_Set_corner(mmgMesh, j, ierr)
+        END IF
+      END DO
+      CALL Info(FuncName,'Sharp corner nodes set!',Level=20)
+      DEALLOCATE(SharpNode)
+    END IF
+      
+    DEALLOCATE(SharpEdge)
+  END IF
+  
 #else
   CALL Fatal('Set_MMG3D_Mesh',&
         'Remeshing utility MMG3D has not been installed')
@@ -723,7 +755,7 @@ SUBROUTINE Get_MMG3D_Mesh(NewMesh, Parallel, FixedNodes, FixedElems, Calving)
   CALL Info(FuncName,'MMG3D_Get_meshSize done',Level=20)
   IF(NPrisms /= 0) CALL Fatal(FuncName, "Programming Error: MMG3D returns prisms")
   IF(NQuads /= 0) CALL Fatal(FuncName, "Programming Error: MMG3D returns quads")
-
+  
   maxnodes = 4
   nt0 = 0; np0 = 0; na0 = 0
   Combine = ListGetLogical( CurrentModel % Solver % Values,'Keep unmeshed regions',Found)
@@ -3767,6 +3799,7 @@ CONTAINS
 
     ! [1/0], Avoid/allow surface modifications  
     Stat = ListGetLogical(SolverParams,'mmg No Angle detection',Found)
+    IF(.NOT. Found) Stat = ListGetLogical(SolverParams,'mmg External Angle detection',Found)
     IF (Found) THEN
       istat=0; IF(Stat) istat=1
       CALL MMG2D_SET_IPARAMETER(mmgMesh,mmgSol,MMG2D_IPARAM_angle,istat,ier)

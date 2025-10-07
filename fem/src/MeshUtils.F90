@@ -22009,7 +22009,7 @@ CONTAINS
     INTEGER, ALLOCATABLE :: EdgeUses(:), EdgeToFaceMap(:,:)
     TYPE(Element_t), POINTER :: Face1, Face2
     TYPE(Nodes_t), SAVE :: Nodes1, Nodes2
-
+    
     IF(.NOT. ASSOCIATED(Mesh % Faces)) THEN
       CALL FindMeshFaces3D( Mesh )
     END IF    
@@ -22034,6 +22034,7 @@ CONTAINS
     DO Sweep=0,1    
       DO t=1,Mesh % NumberOfFaces
         Face1 => Mesh % Faces(t)
+
         IF(.NOT. ASSOCIATED(Face1 % BoundaryInfo)) CYCLE
         i1 = 0; i2 = 0
         IF(ASSOCIATED(Face1 % BoundaryInfo % Left)) THEN
@@ -22059,14 +22060,14 @@ CONTAINS
 
       IF(Sweep==0) THEN
         n = MAXVAL(EdgeUses)
-        CALL Info('MaskSharpEdges','Edge associated at max. '//I2S(n)//' interface faces',Level=6)
+        CALL Info('MarkSharpEdges','Edge associated at max. '//I2S(n)//' interface faces',Level=6)
         ALLOCATE(EdgeToFaceMap(Mesh % NumberOfEdges,n))
         EdgeUses = 0
         EdgeToFaceMap = 0
       END IF      
     END DO
 
-    ! Now compute the angle between normals related to faces of the  
+    ! Now compute the angle between normals related to faces sharing the edge.
     DO t=1,Mesh % NumberOfEdges    
       DO i1=1, EdgeUses(t)
         Face1 => Mesh % Faces(EdgeToFaceMap(t,i1))
@@ -22087,14 +22088,14 @@ CONTAINS
     END DO
        
     n = COUNT(SharpEdge)
-    CALL Info('MaskSharpEdges','Number of sharp edges is '//I2S(n),Level=5)
+    CALL Info('MarkSharpEdges','Number of sharp edges is '//I2S(n),Level=5)
 
     DEALLOCATE(EdgeUses,EdgeToFaceMap)
 
 #if 0
     ! For debugging reasons we may want to save the edges. 
     ! plot3(sharp(
-    OPEN( 10, FILE = 'sharp.dat' )    
+    OPEN( 10, FILE = 'sharp_edge.dat' )    
     DO t=1, Mesh % NumberOfEdges
       IF(.NOT. SharpEdge(t)) CYCLE
       i1 = Mesh % Edges(t) % NodeIndexes(1)
@@ -22106,6 +22107,109 @@ CONTAINS
 #endif
     
   END SUBROUTINE MarkSharpEdges
+
+
+  SUBROUTINE MarkSharpNodes( Mesh, SharpEdge, SharpNode, phi0 )
+    TYPE(Mesh_t), POINTER :: Mesh
+    LOGICAL :: SharpEdge(:)
+    REAL(KIND=dp) :: phi0
+    LOGICAL, ALLOCATABLE :: SharpNode(:)
+
+    INTEGER :: t,i,j,i1,i2,j1,j2,n,Sweep
+    REAL(KIND=dp) :: cosphi, cosphi0, Normal1(3), Normal2(3)
+    INTEGER, ALLOCATABLE :: NodeUses(:), NodeToEdgeMap(:,:)
+    TYPE(Element_t), POINTER :: Edge1, Edge2
+    
+    IF(.NOT. ASSOCIATED(Mesh % Edges)) THEN
+      CALL Fatal('MarkSharpNodes','We should have edges allocated!')
+    END IF
+
+    cosphi0 = COS(pi*phi0/180.0_dp)
+    
+    IF(.NOT. ALLOCATED(SharpNode)) THEN
+      ALLOCATE(SharpNode(Mesh % NumberOfNodes))
+    END IF
+    SharpNode = .FALSE.
+
+    n = Mesh % NumberOfNodes
+    CALL Info('MarkSharpNodes','Total number of nodes '//I2S(n),Level=10)
+    ALLOCATE(NodeUses(n))
+    NodeUses = 0
+    
+    ! First create a structure from potential corner nodes to all sharp edges.
+    DO Sweep=0,1    
+      DO t=1,Mesh % NumberOfEdges
+        IF(.NOT. SharpEdge(t)) CYCLE
+                
+        Edge1 => Mesh % Edges(t)        
+        IF(Sweep == 0) THEN
+          ! At first round only count the appearances.
+          NodeUses(Edge1 % NodeIndexes) = NodeUses(Edge1 % NodeIndexes) + 1
+        ELSE
+          ! At second round create the mapping from edges to interface faces.
+          DO i=1,Edge1 % Type % NumberOfNodes
+            j = Edge1 % NodeIndexes(i)
+            NodeUses(j) = NodeUses(j) + 1
+            NodeToEdgeMap(j,NodeUses(j)) = t            
+          END DO          
+        END IF          
+      END DO
+
+      IF(Sweep==0) THEN
+        n = MAXVAL(NodeUses)
+        CALL Info('MarkSharpNodes','Node associated at max. '//I2S(n)//' sharp edges',Level=6)
+        ALLOCATE(NodeToEdgeMap(Mesh % NumberOfNodes,n))
+        n = COUNT(NodeUses > 1)
+        CALL Info('MarkSharpNodes','Number of sharp candidate nodes is '//I2S(n),Level=6)
+        NodeUses = 0
+        NodeToEdgeMap = 0
+      END IF
+    END DO
+
+    ! Now compute the angle between edges related to the potential corner node. 
+    DO t=1,Mesh % NumberOfNodes    
+      DO i1=1, NodeUses(t)
+        Edge1 => Mesh % Edges(NodeToEdgeMap(t,i1))
+        j1 = Edge1 % NodeIndexes(1)
+        j2 = Edge1 % NodeIndexes(2)        
+        Normal1(1) = Mesh % Nodes % x(j1) - Mesh % Nodes % x(j2)
+        Normal1(2) = Mesh % Nodes % y(j1) - Mesh % Nodes % y(j2)
+        Normal1(3) = Mesh % Nodes % z(j1) - Mesh % Nodes % z(j2)
+        Normal1 = Normal1 / SQRT(SUM(Normal1*Normal1))
+        
+        DO i2=i1+1, NodeUses(t)
+          Edge2 => Mesh % Edges(NodeToEdgeMap(t,i2))
+          j1 = Edge2 % NodeIndexes(1)
+          j2 = Edge2 % NodeIndexes(2)        
+          Normal2(1) = Mesh % Nodes % x(j1) - Mesh % Nodes % x(j2)
+          Normal2(2) = Mesh % Nodes % y(j1) - Mesh % Nodes % y(j2)
+          Normal2(3) = Mesh % Nodes % z(j1) - Mesh % Nodes % z(j2)
+          Normal2 = Normal2 / SQRT(SUM(Normal2*Normal2))
+
+          ! Compare cosphi rather than phi since we save one trigonometric operation. 
+          cosphi = ABS(SUM(Normal1 * Normal2))
+          IF(cosphi < cosphi0) SharpNode(t) = .TRUE.
+        END DO
+      END DO
+    END DO
+       
+    n = COUNT(SharpNode)
+    CALL Info('MarkSharpNodes','Number of sharp nodes is '//I2S(n),Level=5)
+
+    DEALLOCATE(NodeUses,NodeToEdgeMap)
+
+#if 0
+    ! For debugging reasons we may want to save the corner nodes. 
+    OPEN( 10, FILE = 'sharp_node.dat' )    
+    DO t=1, Mesh % NumberOfNodes
+      IF(.NOT. SharpNode(t)) CYCLE
+      WRITE(10,*) t,Mesh % Nodes % x(t),Mesh % Nodes % y(t),Mesh % Nodes % z(t)
+    END DO
+    CLOSE(10)
+#endif
+    
+  END SUBROUTINE MarkSharpNodes
+    
 
   
 !------------------------------------------------------------------------------
