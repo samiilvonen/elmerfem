@@ -9126,24 +9126,25 @@ CONTAINS
     !---------------------------------------------------------------------------
     IMPLICIT NONE
 
-    TYPE(Mesh_t), POINTER :: BMesh1, BMesh2, Mesh
+    TYPE(Mesh_t), POINTER :: BMesh1, BMesh2
     LOGICAL :: DoNodes, DoEdges
     LOGICAL :: Repeating, AntiRepeating, FullCircle, NotAllQuads, NotAllQuads2
     REAL(KIND=dp) :: Radius, NodeScale, EdgeScale
     TYPE(ValueList_t), POINTER :: BC
     TYPE(Matrix_t), POINTER :: Projector    
     !--------------------------------------------------------------------------
+    TYPE(Mesh_t), POINTER :: Mesh
     INTEGER, POINTER :: InvPerm1(:), InvPerm2(:)
-    LOGICAL ::  StrongNodes, StrongEdges, StrongLevelEdges, StrongExtrudedEdges, &
+    LOGICAL ::  WeakProjector, StrongProjector, StrongNodes, StrongEdges, &
         StrongConformingEdges, StrongConformingNodes
     LOGICAL :: Found, Parallel, SelfProject, EliminateUnneeded, SomethingUndone, &
-        EdgeBasis, PiolaVersion, GenericIntegrator, Rotational, &
-        Cylindrical, WeakProjector, StrongProjector, CreateDual, HaveMaxDistance
+        EdgeBasis, PiolaVersion, Rotational, &
+        Cylindrical, CreateDual, HaveMaxDistance
     REAL(KIND=dp) :: XmaxAll, XminAll, YminAll, YmaxAll, Xrange, Yrange, &
-        RelTolX, RelTolY, XTol, YTol, RadTol, MaxSkew1, MaxSkew2, SkewTol, &
+        RelTolX, RelTolY, XTol, YTol, &
         ArcCoeff, EdgeCoeff, NodeCoeff, MaxDistance, val
     INTEGER :: Indexes(256)
-    INTEGER :: NoNodes1, NoNodes2, MeshDim
+    INTEGER :: MeshDim
     INTEGER :: i,j,k,n,m,Nrange,Nrange2, nrow, Naxial
     INTEGER, ALLOCATABLE :: EdgePerm(:),NodePerm(:),DualNodePerm(:)
     INTEGER :: EdgeRow0, FaceRow0, EdgeCol0, FaceCol0, ProjectorRows
@@ -9234,6 +9235,23 @@ CONTAINS
       END IF
     END IF
     
+    ! The projectors for nodes and edges can be created either in a strong way 
+    ! or weak way. The strong way results to a sparse projector. For extruded 
+    ! layers it can be quite optimal, except for the edges with a skew. 
+    IF( DoNodes ) THEN
+      StrongConformingNodes = ListGetLogical( BC,'Level Projector Conforming Nodes Strong', Found ) 
+
+      StrongNodes = ListGetLogical( BC,'Level Projector Nodes Strong',Found ) 
+      IF(.NOT. Found) THEN
+        StrongNodes = StrongProjector
+      END IF
+    END IF
+
+    IF( DoEdges ) THEN
+      StrongConformingEdges = ListGetLogical( BC,'Level Projector Conforming Edges Strong', Found )
+      StrongEdges = StrongProjector
+    END IF
+    
     MeshDim = Mesh % MeshDim
     IF( MeshDim == 3 ) THEN
       Element => BMesh1 % Elements(1)
@@ -9246,111 +9264,21 @@ CONTAINS
     ! Generic integrator does not make any assumptions on the way the mesh 
     ! is constructured. 
     !GenericIntegrator = ListGetLogical( BC,'Level Projector Generic',Found ) 
-    GenericIntegrator = .TRUE.
-    
-    ! Maximum skew in degrees before treating edges as skewed
-    SkewTol = 0.1_dp
 
-    ! Check whether generic integrator should be enforced
-    IF( DoEdges .AND. .NOT. GenericIntegrator ) THEN
-      IF( Naxial > 0 ) THEN
-        GenericIntegrator = .TRUE.
-        CALL Info(Caller,'Generic integrator enforced for axial projector',Level=6)
-      END IF
-      
-      ! It is assumed that that the target mesh is always un-skewed 
-      ! Make a test here to be able to skip it later. No test is needed
-      ! if the generic integrator is enforced. 
-#if 0 
-      IF(.NOT. GenericIntegrator ) THEN
-        MaxSkew1 = CheckMeshSkew( BMesh1, NotAllQuads )
-        IF( NotAllQuads ) THEN
-          CALL Info(Caller,'This mesh has also triangles',Level=8)
-        END IF
-        WRITE( Message,'(A,ES12.3)') 'Maximum skew in this mesh: ',MaxSkew1
-        CALL Info(Caller,Message,Level=8)
-        
-        MaxSkew2 = CheckMeshSkew( BMesh2, NotAllQuads2 )
-        IF( NotAllQuads2 ) THEN
-          CALL Info(Caller,'Target mesh has also triangles',Level=8)
-        END IF
-        WRITE( Message,'(A,ES12.3)') 'Maximum skew in target mesh: ',MaxSkew2
-        CALL Info(Caller,Message,Level=8)
-        
-        IF( NotAllQuads .OR. NotAllQuads2 .OR. MaxSkew2 > SkewTol ) THEN
-          IF( MaxSkew2 > MaxSkew1 .AND. MaxSkew1 < SkewTol ) THEN
-            CALL Warn(Caller,'You could try switching the master and target BC!')
-          END IF
-          CALL Warn(Caller,'Target mesh has too much skew, using generic integrator when needed!')
-          GenericIntegrator = .TRUE. 
-        END IF
-      END IF
-#endif
-      
-      IF( GenericIntegrator ) THEN
-        CALL Info(Caller,'Edge projection for the BC requires weak projector!',Level=7)
-        CALL Fatal(Caller,'We cannot use fully strong projector as wished in this geometry!')
-      END IF
-    END IF
-    
-    ! The projectors for nodes and edges can be created either in a strong way 
-    ! or weak way in the special case that the nodes are located in extruded layers. 
-    ! The strong way results to a sparse projector. For constant 
-    ! levels it can be quite optimal, except for the edges with a skew. 
-    ! If strong projector is used for all edges then "StrideProjector" should 
-    ! be recovered.
-               
-    IF( DoNodes ) THEN
-      StrongConformingNodes = ListGetLogical( BC,'Level Projector Conforming Nodes Strong', Found ) 
-
-      StrongNodes = ListGetLogical( BC,'Level Projector Nodes Strong',Found ) 
-      IF(.NOT. Found) THEN
-        StrongNodes = StrongProjector
-      END IF
-    END IF
-
-    IF( DoEdges ) THEN
-      StrongConformingEdges = ListGetLogical( BC,'Level Projector Conforming Edges Strong', Found )
-      
-      StrongEdges = StrongProjector
-      
-      StrongLevelEdges = ListGetLogical( BC,'Level Projector Plane Edges Strong', Found ) 
-      IF( .NOT. Found ) StrongLevelEdges = StrongProjector
-      IF( StrongLevelEdges .AND. WeakProjector ) THEN
-        CALL Info(Caller,'Using strong level edges with partially weak projector',Level=7)
-      END IF
-      
-      StrongExtrudedEdges = ListGetLogical( BC,'Level Projector Extruded Edges Strong', Found ) 
-      IF( .NOT. Found ) StrongExtrudedEdges = StrongProjector
-      IF( StrongExtrudedEdges .AND. WeakProjector ) THEN
-        CALL Info(Caller,'Using strong extruded edges with partially weak projector',Level=7)
-      END IF
-    END IF
-
-    ! If the number of periods is enforced use that instead since
+    ! If the number of periods is enforced, use that instead since
     ! the Xrange periodicity might not be correct if the mesh has skew.
     IF( Rotational ) THEN
       IF( FullCircle ) THEN
         Xrange = 360.0_dp
       ELSE 
         i = ListGetInteger( BC,'Rotational Projector Periods',Found,minv=1 ) 
-        IF( GenericIntegrator .AND. .NOT. Found ) THEN
+        IF( .NOT. Found ) THEN
           CALL Fatal(Caller,&
-              'Generic integrator requires > Rotational Projector Periods <')
+              'Rotational Projector requires > Rotational Projector Periods <')
         END IF
         Xrange = 360.0_dp / i
       END IF
     END IF
-
-    ! This is the tolerance used to define constant direction in radians
-    ! For consistency it should not be sloppier than the SkewTol
-    ! but it could be equally sloppy as below.
-    RadTol = PI * SkewTol / 180.0_dp
-
-    ! Given the inverse permutation compute the initial number of
-    ! nodes in both cases. 
-    NoNodes1 = BMesh1 % NumberOfNodes
-    NoNodes2 = BMesh2 % NumberOfNodes
 
     InvPerm1 => BMesh1 % InvPerm
     InvPerm2 => BMesh2 % InvPerm
@@ -9707,7 +9635,7 @@ CONTAINS
         FaceCol0 = Mesh % NumberOfNodes + Mesh % NumberOfEdges
       END IF
 
-      IF( StrongLevelEdges .OR. StrongExtrudedEdges .OR. StrongConformingEdges ) THEN
+      IF( StrongEdges .OR. StrongConformingEdges ) THEN
         IF( StrongConformingEdges ) THEN
           CALL AddEdgeProjectorStrongConforming()
         ELSE         
@@ -9783,8 +9711,8 @@ CONTAINS
     
   CONTAINS
 
-    ! Currently the target mesh is assumed to be include only cartesian elements
-    ! Check the angle in the elements. When we know the target mesh is cartesian
+    ! Currently the target mesh is assumed to include only Cartesian elements.
+    ! Check the angle in the elements. When the target mesh is Cartesian,
     ! we can reduce the error control in the other parts of the code. 
     !----------------------------------------------------------------------------
     FUNCTION CheckMeshSkew(BMesh, NotAllQuads) RESULT( MaxSkew )
@@ -10299,15 +10227,31 @@ CONTAINS
       TYPE(Nodes_t) :: NodesM, Nodes 
       INTEGER, POINTER :: EdgeMap(:,:),EdgeMapM(:,:)
       REAL(KIND=dp) :: xm1, xm2, ym1, ym2, coeff(100), signs(100), wsum, minwsum, maxwsum, val, &
-          x1o, y1o, x2o, y2o, cskew, sedge
+          x1o, y1o, x2o, y2o, cskew, sedge, RadTol
       REAL(KIND=dp) :: x1, y1, x2, y2, xmin, xmax, xminm, xmaxm, ymin, ymax, yminm, ymaxm, xmean, &
           dx,dy,Xeps
       LOGICAL :: YConst, YConstM, XConst, XConstM, EdgeReady, Repeated, LeftCircle, &
-          SkewEdge, AtRangeLimit
+          SkewEdge, AtRangeLimit, StrongLevelEdges, StrongExtrudedEdges, Found
 
       CALL Fatal('AddEdgeProjectorStrongStrides','Obsolete subroutine')
       CALL Info('AddEdgeProjectorStrongStrides','Creating strong stride projector for edges assuming strides',Level=10)
 
+      StrongLevelEdges = ListGetLogical( BC,'Level Projector Plane Edges Strong', Found ) 
+      IF( .NOT. Found ) StrongLevelEdges = StrongProjector
+      IF( StrongLevelEdges .AND. WeakProjector ) THEN
+        CALL Info(Caller,'Using strong level edges with partially weak projector',Level=7)
+      END IF
+
+      StrongExtrudedEdges = ListGetLogical( BC,'Level Projector Extruded Edges Strong', Found ) 
+      IF( .NOT. Found ) StrongExtrudedEdges = StrongProjector
+      IF( StrongExtrudedEdges .AND. WeakProjector ) THEN
+        CALL Info(Caller,'Using strong extruded edges with partially weak projector',Level=7)
+      END IF
+      
+      ! SkewTol = 0.1_dp
+      ! RadTol = PI * SkewTol / 180.0_dp
+      RadTol = PI * 0.1_dp / 180.0_dp
+      
       n = Mesh % NumberOfEdges
       IF( n == 0 ) RETURN      
 
