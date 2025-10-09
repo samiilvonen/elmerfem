@@ -2168,7 +2168,7 @@ CONTAINS
     TYPE(Variable_t), POINTER :: PhiVar1D, PhiVar2D, pVar       
     TYPE(Mesh_t), POINTER :: IsoMesh => NULL()
     REAL(KIND=dp), POINTER :: x(:), y(:)
-    REAL(KIND=dp) :: val, Vx, Vy, dt, VPhi, PhiMax, BW
+    REAL(KIND=dp) :: val, Vx, Vy, dt, VPhi, PhiMax, BW, cosphi0
     CHARACTER(:), ALLOCATABLE :: str       
     LOGICAL :: Found, Nonzero, MovingLevelset
     INTEGER :: nVar,i,j,iAvoid,iSolver
@@ -2189,12 +2189,11 @@ CONTAINS
     
     pVar => VariableGet( Mesh % Variables,'timestep size' )
     dt = pVar % Values(1)
-    
+
     phiVar1D => VariableGet( IsoMesh % Variables, CutStr, ThisOnly = .TRUE.)
     IF(.NOT. ASSOCIATED(PhiVar1D)) THEN
       CALL Fatal('LevelSetUpdate','Levelset function ("'//TRIM(CutStr)//'") needed in 1D mesh!')
     END IF
-
 
     ! This should be ok by construction but some testing does not hurt...
     DO i=1,SIZE(phiVar1D % Perm)
@@ -2207,7 +2206,10 @@ CONTAINS
     IF(.NOT. ASSOCIATED(PhiVar2D)) THEN
       CALL Fatal('LevelSetUpdate','Levelset function needed in 2D mesh!')
     END IF
-    
+
+    ! We can move the levelset either by moving its coordinates, or
+    ! by adding values to the levelset function. The first should be used if we
+    ! know the direction of the movement and the latter if we know the normal movement.
     x => Isomesh % Nodes % x    
     y => Isomesh % Nodes % y
     
@@ -2216,40 +2218,58 @@ CONTAINS
     ! This assumes constant levelset convection. Mainly for testing.
     Vx = ListGetCReal( Solver % Values,'Levelset Velocity 1',Found )
     IF(Found) THEN
-      IF(ABS(Vx) > EPSILON(Vx)) MovingLevelset = .TRUE.
-      x = x + Vx * dt
+      IF(ABS(Vx) > EPSILON(Vx)) THEN
+        MovingLevelset = .TRUE.
+        x = x + Vx * dt
+      END IF
     END IF
       
     Vy = ListGetCReal( Solver % Values,'Levelset Velocity 2',Found )
     IF(Found) THEN
-      IF(ABS(Vy) > EPSILON(Vy)) MovingLevelset = .TRUE.
-      y = y + Vy * dt 
+      IF(ABS(Vy) > EPSILON(Vy)) THEN
+        MovingLevelset = .TRUE.
+        y = y + Vy * dt
+      END IF
     END IF
 
-    ! This assumes constant calving speed. Mainly for testing.
-    VPhi = ListGetCReal( Solver % Values,'Levelset Calving',Found )
-    IF(Found) THEN
-      MovingLevelset = .TRUE.
-      PhiVar1D % Values = PhiVar1D % Values + VPhi * dt 
-    END IF
-      
     Nonzero = ListGetLogical( Solver % Values,'CutFEM signed distance nonzero',Found ) 
-    PRINT *,'Move:',Vx,Vy,VPhi,dt,Nonzero
+
+    ! It turns out that if the polyline is not a zero levelset but something else
+    ! we need to try to ensure that the direction is almost normal to the element segment.
+    VPhi = ListGetCReal( Solver % Values,'CutFEM critical angle',Found )
+    IF(.NOT. Found) Vphi = 60.0_dp
+    cosphi0 = COS(Vphi*PI/180.0_dp)
+    
+    ! This assumes constant calving speed. Mainly for testing.
+    VPhi = ListGetCReal( Solver % Values,'Levelset Speed',Found )
+    IF(Found) THEN
+      IF(ABS(VPhi) > EPSILON(VPhi)) THEN
+        PhiVar1D % Values = PhiVar1D % Values + VPhi * dt 
+        MovingLevelset = .TRUE.
+        NonZero = .TRUE.
+      END IF
+    END IF
     
     ! Position dependent levelset velocity & calving speed.
     str = ListGetString( Solver % Values,'Levelset Velocity Variable',Found )
     IF(Found) THEN
-      pVar => VariableGet( Mesh % Variables,TRIM(str)//' 1',UnfoundFatal=.TRUE.) 
+      pVar => VariableGet( IsoMesh % Variables,TRIM(str)//' 1',UnfoundFatal=.TRUE.) 
       x = x + pVar % Values * dt
-      pVar => VariableGet( Mesh % Variables,TRIM(str)//' 2',UnfoundFatal=.TRUE.) 
+      pVar => VariableGet( IsoMesh % Variables,TRIM(str)//' 2',UnfoundFatal=.TRUE.) 
       y = y + pVar % Values * dt
-      MovingLevelset = .TRUE.
+      MovingLevelset = .TRUE.      
     END IF
       
-    str = ListGetString( Solver % Values,'Levelset Calving Variable',Found )
+    str = ListGetString( Solver % Values,'Levelset Speed Variable',Found )
     IF(Found) THEN
-      pVar => VariableGet( Mesh % Variables,TRIM(str),UnfoundFatal=.TRUE.) 
-      PhiVar1D % Values = PhiVar1D % Values + pVar % Values * dt
+      VPhi = ListGetCReal( Solver % Values,'Levelset Speed Multiplier',Found )
+      IF(.NOT. Found) VPhi = 1.0_dp
+      pVar => VariableGet( IsoMesh % Variables,TRIM(str),UnfoundFatal=.TRUE.) 
+      !PRINT *,'Levelset Speed range:',MINVAL(pVar % Values), MAXVAL(pVar % Values)
+      PhiVar1D % Values = PhiVar1D % Values - pVar % Values * Vphi * dt
+      !PRINT *,'Levelset range:',MINVAL(PhiVar1D % Values), MAXVAL(PhiVar1D % Values)
+      MovingLevelset = .TRUE.
+      Nonzero = .TRUE.
     END IF
               
     PhiMax = MAXVAL(ABS(PhiVar1D % Values)) 
@@ -2259,13 +2279,13 @@ CONTAINS
       ALLOCATE(PolylineData(ParEnv % PEs))
     END IF
     CALL PopulatePolyline()
-
-
+    
     DO i=1, Mesh % NumberOfNodes
       j = PhiVar2D % Perm(i)
-      IF(j==0) CYCLE
-      val = PhiVar2D % Values(j)
+      IF(j==0 .AND. .NOT. NonZero) CYCLE
+      IF(j==0) STOP
 #if 0      
+      val = PhiVar2D % Values(j)
       IF(val > BW ) THEN
         val = val - BW
       ELSE IF(val < -BW ) THEN
@@ -2498,10 +2518,9 @@ CONTAINS
       !------------------------------------------------------------------------------
       INTEGER :: node
       REAL(KIND=dp) :: phip
-      !------------------------------------------------------------------------------
-      REAL(KIND=dp) :: xp,yp
-      REAL(KIND=dp) :: x0,y0,x1,y1,xm,ym,a,b,c,d,s,dir1,&
-          dist2,mindist2,dist,mindist,smin,ss,phim
+      !-----------------------------------------------------------------------------
+      REAL(KIND=dp) :: xp,yp,x0,y0,x1,y1,xm,ym,a,b,c,d,s,dir1,&
+          dist2,mindist2,dist,mindist,smin,ss,phim,cosphi
       INTEGER :: i,i0,i1,j,k,n,sgn,m,imin,kmin,dofs,k2
       TYPE(Variable_t), POINTER :: Var1D, Var2D
       INTEGER :: nCol, nLines
@@ -2518,7 +2537,7 @@ CONTAINS
       nCol = 7
             
       DO k = 1, ParEnv % PEs
-        nLines = PolylineData(k) % nLInes
+        nLines = PolylineData(k) % nLines
         IF(nLines == 0) CYCLE
 
         DO i=1,nLines
@@ -2531,14 +2550,23 @@ CONTAINS
           b = x0 - x1
           d = y0 - y1
           c = yp - y0
-          ss = b**2 + d**2
 
-          s = MIN( MAX( -(a*b + c*d) / ss, 0.0d0), 1.0d0 )
+          ! Find the closest distance with the line segment.
+          s = -(a*b + c*d) / (b**2 + d**2)
+          ! Intersection can not be beyond the element segment.
+          s = MIN( MAX( s, 0.0d0), 1.0d0 )
           xm = (1-s) * x0 + s * x1
           ym = (1-s) * y0 + s * y1
           dist2 = (xp - xm)**2 + (yp - ym)**2
 
           IF(nonzero) THEN
+            a = xp - xm
+            c = yp - ym            
+            ! The signed distance should in a nonzero levelset be computed rather
+            ! perpendicular from the line segment.
+            cosphi = ABS(a*b + c*d)/SQRT((a**2+c**2)*(b**2+d**2))
+            IF(cosphi > cosphi0 ) CYCLE
+
             ! We need true distances since the offset cannot be added otherwise.
             dist2 = SQRT(dist2)
 
@@ -2547,19 +2575,19 @@ CONTAINS
             phim = (1-s) * PolylineData(k) % Vals(i,5) + s * PolylineData(k) % Vals(i,6)
 
             ! In order to test when need to be close enough.
-            IF(dist2 > mindist2 + ABS(phim) ) CYCLE
+            IF(dist2 > ABS(mindist) + ABS(phim) ) CYCLE
 
             ! Dir is an indicator one which side of the line segment the point lies. 
-            ! We have ordered the edges soe that "dir1" should be consistent.
+            ! We have ordered the edges so that "dir1" should be consistent.
             dir1 = (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0)
-
+            
             ! If the control point and found point lie on the same side they are inside. 
             IF(dir1 < 0.0_dp ) THEN
               sgn = -1
             ELSE
               sgn = 1
             END IF
-
+            
             dist = sgn * dist2 + phim
             ! Ok, close but no honey. 
             IF( ABS(dist) > ABS(mindist) ) CYCLE
@@ -2580,7 +2608,7 @@ CONTAINS
               sgn = 1
             END IF
           END IF
-
+          
           ! Save these values for interpolation.
           m = m+1
           mindist2 = dist2          
@@ -2591,6 +2619,13 @@ CONTAINS
       END DO
         
       IF(nonzero) THEN
+#if 0 
+        BLOCK
+          REAL(KIND=dp) :: apu
+          apu = PhiVar2D % Values(PhiVar2D % Perm(node))
+          PRINT *,'PHI',xp,yp,apu,mindist,apu-mindist
+        END BLOCK
+#endif    
         phip = mindist        
       ELSE
         phip = sgn * SQRT(mindist2)
@@ -2598,14 +2633,16 @@ CONTAINS
 
       ! We can carry the fields with the zero levelset. This is like pure advection.
       ! We should make this less laborious my fetching the pointers first...
-      IF( nVar > 0 .AND. CutPerm(node) == 0 ) THEN                
+      ! Also, do not reinterpolate the nodes that are already ok!
+      IF( nVar > 0 .AND. CutPerm(node) == 0 ) THEN !.AND. PhiVar2D % Perm(node) == 0 ) THEN                
+
         i0 = IsoMesh % Elements(imin) % NodeIndexes(1)
         i1 = IsoMesh % Elements(imin) % NodeIndexes(2)
 
         DO i = 1,nVar
           IF(i==iAvoid) CYCLE
           str = ListGetString( Solver % Values,'isoline variable '//I2S(i), Found )
-
+          
           IF(i==iSolver) THEN
             j = OrigMeshPerm(node)
             dofs = Solver % Variable % Dofs
@@ -2616,12 +2653,11 @@ CONTAINS
             dofs = Var2D % dofs
             pValues => Var2D % Values
           END IF
-            
+          
           IF(j==0) THEN
             nCol = nCol+2*dofs
-            PRINT *,'cycling:',TRIM(str)
+            PRINT *,'We should maybe not be here?:',TRIM(str)
             STOP
-            CYCLE
           END IF
             
           ! Interpolate from the closest distance.

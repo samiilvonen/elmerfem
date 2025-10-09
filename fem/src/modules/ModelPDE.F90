@@ -53,6 +53,7 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
   INTEGER :: n, nb, nd, t, active
   INTEGER :: iter, maxiter
   LOGICAL :: Found
+  REAL(KIND=dp) :: TotArea, TotLen
 !------------------------------------------------------------------------------
 
   CALL DefaultStart()
@@ -69,6 +70,10 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
     !----------------
     CALL DefaultInitialize()
 
+    ! These are to test cutfem
+    TotArea = 0.0_dp
+    TotLen = 0.0_dp
+    
 1   Active = GetNOFActive()
 
     DO t=1,Active
@@ -106,6 +111,11 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
 
   CALL DefaultFinish()
   
+  IF( ListGetLogical( GetSolverParams(),'CutFEM',Found) ) THEN
+    CALL ListAddConstReal(CurrentModel % Simulation,'res: cutfem total area',TotArea ) 
+    CALL ListAddConstReal(CurrentModel % Simulation,'res: cutfem total len',TotLen ) 
+  END IF
+ 
 CONTAINS
 
 ! Assembly of the matrix entries arising from the bulk elements
@@ -200,6 +210,7 @@ CONTAINS
       END DO
 
       FORCE(1:nd) = FORCE(1:nd) + Weight * LoadAtIP * Basis(1:nd)
+      TotArea = TotArea + Weight 
     END DO
 
     IF(TransientSimulation) CALL Default1stOrderTime(MASS,STIFF,FORCE)
@@ -243,6 +254,7 @@ CONTAINS
     Coeff(1:n) = GetReal( BC,'robin coefficient', Found )
     Ext_t(1:n) = GetReal( BC,'external field', Found )
 
+        
     ! Numerical integration:
     !-----------------------
     IP = GaussPoints( Element )
@@ -273,6 +285,7 @@ CONTAINS
       END DO
 
       FORCE(1:nd) = FORCE(1:nd) + Weight * (F + C*Ext) * Basis(1:nd)
+      TotLen = TotLen + Weight 
     END DO
     CALL DefaultUpdateEquations(STIFF,FORCE)
 !------------------------------------------------------------------------------
