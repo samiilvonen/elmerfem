@@ -360,20 +360,9 @@ CONTAINS
      TYPE(Solver_t), POINTER  :: Solver
      CHARACTER(MAX_NAME_LEN) :: str, RESULT
 
-     TYPE(ValueList_t), POINTER :: BodyParams
      CHARACTER(:), ALLOCATABLE :: ElementDefBody
 
      CALL Info('GetMaxDefs','Checking for other constructs of element definitions', Level=20)
-     
-     BodyParams => Model % Bodies(BodyId) % Values
-
-     ElementDefBody=ListGetString(BodyParams,'Solver '//i2s(SolverId)//': Element',Found )
-     IF (Found) THEN
-       CALL Info('GetMaxDefs','Element found for body '//i2s(BodyId)//' with solver '//i2s(SolverId), Level=5) 
-       CALL Info('GetMaxDefs','Default element type is: '//ElementDef, Level=5)
-       CALL Info('GetMaxDefs','New element type for this body is now: '//ElementDefBody, Level=5)
-       ElementDef=ElementDefBody
-     END IF
 
      Solver => Model % Solvers(SolverId)
      Params => Solver % Values
@@ -3516,6 +3505,16 @@ CONTAINS
               IF (ListCheckPresent(Model % Solvers(Solver_id) % Values, 'Mesh')) CYCLE
             END IF
 
+            ElementDef = ListGetString(Model % Bodies(body_id) % Values, &
+                'Solver '//i2s(solver_id)//': Element',FoundDef )
+            IF (FoundDef) THEN
+              CALL Info('NonNodalElements',&
+                  'Element defined in body '//i2s(Body_Id)//' for solver '//i2s(Solver_Id), Level=7) 
+              CALL Info('NonNodalElements','The element definition string is '//ElementDef, Level=7)
+              CALL GetMaxDefs( Model, Mesh, DummyElement, ElementDef, solver_id, body_id, Indofs )
+              CYCLE
+            END IF
+            
             FoundDef = .FALSE.
             IF(FoundSolverDefs(solver_id)) &
                 ElementDef = ListGetString(Vlist,'Element{'//i2s(solver_id)//'}',FoundDef)
