@@ -2170,7 +2170,7 @@ CONTAINS
     REAL(KIND=dp), POINTER :: x(:), y(:)
     REAL(KIND=dp) :: val, Vx, Vy, dt, VPhi, PhiMax, BW, cosphi0
     CHARACTER(:), ALLOCATABLE :: str       
-    LOGICAL :: Found, Nonzero, MovingLevelset
+    LOGICAL :: Found, Nonzero, MovingLevelset, NormalMove
     INTEGER :: nVar,i,j,iAvoid,iSolver
     
     TYPE PolylineData_t
@@ -2234,6 +2234,8 @@ CONTAINS
 
     Nonzero = ListGetLogical( Solver % Values,'CutFEM signed distance nonzero',Found ) 
 
+    NormalMove = ListGetLogical( Solver % Values,'CutFEM normal move',Found ) 
+
     ! It turns out that if the polyline is not a zero levelset but something else
     ! we need to try to ensure that the direction is almost normal to the element segment.
     VPhi = ListGetCReal( Solver % Values,'CutFEM critical angle',Found )
@@ -2275,6 +2277,11 @@ CONTAINS
     PhiMax = MAXVAL(ABS(PhiVar1D % Values)) 
     PhiMax = 1.01 * ( PhiMax + SQRT(Vx**2+Vy**2)*dt )
 
+    IF(NormalMove) THEN
+      CALL LevelsetNormalMove()
+      NonZero = .FALSE.
+    END IF
+    
     IF(.NOT. ALLOCATED(PolylineData)) THEN
       ALLOCATE(PolylineData(ParEnv % PEs))
     END IF
@@ -2314,11 +2321,73 @@ CONTAINS
   CONTAINS
 
     !------------------------------------------------------------------------------
+    !> Moves levelset coordinates in normal direction.
+    !> This eliminates the need to compute distance relative to non-zero levelset.
+    !------------------------------------------------------------------------------
+    SUBROUTINE LevelsetNormalMove()
+      !------------------------------------------------------------------------------      
+      REAL(KIND=dp) :: x0,y0,x1,y1,ss,phi0,phi1,Normal(2),wei
+      INTEGER :: i,j,k,n,i0,i1
+      
+      REAL(KIND=dp), ALLOCATABLE :: dx(:), dy(:), NodeWeight(:)
+      
+      n = SIZE(PhiVar1D % Values)
+      ALLOCATE(dx(n),dy(n),NodeWeight(n))
+
+      ! Allocate temporal space since we cannot make the computation in-place since the
+      ! coordinates and levelset will be needed more than one times. 
+      dx = 0.0_dp
+      dy = 0.0_dp
+      NodeWeight = 0.0_dp
+            
+      DO i=1,IsoMesh % NumberOfBulkElements        
+        i0 = IsoMesh % Elements(i) % NodeIndexes(1)
+        i1 = IsoMesh % Elements(i) % NodeIndexes(2)
+
+        x0 = x(i0); y0 = y(i0)
+        x1 = x(i1); y1 = y(i1)
+
+        ss = (x0-x1)**2 + (y0-y1)**2
+        IF(ss < EPSILON(ss) ) CYCLE        
+
+        ss = SQRT(ss)
+        Normal(1) = (y1-y0)
+        Normal(2) = -(x1-x0)
+        Normal = Normal / ss
+
+        wei = 1.0_dp
+        ! wei = ss
+
+        phi0 = PhiVar1D % Values(i0)
+        phi1 = PhiVar1D % Values(i1)
+
+        dx(i0) = dx(i0) + Normal(1) * phi0          
+        dy(i0) = dy(i0) + Normal(2) * phi0          
+        NodeWeight(i0) = NodeWeight(i0) + wei
+
+        dx(i1) = dx(i1) + Normal(1) * phi1          
+        dy(i1) = dy(i1) + Normal(2) * phi1          
+        NodeWeight(i1) = NodeWeight(i1) + wei
+      END DO
+
+      ! Finally move the coordinates to the direction of the averaged normal.
+      WHERE(NodeWeight > EPSILON(wei))      
+        x = x + dx / NodeWeight
+        y = y + dy / NodeWeight 
+      END WHERE
+      PhiVar1D % Values = 0.0_dp
+      
+      DEALLOCATE(dx,dy,NodeWeight)
+
+    END SUBROUTINE LevelsetNormalMove
+      
+    
+    !------------------------------------------------------------------------------
     !> Computes the signed distance to zero levelset. 
     !------------------------------------------------------------------------------
     SUBROUTINE PopulatePolyline()
       !------------------------------------------------------------------------------      
-      REAL(KIND=dp) :: x0,y0,x1,y1,ss,TotLineLen
+      REAL(KIND=dp) :: x0,y0,x1,y1,ss,TotLineLen,phi0,phi1
       INTEGER :: i,j,k,n,m,i0,i1,nCol,dofs,k2
       TYPE(Variable_t), POINTER :: Var1D
       INTEGER :: iVar, MyPe, PEs, Phase
@@ -2381,12 +2450,14 @@ CONTAINS
           ! This is too short for anything useful...
           ! Particularly difficult it is to decide on left/right if the segment is a stub.
           IF(ss < EPSILON(ss) ) CYCLE        
-          
+                    
           m = m+1
           IF(Phase==0) CYCLE
 
           TotLineLen = TotLineLen + SQRT(ss)
 
+          phi0 = PhiVar1D % Values(i0)
+          phi1 = PhiVar1D % Values(i1)
           
           ! Coordinates for the polyline. 
           PolylineData(MyPe) % Vals(m,1) = x0
@@ -2395,8 +2466,8 @@ CONTAINS
           PolylineData(MyPe) % Vals(m,4) = y1
 
           ! Levelset values for the polyline. 
-          PolylineData(MyPe) % Vals(m,5) = PhiVar1D % Values(i0)
-          PolylineData(MyPe) % Vals(m,6) = PhiVar1D % Values(i1)
+          PolylineData(MyPe) % Vals(m,5) = phi0
+          PolylineData(MyPe) % Vals(m,6) = phi1
           j = 7
 
           DO k = 1,nVar
@@ -2619,13 +2690,6 @@ CONTAINS
       END DO
         
       IF(nonzero) THEN
-#if 0 
-        BLOCK
-          REAL(KIND=dp) :: apu
-          apu = PhiVar2D % Values(PhiVar2D % Perm(node))
-          PRINT *,'PHI',xp,yp,apu,mindist,apu-mindist
-        END BLOCK
-#endif    
         phip = mindist        
       ELSE
         phip = sgn * SQRT(mindist2)
