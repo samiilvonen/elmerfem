@@ -337,117 +337,153 @@ CONTAINS
    END SUBROUTINE InitializeMesh
 
 !------------------------------------------------------------------------------
-! This version of creating def_dofs arrays has limited abilities since it does not
-! support element family flags (cf. the subroutine GetDefs in ModelDescription). 
-! There is no need for calling this unless the element definition is given in an 
-! equation section or a matc function is used to evaluate the order of p-basis,
-! since otherwise the subroutine GetDefs has done the necessary work.
+! There is no need for calling this unless the element definition is given in
+! an equation section or in a body section, or a matc function is used to evaluate
+! the order of p-basis, since otherwise the subroutine GetDefs in ModelDescription
+! has done the necessary work.
 ! TO DO: Have just one subroutine for writing def_dofs arrays ?
 !------------------------------------------------------------------------------
    SUBROUTINE GetMaxDefs(Model, Mesh, Element, ElementDef, SolverId, BodyId, Def_Dofs)
 !------------------------------------------------------------------------------
-     CHARACTER(*) :: ElementDef
      TYPE(Model_t) :: Model
      TYPE(MEsh_t) :: Mesh
      TYPE(Element_t) :: Element
+     CHARACTER(MAX_NAME_LEN) :: ElementDef
      INTEGER :: SolverId, BodyId, Def_Dofs(:,:)
 
-     TYPE(ValueList_t), POINTER :: Params
-     INTEGER :: i, j,k,l, n, slen, Family
-     INTEGER, POINTER :: Body_Dofs(:,:)
-     LOGICAL  :: stat, Found
+     INTEGER :: i, j, k, l, n
+     INTEGER, POINTER :: ind(:)
+     INTEGER, TARGET :: Family(10)
+     LOGICAL  :: stat
      REAL(KIND=dp) :: x,y,z
      TYPE(Solver_t), POINTER  :: Solver
-     CHARACTER(MAX_NAME_LEN) :: str, RESULT
+     CHARACTER(MAX_NAME_LEN) :: str, ElementDef0
 
-     CHARACTER(:), ALLOCATABLE :: ElementDefBody
 
      CALL Info('GetMaxDefs','Checking for other constructs of element definitions', Level=20)
 
+     Family = [1,2,3,4,5,6,7,8,9,10]
+     
      Solver => Model % Solvers(SolverId)
-     Params => Solver % Values
 
      IF ( .NOT. ALLOCATED(Solver % Def_Dofs) ) THEN
        ALLOCATE(Solver % Def_Dofs(10,Model % NumberOfBodies,6))
        Solver % Def_Dofs=-1
        Solver % Def_Dofs(:,:,1)=1
      END IF
-     Body_Dofs => Solver % Def_Dofs(1:8,BodyId,:)
+     
 
-     j = INDEX(ElementDef, '-') ! FIX this to include elementtypewise defs...
-     IF ( j>0 ) THEN
-       CALL Warn('GetMaxDefs', &
-           'Element set flags not supported, move element definition to a solver section')
-       RETURN
-     END IF
+     ElementDef0 = ElementDef
+     DO WHILE(.TRUE.)
+       k = INDEX( ElementDef0, '-' )
+       IF (k == 1) THEN
+         ElementDef0 = ElementDef0(2:)
+         k = INDEX( ElementDef0, '-' )
+       END IF
+         
+       IF (k>0) THEN
+         !
+         ! Read the element definition up to the next flag which specifies the
+         ! target element set
+         !
+         ElementDef = ElementDef0(1:k-1)
+       ELSE
+         ElementDef = ElementDef0
+       END IF
 
-     j = INDEX( ElementDef, 'n:' )
-     IF ( j>0 ) THEN
-       READ( ElementDef(j+2:), * ) l
-       Body_Dofs(:,1) = l
-       Def_Dofs(:,1) = MAX(Def_Dofs(:,1), l)
-     END IF
-          
-      j = INDEX( ElementDef, 'e:' )
-      IF ( j>0 ) THEN
-        READ( ElementDef(j+2:), * ) l
-        Body_Dofs(:,2) = l
-        Def_Dofs(1:8,2) = MAX(Def_Dofs(1:8,2), l )
-      END IF
-          
-      j = INDEX( ElementDef, 'f:' )
-      IF ( j>0 ) THEN
-        READ( ElementDef(j+2:), * ) l
-        Body_Dofs(:,3) = l
-        Def_Dofs(1:8,3) = MAX(Def_Dofs(1:8,3), l )
-      END IF
-          
-      j = INDEX( ElementDef, 'd:' )
-      IF ( j>0 ) THEN
-        READ( ElementDef(j+2:), * ) l
+       ! The default assumption is that the given element definition is applied 
+       ! to all basic element families (note that the element sets 9 and 10 are
+       ! not included since the explicit choice of the target family is 
+       ! a part of the element definition string when the target index is
+       ! deduced to be 9 or 10).
+       !
+       ind => Family(1:8)
+       !
+       ! If the element family is specified, change the target family 
+       !       
+       IF (SEQL(ElementDef, 'point') )     ind => Family(1:1)
+       IF (SEQL(ElementDef, 'line') )      ind => Family(2:2)
+       IF (SEQL(ElementDef, 'tri') )       ind => Family(3:3)
+       IF (SEQL(ElementDef, 'quad') )      ind => Family(4:4)
+       IF (SEQL(ElementDef, 'tetra') )     ind => Family(5:5)
+       IF (SEQL(ElementDef, 'pyramid') )   ind => Family(6:6)
+       IF (SEQL(ElementDef, 'prism') )     ind => Family(7:7)
+       IF (SEQL(ElementDef, 'brick') )     ind => Family(8:8)
+       IF (SEQL(ElementDef, 'tri_face') )  ind => Family(9:9)
+       IF (SEQL(ElementDef, 'quad_face') ) ind => Family(10:10)
 
-        ! Zero value triggers discontinuous approximation,
-        ! substitute the default negative initialization value to avoid troubles:
-        IF (l == 0) l = -1
+       
+       j = INDEX( ElementDef, 'n:' )
+       IF ( j>0 ) THEN
+         READ( ElementDef(j+2:), * ) l
+         Solver % Def_Dofs(ind,BodyId,1) = l
+         Def_Dofs(:,1) = MAX(Def_Dofs(:,1), l)
+       END IF
 
-        Body_Dofs(:,4) = l
-        Def_Dofs(1:8,4) = MAX(Def_Dofs(1:8,4), l )
-      ELSE 
-        IF ( ListGetLogical( Solver % Values, &
-            'Discontinuous Galerkin', stat ) ) THEN
-          Body_Dofs(:,4) = 0
-          Def_Dofs(1:8,4) = MAX(Def_Dofs(1:8,4),0 )
-        END IF
-      END IF
-          
-      j = INDEX( ElementDef, 'b:' )
-      IF ( j>0 ) THEN
-        READ( ElementDef(j+2:), * ) l
-        Body_Dofs(1:8,5) = l
-        Def_Dofs(1:8,5) = MAX(Def_Dofs(1:8,5), l )
-      END IF
-          
-      j = INDEX( ElementDef, 'p:' )
-      IF ( j>0 ) THEN
-        IF ( ElementDef(j+2:j+2) == '%' ) THEN
-          n = Element % TYPE % NumberOfNodes
-          x = SUM(Mesh % Nodes % x(Element % NodeIndexes))/n
-          y = SUM(Mesh % Nodes % y(Element % NodeIndexes))/n
-          z = SUM(Mesh % Nodes % z(Element % NodeIndexes))/n
-!          WRITE( str, * ) 'cx= ',i2s(Element % ElementIndex),x,y,z
-          str = TRIM(ElementDef(j+3:))//'(cx)'
-          x = GetMatcReal(str,4,[1._dp*Element % BodyId,x,y,z],'cx')
-          Def_Dofs(1:8,6)  = MAX(Def_Dofs(1:8,6),NINT(x))
-          Family = Element % TYPE % ElementCode / 100
-          Body_Dofs(Family, 6) = &
-              MAX(Body_Dofs(Family, 6), NINT(x))
-        ELSE
-          READ( ElementDef(j+2:), * ) l
-          Body_Dofs(:,6) = l
-          Def_Dofs(1:8,6) = MAX(Def_Dofs(1:8,6), l )
-        END IF
-      END IF
+       j = INDEX( ElementDef, 'e:' )
+       IF ( j>0 ) THEN
+         READ( ElementDef(j+2:), * ) l
+         Solver % Def_Dofs(ind,BodyId,2) = l
+         Def_Dofs(1:8,2) = MAX(Def_Dofs(1:8,2), l )
+       END IF
 
+       j = INDEX( ElementDef, 'f:' )
+       IF ( j>0 ) THEN
+         READ( ElementDef(j+2:), * ) l
+         Solver % Def_Dofs(ind,BodyId,3) = l
+         Def_Dofs(1:8,3) = MAX(Def_Dofs(1:8,3), l )
+       END IF
+
+       j = INDEX( ElementDef, 'd:' )
+       IF ( j>0 ) THEN
+         READ( ElementDef(j+2:), * ) l
+
+         ! Zero value triggers discontinuous approximation,
+         ! substitute the default negative initialization value to avoid troubles:
+         IF (l == 0) l = -1
+
+         Solver % Def_Dofs(ind,BodyId,4) = l
+         Def_Dofs(1:8,4) = MAX(Def_Dofs(1:8,4), l )
+       ELSE 
+         IF ( ListGetLogical( Solver % Values, &
+             'Discontinuous Galerkin', stat ) ) THEN
+           Solver % Def_Dofs(ind,BodyId,4) = l
+           Def_Dofs(1:8,4) = MAX(Def_Dofs(1:8,4),0 )
+         END IF
+       END IF
+
+       j = INDEX( ElementDef, 'b:' )
+       IF ( j>0 ) THEN
+         READ( ElementDef(j+2:), * ) l
+         Solver % Def_Dofs(ind,BodyId,5) = l
+         Def_Dofs(1:8,5) = MAX(Def_Dofs(1:8,5), l )
+       END IF
+
+       j = INDEX( ElementDef, 'p:' )
+       IF ( j>0 ) THEN
+         IF ( ElementDef(j+2:j+2) == '%' ) THEN
+           n = Element % TYPE % NumberOfNodes
+           x = SUM(Mesh % Nodes % x(Element % NodeIndexes))/n
+           y = SUM(Mesh % Nodes % y(Element % NodeIndexes))/n
+           z = SUM(Mesh % Nodes % z(Element % NodeIndexes))/n
+           !          WRITE( str, * ) 'cx= ',i2s(Element % ElementIndex),x,y,z
+           str = TRIM(ElementDef(j+3:))//'(cx)'
+           x = GetMatcReal(str,4,[1._dp*Element % BodyId,x,y,z],'cx')
+           Def_Dofs(1:8,6)  = MAX(Def_Dofs(1:8,6),NINT(x))
+           Solver % Def_Dofs(ind,BodyId,6) = NINT(x)
+         ELSE
+           READ( ElementDef(j+2:), * ) l
+           Solver % Def_Dofs(ind,BodyId,6) = l
+           Def_Dofs(1:8,6) = MAX(Def_Dofs(1:8,6), l )
+         END IF
+       END IF
+
+       IF(k>0) THEN
+         ElementDef0 = ElementDef0(k+1:)
+       ELSE
+         EXIT
+       END IF
+     END DO
 !------------------------------------------------------------------------------
   END SUBROUTINE GetMaxDefs
 !------------------------------------------------------------------------------
@@ -3381,12 +3417,12 @@ CONTAINS
     
      DGIndex = 0
 
-     InDofs = 0
-     InDofs(:,1) = 1
-     InDofs(:,4) = -1
      IF ( PRESENT(Def_Dofs) ) THEN
        inDofs = Def_Dofs
      ELSE
+       InDofs = 0
+       InDofs(:,1) = 1
+       InDofs(:,4) = -1       
        DO s=1,Model % NumberOfSolvers
          DO i=1,6
            DO j=1,10
