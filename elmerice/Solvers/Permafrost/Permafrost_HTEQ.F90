@@ -173,14 +173,16 @@ SUBROUTINE PermafrostHeatTransfer( Model,Solver,dt,TransientSimulation )
   !---------------------------------------------------------------  
   IF (FirstTime) &
        InitializeSteadyState = GetLogical(Params,'Initialize Steady State',Found)
-  IF (InitializeSteadyState .AND. TransientSimulation) THEN
-    IF (GetTimeStep() == 1) THEN
-      CALL INFO(SolverName,"Initializing with steady state (no mass matrix)",Level=6)
-      ActiveMassMatrix = .FALSE.
-    ELSE 
-      CALL INFO(SolverName,"Switching mass matrix to active after initializing with steady state",Level=6)
-      ActiveMassMatrix = .TRUE.
-      InitializeSteadyState = .FALSE.
+  IF (TransientSimulation) THEN
+    IF (InitializeSteadyState) THEN
+      IF (GetTimeStep() == 1) THEN
+        CALL INFO(SolverName,"Initializing with steady state (no mass matrix)",Level=6)
+        ActiveMassMatrix = .FALSE.
+      ELSE 
+        CALL INFO(SolverName,"Switching mass matrix to active after initializing with steady state",Level=6)
+        ActiveMassMatrix = .TRUE.
+        InitializeSteadyState = .FALSE.
+      END IF
     END IF
   ELSE
     CALL INFO(SolverName,"Running steady state simulation of the permafrost HTEQ",Level=3)
