@@ -56,8 +56,9 @@ END SUBROUTINE SunAngleSolver_init
 
 
 !------------------------------------------------------------------------------
-!> Subroutine for extracting isosurfaces in 3d and isolines in 2d.
-!> The result will be a new mesh which will be added to the list of meshes.
+!> Subroutine for computing critical angle of sun when it is not any more seen
+!> in the horizon. The angle depends on the topograghy and on the direction of
+!> the sun in the sky.
 !> \ingroup Solvers
 !------------------------------------------------------------------------------
 SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
@@ -74,7 +75,8 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
   INTEGER :: i,j,k,n,t,dofs,dim,idof
   INTEGER, POINTER :: SunPerm(:)
   TYPE(Variable_t), POINTER :: SunVar
-  LOGICAL :: Found, Singular, Parallel, EnforceParallel, GotMaxDist, Visited = .FALSE.
+  LOGICAL :: Found, Singular, Parallel, EnforceParallel, EnforceSerial, &
+      GotMaxDist, Visited = .FALSE.
   INTEGER :: ElemFirst,ElemLast
   REAL(KIND=dp), POINTER :: SunAngle(:), x(:), y(:), z(:)
   REAL(KIND=dp) :: tanphi, ds, dz, Amat(2,2), b(2), c(2), &
@@ -124,9 +126,13 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
   IF( ListCheckPresentAnyMaterial(Model,'Test Height') ) THEN
     CALL SetTestHeight()
   END IF
-  
+
+  ! Enforce use of the same algo in serial as is used in parallel. 
   EnforceParallel = ListGetLogical( Params,'Enforce Parallel', Found )
 
+  ! Even in parallel do not do any communication. 
+  EnforceSerial = ListGetLogical( Params,'Enforce Serial', Found )
+  
   Parallel = EnforceParallel .OR. (ParEnv % PEs > 1)
   IF(Parallel .AND. .NOT. Visited ) THEN
     MaxDist = ListGetCReal( Params,'SunAngle search distance', GotMaxDist )
@@ -162,10 +168,12 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
   END WHERE
 
   Visited = .TRUE.
-  
-  CALL Info(Caller,'All done',Level=10)
 
+  ! This is a heuristics since when we compute many sun angles at the same time
+  ! we can generally continue and not return to this routine for some time.
+  IF(dofs>1) CALL ReleaseRidge()
   
+  CALL Info(Caller,'All done',Level=10)  
 
 CONTAINS
 
@@ -192,6 +200,11 @@ CONTAINS
    END SUBROUTINE Solve2x2
 !------------------------------------------------------------------------------
 
+   !------------------------------------------------------------------------------
+   !> This is just to make it easier to test the routine as we can here define
+   !> the topography locally. Generally the topography would be externall provided
+   !> with the mesh. 
+   !------------------------------------------------------------------------------      
    SUBROUTINE SetTestHeight()
 
      IF( Mesh % Elements(1) % TYPE % ElementCode > 500 ) THEN
@@ -217,11 +230,16 @@ CONTAINS
    END SUBROUTINE SetTestHeight
 
 
+   !------------------------------------------------------------------------------
+   !> Compute the shading angle in serial. We have the edges available here
+   !> so no need to create any additional structures. The routine has been
+   !> made to include so few operations as possible but uses stupid search algo.  
+   !------------------------------------------------------------------------------   
    SUBROUTINE SetShadingAngle()
 
-     REAL(KIND=dp) :: x1,y1,z1,x0(2),y0(2),z0(2),dz0,maxangle
-     INTEGER :: Inds(2)
-     INTEGER :: t
+     REAL(KIND=dp) :: x1,y1,z1,x0(2),y0(2),z0(2),c(2),b(2),dz,dz0,maxangle,tanphi
+     INTEGER :: t,j,k,Inds(2)
+     LOGICAL :: Singular
      
      ! This is a stupid N^2 algo where we have nested loops over edges and nodes.
      DO t = 1, Mesh % NumberOfEdges
@@ -338,12 +356,16 @@ CONTAINS
          DEALLOCATE(rPar)
        END IF
 
+       ! Calculate and sent the count of edges to send. 
        n_max = 0
        DO i=1,PEs
-         j = MyPe
          IF(i==MyPe) CYCLE
+         j = MyPe
+         proc = i-1
 
          IF(GotMaxDist) THEN
+           n_send = 0
+
            ! This communication check is symmetric:
            ! If "i" does not need to sent to "j" then also vice versa!
            IF(RidgeData(i) % MeshBB(1) > RidgeData(j) % MeshBB(2) + MaxDist ) CYCLE
@@ -353,7 +375,6 @@ CONTAINS
 
            ! Compute how many entries to sent from "j" to "i"
            ! "i" cannot compute this but it knows to expect something.
-           n_send = 0
            DO k=1, Mesh % NumberOfEdges                           
              i0 = Mesh % Edges(k) % NodeIndexes(1)
              i1 = Mesh % Edges(k) % NodeIndexes(2)
@@ -365,24 +386,25 @@ CONTAINS
              n_send = n_send+1
            END DO
          ELSE
-           n_send = n
+           n_send = Mesh % NumberOfEdges
          END IF
 
          RidgeData(i) % n_send = n_send
          n_max = MAX(n_max, n_send)
 
-         proc = i-1
-         CALL MPI_BSEND( n_send, 1, MPI_INTEGER, proc, 999, comm, ierr )
-         CALL MPI_RECV( n_recv, 1, MPI_INTEGER, proc, 999, comm, status, ierr )
+         CALL MPI_SEND( n_send, 1, MPI_INTEGER, proc, 999, comm, ierr )
+       END DO
 
+       ! Recieve the counts of edges to recieve.
+       DO i=1,PEs
+         IF(i==MyPe) CYCLE
+         proc = i-1
+         CALL MPI_RECV( n_recv, 1, MPI_INTEGER, proc, 999, comm, status, ierr )
+         RidgeData(i) % n_recv = n_recv
+         
          IF(n_recv > 0) THEN             
-           RidgeData(i) % n_recv = n_recv
            ALLOCATE(RidgeData(i) % Coords(6*n_recv))
            RidgeData(i) % Coords = 0.0_dp
-         END IF
-
-         IF(InfoActive(20)) THEN
-           PRINT *,'Communicating edges between: ',i,j,n_send,n_recv
          END IF
        END DO
 
@@ -399,15 +421,16 @@ CONTAINS
        SendCoords = 0.0_dp
        pCoords => SendCoords 
 
+       ! Send the edge coordinates to other partitions. 
        DO i=1,PEs
          j = MyPe
          IF(i==MyPe) CYCLE
+         proc = i-1
 
          n_send = RidgeData(i) % n_send
          IF(n_send > 0 ) THEN
            ! Tabulate the entries to be sent.
            l = 0
-
            DO k=1, Mesh % NumberOfEdges
              i0 = Mesh % Edges(k) % NodeIndexes(1)
              i1 = Mesh % Edges(k) % NodeIndexes(2)
@@ -431,14 +454,17 @@ CONTAINS
            END DO
 
            ! Sent data from partition MyPe to i           
-           proc = i-1
            CALL MPI_BSEND( SendCoords, 6*n_send, MPI_DOUBLE_PRECISION,proc, 1001, comm, ierr )
          END IF
+       END DO
 
+       ! Recieve the edge coordinates from other partitions. 
+       DO i=1,PEs
+         IF(i==MyPe) CYCLE
+         proc = i-1         
          n_recv = RidgeData(i) % n_recv
          IF(n_recv > 0) THEN
            ! Recieve data from partition i to MyPe
-           proc = i-1
            CALL MPI_RECV( RidgeData(i) % Coords, 6*n_recv, MPI_DOUBLE_PRECISION, proc, 1001, comm, status, ierr )
            pCoords => RidgeData(i) % Coords
          END IF
@@ -448,7 +474,35 @@ CONTAINS
      
    END SUBROUTINE PopulateRidge
 
+
+   !------------------------------------------------------------------------------
+   !> Release the ridge since it can be quite a memory hog consisting of edges from
+   !> many partitions.
+   !------------------------------------------------------------------------------
+   SUBROUTINE ReleaseRidge()
+     !------------------------------------------------------------------------------      
+     INTEGER :: i,n_recv
+     INTEGER :: PEs
+     !------------------------------------------------------------------------------
+     IF(.NOT. ALLOCATED(RidgeData)) THEN
+       CALL Fatal('ReleaseRidge','Cannot release an unallocated RidgeData!')
+     END IF
+     
+     DO i=1,ParEnv % PEs 
+       n_recv = RidgeData(i) % n_recv
+       IF(n_recv > 0) THEN
+         CALL DEALLOCATE(RidgeData(i) % Coords)
+       END IF
+     END DO
+     DEALLOCATE(RidgeData)
+     
+   END SUBROUTINE ReleaseRidge
+
    
+   !------------------------------------------------------------------------------
+   !> Compute the shading angle in parallel. This has a little bit different
+   !> routine that the local mesh version that uses the existing edges.
+   !------------------------------------------------------------------------------   
    SUBROUTINE SetShadingAngleParallel()
 
      REAL(KIND=dp) :: x1,y1,z1,maxangle
@@ -474,9 +528,9 @@ CONTAINS
        
        ! This is a stupid N^2 algo where we have nested loops over edges and nodes.
        DO i = 1, ParEnv % PEs
-
          IF(RidgeData(i) % n_recv == 0) CYCLE
-         
+
+         IF(EnforceSerial .AND. i /= MyPe ) CYCLE         
          pCoords => RidgeData(i) % Coords
          
          DO t = 1, RidgeData(i) % n_recv
