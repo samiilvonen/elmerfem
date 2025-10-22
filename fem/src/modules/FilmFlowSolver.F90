@@ -372,10 +372,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
         Load(mdim+2,1:n) = GetReal( BodyForce, 'Fsi Velocity', Found )
 
         ! We are slightly misusing "Load" here to store these quantities. 
-        Load(mdim+3,1:n) = GetReal( BodyForce, 'Flow Admittance', GotIt)
-        Load(mdim+4,1:n) = GetReal( BodyForce, 'External FilmPressure', GotIt)
-      END IF
-
+        Load(mdim+3,1:n) = GetReal( BodyForce, 'Flow Admittance', Found)
+        Load(mdim+4,1:n) = GetReal( BodyForce, 'External FilmPressure', Found)
       END IF
 
       ! Material parameters:
