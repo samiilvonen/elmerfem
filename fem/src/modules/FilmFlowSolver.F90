@@ -483,7 +483,6 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
         Load(i,1:n) = GetReal( BC, 'FilmPressure '//I2S(i), Found ) 
       END DO
       Load(mdim+1,1:n) = GetReal( BC, 'Mass Flux', Found )
-      Load(mdim+2,1:n) = GetReal( BC, 'External FilmPressure', Found )
       
       CALL LocalBoundaryMatrix(  MASS, STIFF, FORCE, Load, rho, gap, mu, &
           Element, n, dim, mdim )
