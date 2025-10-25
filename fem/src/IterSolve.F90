@@ -288,9 +288,9 @@ CONTAINS
     TYPE(ValueList_t), POINTER :: BC
     TYPE(Element_t), POINTER :: Element
     TYPE(Mesh_t), POINTER :: Mesh
-    
-    CALL Info('CreateNodeSkipMask','Creating mask for skipping nodes')
 
+    IF(.NOT. ListGetLogicalAnyBC(CurrentModel,'Edge Skip Mask' ) ) RETURN
+    
     Mesh => CurrentModel % Mesh      
     t0 = Mesh % NumberOfBulkElements
     SkipMask = .FALSE.
@@ -313,7 +313,7 @@ CONTAINS
     END DO
 
     n0 = COUNT(SkipMask)
-    CALL Info('CreateNodeSkipMask','Creating mask for skipping nodes: '//I2S(n0),Level=7)
+    CALL Info('CreateNodeSkipMask','Created mask for skipping nodes: '//I2S(n0),Level=7)
     
   END SUBROUTINE CreateNodeSkipMask
 

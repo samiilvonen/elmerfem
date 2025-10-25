@@ -8841,7 +8841,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     TYPE(Element_t), POINTER :: Element
     INTEGER :: i,j,k,n,np,t,ierr,iter, proc
-    LOGICAL :: GotIt, Found, Conditional
+    LOGICAL :: GotIt, Found, Conditional, Rotational
     TYPE(Mesh_t), POINTER :: Mesh
     INTEGER, POINTER :: Indexes(:)
     REAL(KIND=dp), ALLOCATABLE :: Condition(:)
@@ -8855,6 +8855,7 @@ CONTAINS
     INTEGER, ALLOCATABLE :: n_count(:), gbuff(:)
     TYPE(Variable_t), POINTER :: DispVar
     LOGICAL :: pDisp
+    REAL(KIND=dp) :: rad
     CHARACTER(*), PARAMETER :: Caller = 'CheckNormalTangentialBoundary'
 !------------------------------------------------------------------------------
 
@@ -8927,10 +8928,18 @@ CONTAINS
             IF ( Found .OR. .NOT. GotIt ) THEN
               Condition(1:n) = ListGetReal( Model % BCs(i) % Values, &
                   TRIM(VariableName) // ' Condition', n, Indexes, Conditional )
-              
+              Rotational = ListGetLogical( Model % BCs(i) % Values,'Rotational Normals',GotIt)
+                            
               DO j=1,n
                 IF ( Conditional .AND. Condition(j)<0._dp ) CYCLE                
                 k = Indexes(j)
+
+                ! If we are using rotational normals then avoid origin.
+                IF(Rotational) THEN
+                  rad = SQRT(Mesh % Nodes % x(k)**2 + Mesh % Nodes % y(k)**2)
+                  IF(rad < EPSILON(rad)) CYCLE
+                END IF
+                  
                 IF ( BoundaryReorder(k)==0 ) THEN
                   NumberOfBoundaryNodes = NumberOfBoundaryNodes + 1
                   BoundaryReorder(k) = NumberOfBoundaryNodes
@@ -9141,7 +9150,7 @@ CONTAINS
     REAL(KIND=dp) :: Origin(3),Axis(3)
     INTEGER, TARGET :: pIndexes(12)
     REAL(KIND=dp), POINTER :: Pwrk(:,:)
-    LOGICAL :: GotOrigin,GotAxis,OneSidedNormals,pDisp
+    LOGICAL :: OneSidedNormals,pDisp
     LOGICAL :: NtBoss, AnyNtBoss, ThisBoss
     INTEGER :: NtBossCount
     LOGICAL, ALLOCATABLE :: NtBossTag(:)
@@ -9256,21 +9265,28 @@ CONTAINS
                   RotationalNormals = ListGetLogical(BC,'Rotational Normals',gotIt)
 
                   IF( RotationalNormals ) THEN
-                    Pwrk => ListGetConstRealArray(BC,'Normals Origin',GotOrigin )
-                    IF( GotOrigin ) THEN
+                    Pwrk => ListGetConstRealArray(BC,'Normals Origin',GotIt )
+                    IF( GotIt ) THEN
                       IF( SIZE(Pwrk,1) /= 3 .OR. SIZE(Pwrk,2) /= 1 ) THEN
                         CALL Fatal(Caller,'Size of > Normals Origin < should be 3!')
                       END IF
                       Origin = Pwrk(1:3,1)
+                    ELSE
+                      ! Default origin is the origin.
+                      Origin = 0.0_dp
                     END IF
-                    Pwrk => ListGetConstRealArray(BC,'Normals Axis',GotAxis )
-                    IF( GotAxis ) THEN
+                    Pwrk => ListGetConstRealArray(BC,'Normals Axis',GotIt )
+                    IF( GotIt ) THEN
                       IF( SIZE(Pwrk,1) /= 3 .OR. SIZE(Pwrk,2) /= 1 ) THEN
                         CALL Fatal(Caller,'Size of > Normals Axis < should be 3!')
                       END IF
                       Axis = Pwrk(1:3,1)
                       ! Normalize axis is it should just be used for the direction
                       Axis = Axis / SQRT( SUM( Axis*Axis ) )
+                    ELSE
+                      ! Default axis is z-axis.
+                      Axis = 0.0_dp
+                      Axis(3) = 1.0_dp
                     END IF
                   END IF
                   
@@ -9302,12 +9318,8 @@ CONTAINS
 
                         !PRINT *,'nrm:',j,nrm
                         
-                        IF( GotOrigin ) nrm = nrm - Origin
-                        IF( GotAxis ) THEN
-                          nrm = nrm - SUM( nrm * Axis ) * Axis
-                        ELSE ! Default axis is (0,0,1)
-                          nrm(3) = 0.0_dp
-                        END IF
+                        nrm = nrm - Origin
+                        nrm = nrm - SUM( nrm * Axis ) * Axis
 
                         nrm = nrm / SQRT( SUM( nrm * nrm ) )
                       ELSE
@@ -10263,15 +10275,22 @@ END FUNCTION SearchNodeL
      INTEGER :: i,j,k, dim
      REAL(KIND=dp) :: Bu,Bv,Bw,RM(3,3)
      TYPE(NormalTangential_t), POINTER :: NT
+     INTEGER, POINTER :: PeriodicPerm(:)
+     LOGICAL :: Found
 !------------------------------------------------------------------------------
 
      NT => CurrentModel % Solver % NormalTangential
-
      IF ( NT % NormalTangentialNOFNodes <= 0 ) RETURN
 
+     PeriodicPerm => NULL()
+     IF(ListGetLogical(CurrentModel % Solver % Values,'Apply Conforming BCs',Found)) THEN
+       PeriodicPerm => CurrentModel % Mesh % PeriodicPerm
+     END IF
+          
      dim = CoordinateSystemDimension()
      IF ( ndofs < dim ) RETURN
-
+     
+     CALL Info('BackRotateNTSystem','Rotating n-t solution back to cartesian coordinates',Level=12)
      
      DO i=1,SIZE(NT % BoundaryReorder)
        k = NT % BoundaryReorder(i)
@@ -10279,6 +10298,10 @@ END FUNCTION SearchNodeL
        j = Perm(i)
        IF ( j <= 0 ) CYCLE
 
+       IF(ASSOCIATED(PeriodicPerm)) THEN
+         IF(PeriodicPerm(i) > 0) CYCLE
+       END IF
+       
        IF ( dim < 3 ) THEN
          Bu = Solution(NDOFs*(j-1)+1)
          Bv = Solution(NDOFs*(j-1)+2)
