@@ -930,7 +930,9 @@ CONTAINS
 
      IF(ASSOCIATED(PrecMat)) THEN
        nFORCE = 0.0_dp
+       CurrentModel % Solver => PrecSolver
        CALL DefaultUpdateEquations(nSTIFF,nFORCE,UElement=Element,USolver=PrecSolver)       
+       CurrentModel % Solver => pSolver
      END IF
      
      ! Memorize stuff for the fixing potential
