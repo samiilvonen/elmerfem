@@ -1233,6 +1233,160 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
+!> Populate values for the upper and lower limiters.
+!------------------------------------------------------------------------------
+   SUBROUTINE PopulateLimiterValues( Solver )
+!------------------------------------------------------------------------------
+     TYPE(Solver_t) :: Solver
+!-----------------------------------------------------------------------------
+     TYPE(Model_t), POINTER :: Model
+     TYPE(Mesh_t), POINTER :: Mesh    
+     TYPE(variable_t), POINTER :: Var !, LoadVar, IterV, LimitVar
+     TYPE(Element_t), POINTER :: Element
+     INTEGER :: i,j,k,n,t,ind,dofs,dof, bf, bc, Upper, ElemFirst, ElemLast, totsize
+     REAL(KIND=dp), POINTER :: FieldValues(:), ElemLimit(:)
+     REAL(KIND=dp) :: val, bigval 
+     INTEGER, POINTER :: FieldPerm(:), NodeIndexes(:)
+     LOGICAL :: Found,AnyLimitBC, AnyLimitBF !, GotInit, GotActive
+     TYPE(ValueList_t), POINTER :: Entity
+     REAL(KIND=dp), POINTER :: LimitValues(:)
+     CHARACTER(:), ALLOCATABLE :: Name, LimitName
+     CHARACTER(*), PARAMETER :: Caller = 'PopulateLimiterValues'
+     
+     Model => CurrentModel
+     Var => Solver % Variable
+     Mesh => Solver % Mesh
+     
+     FieldValues => Var % Values
+     FieldPerm => Var % Perm
+     totsize = SIZE( FieldValues )
+     dofs = Var % dofs
+     
+     n = Mesh % MaxElementNodes
+     ALLOCATE( ElemLimit(n) )
+
+     bigval = 1.0_dp / EPSILON(bigval)
+     
+     ! Loop through upper and lower limits     
+     !------------------------------------------------------------------------
+     DO Upper=0,1      
+       
+       ! Go through the components of the field, if many
+       !-------------------------------------------------
+       DO DOF = 1,dofs
+         
+         Name = TRIM(Var % name)
+         IF ( Var % DOFs > 1 ) name = ComponentName(name,DOF)
+         
+         ! The keywords for the correct lower or upper limit of the variable
+         !------------------------------------------------------------------
+         IF( Upper == 0 ) THEN
+           LimitName = TRIM(name)//' Lower Limit'           
+         ELSE
+           LimitName = TRIM(name)//' Upper Limit' 
+         END IF
+         
+         AnyLimitBC = ListCheckPresentAnyBC( Model, LimitName )
+         AnyLimitBF = ListCheckPresentAnyBodyForce( Model, LimitName )
+
+         ! If there is no active keyword then there really is nothing to do
+         !----------------------------------------------------------------
+         IF( .NOT. ( AnyLimitBC .OR. AnyLimitBF ) ) CYCLE
+         
+         CALL Info(Caller,'Populating limit: '//TRIM(LimitName),Level=10)
+         
+         ! Define the range of elements for which the limiters are active
+         !---------------------------------------------------------------
+         ElemFirst = Mesh % NumberOfBulkElements + 1           
+         ElemLast = Mesh % NumberOfBulkElements 
+         
+         IF( AnyLimitBF ) ElemFirst = 1
+         IF( AnyLimitBC ) ElemLast = Mesh % NumberOfBulkElements + &
+             Mesh % NumberOfBoundaryElements 
+         
+         ! Check that active set vectors for limiters exist, otherwise allocate
+         !---------------------------------------------------------------------
+         IF( Upper == 0 ) THEN
+           IF(ASSOCIATED(Var % LowerLimit)) THEN
+             IF(SIZE(Var % LowerLimit) /= totsize) THEN
+               DEALLOCATE(Var % LowerLimit)
+             END IF
+           END IF
+           IF( .NOT. ASSOCIATED(Var % LowerLimit ) ) THEN
+             CALL Info(Caller,'Allocating LowerLimit for variable: '//TRIM(Name),Level=10)
+             ALLOCATE( Var % LowerLimit( totsize ) )
+             Var % LowerLimit = -bigval
+           END IF
+           LimitValues => Var % LowerLimit
+         ELSE
+           IF(ASSOCIATED(Var % UpperLimit)) THEN
+             IF(SIZE(Var % UpperLimit) /= totsize) THEN
+               DEALLOCATE(Var % UpperLimit)
+             END IF
+           END IF
+           IF( .NOT. ASSOCIATED( Var % UpperLimit ) ) THEN
+             CALL Info(Caller,'Allocating UpperLimit for variable: '//TRIM(Name),Level=10)
+             ALLOCATE( Var % UpperLimit( totsize ) )
+             Var % UpperLimit = bigval
+           END IF
+           LimitValues => Var % UpperLimit
+         END IF
+ 
+         ! In the first time set the initial set 
+         !----------------------------------------------------------------------
+         DO t = ElemFirst, ElemLast
+           
+           Element => Model % Elements(t)
+           Model % CurrentElement => Element
+
+           n = Element % TYPE % NumberOfNodes
+           NodeIndexes => Element % NodeIndexes
+           
+           Found = .FALSE.
+           IF( t > Mesh % NumberOfBulkElements ) THEN
+             DO bc = 1,Model % NumberOfBCs
+               IF ( Element % BoundaryInfo % Constraint == Model % BCs(bc) % Tag ) THEN
+                 Found = .TRUE.
+                 Entity => Model % BCs(bc) % Values
+                 EXIT
+               END IF
+             END DO
+             IF(.NOT. Found ) CYCLE
+           ELSE
+             IF(Element % BodyId == 0) CYCLE
+             bf = ListGetInteger( Model % Bodies(Element % bodyid) % Values, &
+                 'Body Force', Found)
+             IF(.NOT. Found ) CYCLE               
+             Entity => Model % BodyForces(bf) % Values               
+           END IF
+           
+           ElemLimit(1:n) = ListGetReal( Entity, &
+               LimitName, n, NodeIndexes, Found)             
+           IF(.NOT. Found) CYCLE
+           
+           DO i=1,n
+             j = FieldPerm( NodeIndexes(i) )
+             IF( j == 0 ) CYCLE
+             ind = Dofs * ( j - 1) + Dof
+             
+             IF(Upper==0) THEN
+               LimitValues(ind) = MAX( LimitValues(ind), ElemLimit(i))
+             ELSE
+               LimitValues(ind) = MIN( LimitValues(ind), ElemLimit(i))
+             END IF
+           END DO
+         END DO
+       END DO
+     END DO
+     
+     DEALLOCATE( ElemLimit ) 
+     CALL Info(Caller,'All done',Level=12)
+          
+   END SUBROUTINE PopulateLimiterValues
+     
+
+   
+!------------------------------------------------------------------------------
 !> Determine soft limiters set. This is called after the solution.
 !> and can therefore be active only on the 2nd nonlinear iteration round.
 !------------------------------------------------------------------------------
@@ -1444,22 +1598,28 @@ CONTAINS
            IF(ASSOCIATED(Var % LowerLimitActive)) THEN
              IF(SIZE(Var % LowerLimitActive) /= totsize) THEN
                DEALLOCATE(Var % LowerLimitActive)
+               DEALLOCATE(Var % LowerLimit)
              END IF
            END IF
            IF( .NOT. ASSOCIATED(Var % LowerLimitActive ) ) THEN
              ALLOCATE( Var % LowerLimitActive( totsize ) )
              Var % LowerLimitActive = .FALSE.
+             ALLOCATE( Var % LowerLimit( totsize ) )
+             Var % LowerLimit = -HUGE(val)
            END IF
            LimitActive => Var % LowerLimitActive
          ELSE
            IF(ASSOCIATED(Var % UpperLimitActive)) THEN
              IF(SIZE(Var % UpperLimitActive) /= totsize) THEN
                DEALLOCATE(Var % UpperLimitActive)
+               DEALLOCATE(Var % UpperLimit)
              END IF
            END IF
            IF( .NOT. ASSOCIATED( Var % UpperLimitActive ) ) THEN
              ALLOCATE( Var % UpperLimitActive( totsize ) )
              Var % UpperLimitActive = .FALSE.
+             ALLOCATE( Var % UpperLimit( totsize ) )
+             Var % UpperLimit = HUGE(val)
            END IF
            LimitActive => Var % UpperLimitActive
          END IF
@@ -8764,9 +8924,11 @@ CONTAINS
     END IF
         
     ! Eliminate all entries in matrix that may be eliminated in one sweep
-    ! If this is an offdiagonal entry this cannot be done.  
+    ! If this is an offdiagonal entry this cannot be done.
+    ! Also, if we want to do swap the Dirichlet conditions without
+    ! rebuilding the matrix (as in capacitance matrix computation) this
+    ! cannot be done. 
     IF ( A % Symmetric .AND. .NOT. NoDiag ) CALL CRS_ElimSymmDirichlet(A,b)
- 
     
     DO k=1,A % NumberOfRows
 
