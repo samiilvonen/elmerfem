@@ -37,7 +37,7 @@
 ! * 404e1b1  - q2/q1 quad
 ! *
 ! * This module has been defived from a historical Navier-Stokes solver and
-! * updated much later for problems involving challel flows.
+! * updated much later for problems involving channel flows.
 ! *
 ! *  Authors: Juha Ruokolainen, Peter Råback, Thomas Zwinger, Tómas Jóhannesson
 ! *  Email:   elmeradm@csc.fi
@@ -553,9 +553,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
           HeatingEnergy = HeatingEnergy + dt * PressureHeatFlux
         END IF
       END IF
-    
-      
-        
+            
       WRITE(Message,'(A,ES12.5)') 'Total heating power: ',TotFlux
       CALL Info(Caller, Message, Level=7)
     END BLOCK
@@ -593,33 +591,23 @@ CONTAINS
   FUNCTION FrictionLawPraks(v,rho,nu,D,eps) RESULT (f)
     REAL(KIND=dp) :: v, rho, nu, D, eps, f
     REAL(KIND=dp) :: Re, A, B, C, x
-    REAL(KIND=dp) :: MinRe
+    REAL(KIND=dp) :: lambda
     LOGICAL :: Visited = .FALSE.
 
-    SAVE Visited, MinRe
-
-    IF(.NOT. Visited) THEN
-      MinRe = ListGetCReal( Params,'Min Reynolds Number',Found )
-      IF(.NOT. Found) MinRe = 4000.0_dp
-      Visited = .TRUE.
-    END IF
+    SAVE Visited
 
     ! The division by 2 fixes the inconsistancy between two scientific communities.
     Re = v*(D/2)*rho/nu
-
-    IF(Re < MinRe) THEN
-      Re = MinRe
-      ! Enforce also the speed to be compatible with the min Re number!
-      ! Note: this has effect also outside this routine!
-      v = Re * nu / ((D/2) * rho) 
-    END IF      
     
     A = Re * eps / 8.0897
     B = LOG(Re) - 0.779626
     x = A+B
     C = LOG(x)
 
-    f = (0.8685972*(B-C+C/(x-0.5588*C+1.2079)))**(-0.5_dp)
+    ! These corrections and extentions by Tómas Jóhannesson
+    lambda = Re*(6.94871*(B-C+C/(x-0.5588*C+1.2079)))**(-2.0_dp) ! original formula for the lambda friction factor
+    lambda = MAX(1.0_dp, lambda)                                 ! lambda is 1 for laminar flow
+    f = 64.0_dp*lambda/Re                                        ! computation of f after thresholding lambda to 1 (laminar flow)
     
   END FUNCTION FrictionLawPraks
     
