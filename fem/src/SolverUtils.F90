@@ -1718,6 +1718,10 @@ CONTAINS
                ! Enforce the values to limits because nonlinear material models
                ! may otherwise lead to divergence of the iteration
                !--------------------------------------------------------------
+               ! Set the Dirichlet conditions already here!
+               Solver % Matrix % DValues(ind) = ElemLimit(i)
+               Solver % Matrix % ConstrainedDOF(ind) = .TRUE.
+
                IF( LimitActive(ind) ) THEN
                  IF( Upper == 0 ) THEN
                    Var % Values(ind) = MAX( Var % Values(ind), ElemLimit(i) )
