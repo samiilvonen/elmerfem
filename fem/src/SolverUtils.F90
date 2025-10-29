@@ -1719,6 +1719,10 @@ CONTAINS
                ! may otherwise lead to divergence of the iteration
                !--------------------------------------------------------------
                IF( LimitActive(ind) ) THEN
+                 ! Set the Dirichlet conditions already here!
+                 Solver % Matrix % DValues(ind) = ElemLimit(i)
+                 Solver % Matrix % ConstrainedDOF(ind) = .TRUE.
+                 
                  IF( Upper == 0 ) THEN
                    Var % Values(ind) = MAX( Var % Values(ind), ElemLimit(i) )
                  ELSE
