@@ -18942,7 +18942,7 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   LOGICAL, OPTIONAL :: BackToReal
   !------------------------------------------------------------------------------
   TYPE(Matrix_t), POINTER :: Are => NULL(), Aharm => NULL(), SaveMatrix 
-  INTEGER :: i,j,k,n, kr, ki, DOFs
+  INTEGER :: i,j,k,n, kr, ki, DOFs, TimeOrder
   LOGICAL :: stat, Found, OptimizeBW, Real_given, Imag_given
   CHARACTER(:), ALLOCATABLE :: Name
   REAL(KIND=dp) :: Omega, s, val
@@ -18951,14 +18951,16 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   TYPE(ValueList_t), POINTER :: BC
   TYPE(Variable_t), POINTER :: TmpVar, ReVar, HarmVar, SaveVar
   LOGICAL :: ToReal, ParseName, AnyDirichlet, Diagonal, HarmonicReal, EigenMode
+  CHARACTER(*), PARAMETER :: Caller = 'ChangeToHarmonicSystem'
+
   
   IF( .NOT. ASSOCIATED( Solver % Variable ) ) THEN
-    CALL Warn('ChangeToHarmonicSystem','Not applicable without a variable')
+    CALL Warn(Caller,'Not applicable without a variable')
     RETURN    
   END IF
 
   IF( .NOT. ASSOCIATED( Solver % Matrix ) ) THEN
-    CALL Warn('ChangeToHarmonicSystem','Not applicable without a matrix')
+    CALL Warn(Caller,'Not applicable without a matrix')
     RETURN    
   END IF
 
@@ -18970,7 +18972,7 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   IF( ToReal ) THEN
     IF( ASSOCIATED( Solver % Variable % Evar ) ) THEN
       IF( Solver % Variable % Evar % Dofs < Solver % Variable % Dofs ) THEN
-        CALL Info('ChangeToHarmonicSystem','Changing the harmonic results back to real system!',Level=6)
+        CALL Info(Caller,'Changing the harmonic results back to real system!',Level=6)
 
         SaveVar => Solver % Variable
         SaveMatrix => Solver % Matrix 
@@ -18989,7 +18991,7 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   END IF
 
 
-  CALL Info('ChangeToHarmonicSystem','Changing the real transient system to harmonic one!',Level=6)
+  CALL Info(Caller,'Changing the real transient system to harmonic one!',Level=6)
 
   SaveMatrix => Solver % Matrix
   SaveVar => Solver % Variable     
@@ -18998,17 +19000,17 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   DOFs = SaveVar % Dofs
   Are => Solver % Matrix
 
-  CALL Info('ChangeToHarmonicSystem','Number of real system rows: '//I2S(n),Level=16)
+  CALL Info(Caller,'Number of real system rows: '//I2S(n),Level=16)
 
   ! Obtain the frequency, it may depend on iteration step etc. 
   Omega = 0._dp
   IF (.NOT. EigenMode) THEN
     Frequency = ListGetAngularFrequency( Solver % Values, Found ) / (2*PI)
     IF( .NOT. Found ) THEN
-      CALL Fatal( 'ChangeToHarmonicSystem', '> Frequency < must be given for harmonic analysis.' )
+      CALL Fatal( Caller, '> Frequency < must be given for harmonic analysis.' )
     END IF
     WRITE( Message, '(a,e12.3)' ) 'Frequency value: ', frequency
-    CALL Info( 'ChangeToHarmonicSystem', Message, Level=5 )
+    CALL Info( Caller, Message, Level=5 )
 
      omega = 2 * PI * Frequency
      CALL ListAddConstReal( CurrentModel % Simulation, 'res: frequency', Frequency )
@@ -19017,29 +19019,36 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
   
   HarmonicReal = ListGetLogical( Solver % Values,'Harmonic Mode Real',Found ) 
   IF( HarmonicReal ) THEN
-    CALL Info('ChangeToHarmonicSystem','Enforcing harmonic system to be real valued',Level=8)
+    CALL Info(Caller,'Enforcing harmonic system to be real valued',Level=8)
     IF (ASSOCIATED(Are % MassValues)) THEN
-      ARe % Values = Are % Values - omega**2* Are % MassValues
+      Are % Values = Are % Values - omega**2* Are % MassValues
     ELSE
-      CALL Fatal('ChangeToHarmonicSystem','Harmonic system requires mass!')
+      CALL Fatal(Caller,'Harmonic system requires mass!')
     END IF
     ! This is set outside so that it can be called more flexibilly
     CALL EnforceDirichletConditions( Solver, Are, Are % rhs  )
     RETURN
   END IF
 
- 
-  Diagonal = ListGetLogical( Solver % Values,'Harmonic Mode Block Diagonal',Found )  
-  IF(.NOT. Found ) Diagonal = .NOT. ASSOCIATED(Are % DampValues)
-  IF( Diagonal ) THEN
-    CALL Info('ChangeToHarmonicSystem','Undamped system is assumed to be block diagonal',Level=8)
-  END IF
+  TimeOrder = MAX( Solver % TimeOrder, &
+      ListGetInteger(Solver % Values,'Time Derivative Order', Found ) ) 
 
+  IF( TimeOrder == 2 ) THEN
+    Diagonal = ListGetLogical( Solver % Values,'Harmonic Mode Block Diagonal',Found )  
+    IF(.NOT. Found ) Diagonal = .NOT. ASSOCIATED(Are % DampValues)
+    IF( Diagonal ) THEN
+      CALL Info(Caller,'2nd order undamped system is assumed to be block diagonal',Level=8)
+    END IF
+  ELSE
+    Diagonal = .FALSE.
+    CALL Info(Caller,'1st order system is always assumed to be truly complex',Level=8)
+  END IF
+    
   
   ! Find whether the matrix already exists
   Aharm => Are % EMatrix
   IF( ASSOCIATED( Aharm ) ) THEN
-    CALL Info('ChangeToHarmonicSystem','Found existing harmonic system',Level=10)
+    CALL Info(Caller,'Found existing harmonic system',Level=10)
     IF( ALLOCATED( Aharm % ConstrainedDOF ) ) Aharm % ConstrainedDOF = .FALSE.
   ELSE    
     ! Create the matrix if it does not
@@ -19066,21 +19075,23 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
     b(2:2*n:2) = 0.0_dp
   END IF
 
-  IF( ASSOCIATED(Are % MassValues) ) THEN
-    CALL Info('ChangeToHarmonicSystem','We have mass matrix values',Level=12)
-  ELSE
-    CALL Warn('ChangeToHarmonicSystem','We do not have mass matrix values!')
+  ! Mass matrix is always needed, both for 1st and 2nd order systems!
+  ! It is always the leading time derivative. 
+  IF( .NOT. ASSOCIATED(Are % MassValues) ) THEN
+    CALL Fatal(Caller,'We do not have mass matrix values!')
   END IF
 
-  IF( ASSOCIATED(Are % DampValues) ) THEN
-    CALL Info('ChangeToHarmonicSystem','We have damp matrix values',Level=12)
-    IF( Diagonal ) THEN
-      CALL Fatal('ChangeToHarmonicSystem','Damping matrix cannot be block diagonal!')
+  IF( TimeOrder == 2 ) THEN
+    IF( ASSOCIATED(Are % DampValues) ) THEN
+      CALL Info(Caller,'We have damp matrix values',Level=12)
+      IF( Diagonal ) THEN
+        CALL Fatal(Caller,'Damping matrix cannot be block diagonal!')
+      END IF
+    ELSE
+      CALL Info(Caller,'We do not have damp matrix values',Level=12)
     END IF
-  ELSE
-    CALL Info('ChangeToHarmonicSystem','We do not have damp matrix values',Level=12)
   END IF
-
+    
   ! Set the harmonic system matrix
   IF( EigenMode ) THEN
     ALLOCATE(Aharm % MassValues(SIZE(Aharm % Values)))
@@ -19093,16 +19104,19 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
         Aharm % Values(kr) = Are % Values(j)
         Aharm % Values(ki+1) = Are % Values(j)
         
-        IF (ASSOCIATED(Are % DampValues)) THEN
-          Aharm % Values(kr+1) = -Are % Dampvalues(j)
-          Aharm % Values(ki)   =  Are % Dampvalues(j)
-        END IF
-
-        IF (ASSOCIATED(Are % MassValues)) THEN
+        IF( TimeOrder == 2 ) THEN
+          IF (ASSOCIATED(Are % DampValues)) THEN
+            Aharm % Values(kr+1) = -Are % Dampvalues(j)
+            Aharm % Values(ki)   =  Are % Dampvalues(j)
+          END IF
+          
           Aharm % MassValues(kr) = Are % MassValues(j)
           Aharm % MassValues(ki+1) = Are % MassValues(j)
+        ELSE
+          Aharm % Values(kr+1) = -Are % Massvalues(j)
+          Aharm % Values(ki)   =  Are % Massvalues(j)
         END IF
-
+                    
         kr = kr + 2
         ki = ki + 2
       END DO
@@ -19113,7 +19127,7 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
       ki = Aharm % Rows(2*(k-1)+2)
       DO j=Are % Rows(k),Are % Rows(k+1)-1
         val = Are % Values(j)
-        IF (ASSOCIATED(Are % MassValues)) val = val - omega**2* Are % MassValues(j)
+        val = val - omega**2* Are % MassValues(j)
         
         Aharm % Values(kr) = val 
         Aharm % Values(ki) = val 
@@ -19127,16 +19141,21 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
       ki = Aharm % Rows(2*(k-1)+2)
       DO j=Are % Rows(k),Are % Rows(k+1)-1
         val = Are % Values(j)
-        IF (ASSOCIATED(Are % MassValues)) val = val - omega**2* Are % MassValues(j)
 
+        IF(TimeOrder == 2 ) THEN
+          val = val - omega**2* Are % MassValues(j)        
+          IF (ASSOCIATED(Are % DampValues)) THEN
+            Aharm % Values(kr+1) = -Are % Dampvalues(j) * omega
+            Aharm % Values(ki)   =  Are % Dampvalues(j) * omega
+          END IF
+        ELSE
+          Aharm % Values(kr+1) = -Are % Massvalues(j) * omega
+          Aharm % Values(ki)   =  Are % Massvalues(j) * omega
+        END IF
+                    
         Aharm % Values(kr) = val
         Aharm % Values(ki+1) = val     
         
-        IF (ASSOCIATED(Are % DampValues)) THEN
-          Aharm % Values(kr+1) = -Are % Dampvalues(j) * omega
-          Aharm % Values(ki)   =  Are % Dampvalues(j) * omega
-        END IF
-
         kr = kr + 2
         ki = ki + 2
       END DO
@@ -19156,10 +19175,10 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
       IF( real_given .OR. imag_given ) AnyDirichlet = .TRUE.
 
       IF ( real_given .AND. .NOT. imag_given ) THEN
-        CALL Info('ChangeToHarmonicSystem','Setting zero >'//TRIM(Name)//' im< on BC '//I2S(i),Level=12)
+        CALL Info(Caller,'Setting zero >'//TRIM(Name)//' im< on BC '//I2S(i),Level=12)
         CALL ListAddConstReal( BC, TRIM(Name) // ' im', 0._dp)
       ELSE IF ( imag_given .AND. .NOT. real_given ) THEN
-        CALL Info('ChangeToHarmonicSystem','Setting zero >'//TRIM(Name)//'< on BC '//I2S(i),Level=12)
+        CALL Info(Caller,'Setting zero >'//TRIM(Name)//'< on BC '//I2S(i),Level=12)
         CALL ListAddConstReal( BC, Name, 0._dp )
       END IF
     END DO
@@ -19191,18 +19210,18 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
     Name = TRIM( SaveVar % Name )//' complex'
   END IF
 
-  CALL Info('ChangeToHarmonicSystem','Harmonic system full name: '//TRIM(Name),Level=12)
+  CALL Info(Caller,'Harmonic system full name: '//TRIM(Name),Level=12)
 
 
   HarmVar => VariableGet( Solver % Mesh % Variables, Name )
   IF( ASSOCIATED( HarmVar ) ) THEN
-    CALL Info('ChangeToHarmonicSystem','Reusing full system harmonic dofs',Level=12)
+    CALL Info(Caller,'Reusing full system harmonic dofs',Level=12)
   ELSE
-    CALL Info('ChangeToHarmonicSystem','Creating full system harmonic dofs',Level=12)
+    CALL Info(Caller,'Creating full system harmonic dofs',Level=12)
     CALL VariableAddVector( Solver % Mesh % Variables,Solver % Mesh,Solver, &
         Name,2*DOFs,Perm=SaveVar % Perm,Output=.FALSE.)
     HarmVar => VariableGet( Solver % Mesh % Variables, Name )
-    IF(.NOT. ASSOCIATED( HarmVar ) ) CALL Fatal('ChangeToHarmonicSystem','New created variable should exist!')
+    IF(.NOT. ASSOCIATED( HarmVar ) ) CALL Fatal(Caller,'New created variable should exist!')
 
     ! Repoint the values of the original solution vector
     HarmVar % Values(1:2*n:2) = SaveVar % Values(1:n)
@@ -19219,7 +19238,7 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
         IF( ASSOCIATED( TmpVar ) ) THEN
           TmpVar % Values => HarmVar % Values(2*i-1::HarmVar % Dofs)
         ELSE
-          CALL Fatal('ChangeToHarmonicSystem','Could not find re component '//I2S(i))
+          CALL Fatal(Caller,'Could not find re component '//I2S(i))
         END IF
       END DO
     END IF
@@ -19227,11 +19246,11 @@ SUBROUTINE ChangeToHarmonicSystem( Solver, BackToReal )
     IF( ParseName ) THEN
       Name = ListGetString( Solver % Values,'Imaginary Variable',Found )
       IF(.NOT. Found ) THEN
-        CALL Fatal('ChangeToHarmonicSystem','We need > Imaginary Variable < to create harmonic system!')
+        CALL Fatal(Caller,'We need > Imaginary Variable < to create harmonic system!')
       END IF
     ELSE
       Name = TRIM( SaveVar % Name )//' im'
-      CALL Info('ChangeToHarmonicSystem','Using derived name for imaginary component: '//TRIM(Name),Level=12)
+      CALL Info(Caller,'Using derived name for imaginary component: '//TRIM(Name),Level=12)
     END IF
 
     TmpVals => HarmVar % Values(2:2*n:2)
