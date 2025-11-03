@@ -161,7 +161,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   LOGICAL :: AllocationsDone = .FALSE., Newton = .FALSE., Found, Convect, CSymmetry
   TYPE(Element_t),POINTER :: Element
   INTEGER :: i,n, nb, nd, t, istat, dim, mdim, BDOFs=1,Active,iter,maxiter,CoupledIter
-  REAL(KIND=dp) :: Norm = 0, mingap, Grav, time, time0=-1.0_dp, MeltHeat, Cp, Ct
+  REAL(KIND=dp) :: Norm = 0, mingap, Grav, time, time0=-1.0_dp, MeltHeat, Cp, Ct, s
   TYPE(ValueList_t), POINTER :: Params, BodyForce, Material, BC
   TYPE(Mesh_t), POINTER :: Mesh
   REAL(KIND=dp), ALLOCATABLE :: STIFF(:,:), LOAD(:,:), &
@@ -195,7 +195,6 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   thisVar => Solver % Variable
   
   mdim = ListGetInteger( Params,'Model Dimension',UnFoundFatal=.TRUE.)
-  Convect = GetLogical( Params, 'Convect', Found )
   GradP = GetLogical( Params, 'GradP Discretization', Found ) 
   LateralStrain = GetLogical( Params,'Lateral Strain',Found )
   mingap = ListGetCReal( Params,'Min Gap Height',Found )
@@ -203,7 +202,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
   GotAC = ListCheckPresentAnyMaterial( Model,'Artificial Compressibility')
 
   UsePrevGap = ListGetLogical( Params,'Use Gap Average',Found )
-  
+  Convect = GetLogical( Params, 'Convect', Found )
+    
   CoupledIter = GetCoupledIter()
   
   GapDirection = 0
@@ -247,7 +247,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
     grav = ABS(gWork(SIZE(gWork,1),1))
   END IF
 
-  IF( FrictionModel == 2 ) THEN
+  IF( ANY( FrictionModel == [3,4] ) ) THEN
     IF(.NOT. GotGrav) CALL Fatal(Caller,'Manning equation not possible without gravity!')
     IF(CSymmetry) CALL Fatal(Caller,'Manning equation not applicable to axial symmetry!')
   END IF
@@ -314,16 +314,17 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
   IF( CalcHeating) THEN
     ! If we are visiting the same timestep several times only compute the nodal heat flux once.
+    ! Hence we need to subtract the previous values from the simulation. 
     time = GetTime()
     IF(ABS(time-time0) < TINY(time)) THEN
       IF (CalcFrictionHeating .AND. CalcPressureHeating) THEN        
         HeatingEnergy = HeatingEnergy - dt * MAX(FrictionHeatFlux  + PressureHeatFlux, 0.0_dp)
       ELSE
         IF(CalcFrictionHeating) THEN
-          HeatingEnergy = HeatingEnergy - dt * FrictionHeatFlux 
+          HeatingEnergy = HeatingEnergy - dt * FrictionHeatFlux
         END IF
         IF( CalcPressureHeating ) THEN
-          HeatingEnergy = HeatingEnergy - dt * PressureHeatFlux
+          HeatingEnergy = HeatingEnergy - dt * MAX(PressureHeatFlux, 0.0_dp) 
         END IF
       END IF
     END IF
@@ -353,7 +354,11 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
     CALL DefaultInitialize()
 
     Newton = GetNewtonActive()
-    
+
+    ! This is an experimental feature to turn convection on/off. It could depend on time, for example. 
+    s = ListGetCReal( Params,'Convect Condition', Found )
+    IF(Found) Convect = (s > 0.0_dp)
+      
     Active = GetNOFActive()
     DO t=1,Active
       Element => GetActiveElement(t)
@@ -385,9 +390,9 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
       height(1:n) = GetReal( Material,'Bedrock Height',GotHeight) 
       
-      IF(FrictionModel == 1 .OR. FrictionModel == 2 ) THEN
+      IF(ANY(FrictionModel == [1,2])) THEN 
         nm = ListGetCReal( Material,'Darcy Roughness',UnfoundFatal=.TRUE.)
-      ELSE IF(FrictionModel == 3 ) THEN
+      ELSE IF(ANY(FrictionModel == [3,4]))  THEN
         nm = ListGetCReal( Material,'Manning coefficient',UnfoundFatal=.TRUE.)
       END IF
 
@@ -550,7 +555,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
           HeatingEnergy = HeatingEnergy + dt * FrictionHeatFlux 
         END IF
         IF( CalcPressureHeating ) THEN
-          HeatingEnergy = HeatingEnergy + dt * PressureHeatFlux
+          HeatingEnergy = HeatingEnergy + dt * MAX(PressureHeatFlux, 0.0_dp)
         END IF
       END IF
             
