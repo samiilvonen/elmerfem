@@ -1411,7 +1411,8 @@ CONTAINS
      LOGICAL, ALLOCATABLE :: InterfaceDof(:)
      INTEGER :: ConservativeAfterIters, NonlinIter, CoupledIter, timeIter, DownStreamDirection
      LOGICAL :: Conservative, ConservativeAdd, ConservativeRemove, RelativeEps, &
-         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove, LimitFreeze
+         DoAdd, DoRemove, DirectionActive, FirstTime, DownStreamRemove, LimitFreeze, &
+         AllActive, AllPassive
      TYPE(Mesh_t), POINTER :: Mesh
 
      CHARACTER(:), ALLOCATABLE :: Name,LimitName, InitName, ActiveName
@@ -1421,6 +1422,13 @@ CONTAINS
      Var => Solver % Variable
      Mesh => Solver % Mesh
      
+     ! The variable to be constrained by the soft limiters
+     FieldValues => Var % Values
+     FieldPerm => Var % Perm
+     totsize = SIZE( FieldValues )
+     dofs = Var % Dofs
+     Params => Solver % Values
+
      ! Check the iterations counts and determine whether this is the first 
      ! time with this solver. 
      !------------------------------------------------------------------------
@@ -1448,6 +1456,19 @@ CONTAINS
      FirstTime = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter == 1)
      LimitFreeze = (nonliniter <= 1) .AND. (coupledIter <= 1) .AND. (timeIter > 1)
 
+     AllActive = .FALSE.
+     val = ListGetCReal( Params,'Limiter Global Active Condition',Found )
+     IF(Found) AllActive = (val > 0.0_dp) 
+
+     AllPassive = .FALSE.
+     val = ListGetCReal( Params,'Limiter Global Passive Condition',Found )
+     IF(Found) AllPassive = (val > 0.0_dp) 
+
+     IF(AllActive .AND. AllPassive) THEN
+       CALL Fatal(Caller,'Limiter cannot be both AllActive and AllPassive!')
+     END IF
+
+     
      IF( FirstTime ) THEN
        CALL Info(Caller,'Initializing soft limiter for solver',Level=7)
      END IF
@@ -1470,13 +1491,8 @@ CONTAINS
      END IF
      LoadValues => LoadVar % Values
 
-     ! The variable to be constrained by the soft limiters
-     FieldValues => Var % Values
-     FieldPerm => Var % Perm
-     totsize = SIZE( FieldValues )
-     dofs = Var % Dofs
-     Params => Solver % Values
 
+     
      ConservativeAdd = .FALSE.
      ConservativeAfterIters = ListGetInteger(Params,&
          'Apply Limiter Conservative Add After Iterations',Conservative ) 
@@ -1701,7 +1717,17 @@ CONTAINS
              
                ! Go through the active set and free nodes with wrong sign in contact force
                !--------------------------------------------------------------------------       
-               IF( GotInit .AND. ElemInit(i) > 0.0_dp ) THEN
+               IF( AllActive ) THEN
+                 IF(.NOT. LimitActive(ind)) THEN
+                   added = added + 1
+                   LimitActive(ind) = .TRUE.
+                 END IF
+               ELSE IF( AllPassive ) THEN
+                 IF(LimitActive(ind)) THEN
+                   removed = removed + 1
+                   LimitActive(ind) = .FALSE.
+                 END IF                 
+               ELSE IF( (GotInit .AND. ElemInit(i) > 0.0_dp ) ) THEN
                  IF(.NOT. LimitActive(ind)) THEN
                    added = added + 1
                    LimitActive(ind) = .TRUE.
@@ -1845,7 +1871,7 @@ CONTAINS
 
            CALL Info(Caller,&
                'Number of interface dofs: '//I2S(COUNT(InterfaceDof)),Level=8)
-         END IF
+         END IF ! Conservative
 
          IF( DownStreamRemove ) THEN
            t = COUNT(InterfaceDof)
@@ -1899,6 +1925,16 @@ CONTAINS
              !--------------------------------------------------------------------------       
              IF( LimitFreeze ) THEN
                CONTINUE
+             ELSE IF( AllActive ) THEN
+               IF(.NOT. LimitActive( ind ) ) THEN
+                 added = added + 1
+                 LimitActive(ind) = .TRUE. 
+               END IF
+             ELSE IF( AllPassive ) THEN
+               IF(LimitActive( ind ) ) THEN
+                 removed = removed + 1
+                 LimitActive(ind) = .FALSE.
+               END IF               
              ELSE IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
                IF(.NOT. LimitActive( ind ) ) THEN
                  added = added + 1
