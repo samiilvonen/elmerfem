@@ -559,7 +559,7 @@ CONTAINS
        ELSE 
          IF ( ListGetLogical( Solver % Values, &
              'Discontinuous Galerkin', stat ) ) THEN
-           Solver % Def_Dofs(ind,BodyId,4) = l
+           Solver % Def_Dofs(ind,BodyId,4) = 0
            Def_Dofs(1:8,4) = MAX(Def_Dofs(1:8,4),0 )
          END IF
        END IF
