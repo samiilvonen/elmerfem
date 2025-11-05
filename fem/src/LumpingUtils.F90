@@ -1908,7 +1908,9 @@ MODULE LumpingUtils
       OutFlux = int_el
       InFlux = int_norm 
       
-      PRINT *,'LumpedCurr e:',int_el,int_norm,area,trans,Zimp
+      IF(ABS(int_norm) < EPSILON(area)) CALL Warn(Caller,'Source seems to be zero!')
+
+      PRINT *,'LumpedCurr e:',int_el,int_norm,area,trans,Zimp,ABS(int_norm)
 
     END IF
     
@@ -1925,7 +1927,7 @@ MODULE LumpingUtils
       LOGICAL :: InitHandles
 !------------------------------------------------------------------------------
       COMPLEX(KIND=dp) :: B, Zs, L(3), muinv, MagLoad(3), TemGrad(3), eps, &
-          e_ip(3), e_ip_norm, e_ip_tan(3), f_ip_tan(3), imu, phi, eps0, mu0inv, epsr, mur
+          e_ip(3), e_ip_norm, e_ip_tan(3), f_ip_tan(3), imu, phi, eps0, mu0inv, epsr, mur, ElSurfCurr(3)
       REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:),WBasis(:,:),RotWBasis(:,:), e_local(:,:)
       REAL(KIND=dp) :: weight, DetJ, Normal(3), cond, u, v, w, x, y, z, rob0
       TYPE(Nodes_t), SAVE :: ElementNodes, ParentNodes
@@ -1936,7 +1938,7 @@ MODULE LumpingUtils
       INTEGER :: t, i, j, m, np, p, q, ndofs, n, nd
       LOGICAL :: AllocationsDone = .FALSE.
       TYPE(Element_t), POINTER :: Parent
-      TYPE(ValueHandle_t), SAVE :: MagLoad_h, ElRobin_h, MuCoeff_h, Absorb_h, TemRe_h, TemIm_h
+      TYPE(ValueHandle_t), SAVE :: MagLoad_h, ElRobin_h, MuCoeff_h, Absorb_h, TemRe_h, TemIm_h, ElSurfCurr_h
       TYPE(ValueHandle_t), SAVE :: CondCoeff_h, CurrDens_h, EpsCoeff_h
       INTEGER :: nactive
       
@@ -1954,6 +1956,8 @@ MODULE LumpingUtils
       IF( InitHandles ) THEN
         CALL ListInitElementKeyword( ElRobin_h,'Boundary Condition','Electric Robin Coefficient',InitIm=.TRUE.)
         CALL ListInitElementKeyword( MagLoad_h,'Boundary Condition','Magnetic Boundary Load', InitIm=.TRUE.,InitVec3D=.TRUE.)
+        CALL ListInitElementKeyword( ElSurfCurr_h, 'Boundary Condition', 'Electric Surface Current', &
+          InitIm = .TRUE., InitVec3D=.TRUE.)
         CALL ListInitElementKeyword( Absorb_h,'Boundary Condition','Absorbing BC')
         CALL ListInitElementKeyword( TemRe_h,'Boundary Condition','TEM Potential')
         CALL ListInitElementKeyword( TemIm_h,'Boundary Condition','TEM Potential Im')
@@ -2050,9 +2054,19 @@ MODULE LumpingUtils
         Zs = 1.0_dp / (SQRT(REAL(muinv*eps)))
 
         MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
+        ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
+
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
             ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
-        L = ( MagLoad + TemGrad ) / ( 2*B) 
+
+        if (ABS(B) > AEPS) then
+          L = ( MagLoad + TemGrad ) / ( 2*B) 
+        else 
+          L = 0_dp
+        end if
+
+        ! We sum the components here, since continutation is a little cleaner then...
+        ElSurfCurr = L + (0_dp, 1_dp)*omega*ElSurfCurr
                 
         IF( EdgeBasis ) THEN
           ! In order to get the normal component of the electric field we must operate on the
@@ -2060,7 +2074,7 @@ MODULE LumpingUtils
           CALL FindParentUVW( Element, n, Parent, Parent % TYPE % NumberOfNodes, U, V, W, Basis ) 
           stat = ElementInfo( Parent, ParentNodes, u, v, w, detJ, Basis, dBasisdx, &
               EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = avar % Solver )
-          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))       
+          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))
         ELSE
           DO i=1,3
             e_ip(i) = CMPLX( SUM( Basis(1:n) * e_local(i,1:n) ), SUM( Basis(1:n) * e_local(i+3,1:n) ) )
@@ -2084,6 +2098,15 @@ MODULE LumpingUtils
     END SUBROUTINE LocalIntegBC_E
 !------------------------------------------------------------------------------
 
+  FUNCTION RealComplexCrossProduct(v1,v2) RESULT(v3)
+!------------------------------------------------------------------------------
+    COMPLEX(KIND=dp) ::  v2(3), v3(3)
+    REAL(KIND=dp) :: v1(3)
+    v3(1) =  v1(2)*v2(3) - v1(3)*v2(2)
+    v3(2) = -v1(1)*v2(3) + v1(3)*v2(1)
+    v3(3) =  v1(1)*v2(2) - v1(2)*v2(1)
+!------------------------------------------------------------------------------
+  END FUNCTION RealComplexCrossProduct
 
 !-----------------------------------------------------------------------------
     SUBROUTINE LocalIntegBC_AV( BC, Element, InitHandles )
@@ -2217,6 +2240,168 @@ MODULE LumpingUtils
     
   END FUNCTION BoundaryWaveFlux
 
+
+
+!------------------------------------------------------------------------------
+!> This routine computes geometric quantities for lumped port making the setting
+!> of BCs a little easier.
+!------------------------------------------------------------------------------
+  SUBROUTINE DefinePortParameters(Model, Mesh)
+!------------------------------------------------------------------------------
+    IMPLICIT NONE 
+    TYPE(Model_t) :: Model 
+    TYPE(Mesh_t), POINTER :: Mesh
+!------------------------------------------------------------------------------
+    TYPE(Nodes_t) :: ElementNodes
+    TYPE(Element_t), POINTER :: Element
+    TYPE(GaussIntegrationPoints_t) :: IP
+    INTEGER ::i,j,k,n,t,t0,bc_id,ierr,PortDir,PortIndex,PortTypeInd
+    INTEGER, POINTER :: Indexes(:)
+    REAL(KIND=dp) :: s,detJ,Width,Area,Length,RadInner, RadOuter,CenterArray(3,1),Scale
+    REAL(KIND=dp), ALLOCATABLE :: Basis(:), LumpVec(:)
+    TYPE(ValueList_t), POINTER :: BC, BC0
+    CHARACTER(:), ALLOCATABLE :: PortType
+    LOGICAL :: Found, stat
+
+    CHARACTER(*), PARAMETER :: Caller = 'DefinePortParameters'
+
+    IF(.NOT. ASSOCIATED( Mesh ) ) THEN
+      CALL Fatal(Caller,'Mesh not associated!')
+    END IF
+
+    CALL Info(Caller,'Defining geometric port parameters',Level=8)
+
+    n = Mesh % MaxElementNodes    
+    t0 = Mesh % NumberOfBulkElements       
+    
+    ! Check the number of ports and add "lumped port type index" keyword.
+    DO bc_id = 1,Model % NumberOfBCs
+      BC => Model % BCs(bc_id) % Values
+
+      ! This has already been defined!
+      IF( ListCheckPresent( BC,'Lumped Port Type Index')) CYCLE
+     
+      PortType = ListGetString( BC,'lumped port type',Found)
+      IF(.NOT. Found) CYCLE
+
+      SELECT CASE(PortType)
+      CASE('rectangular')
+        PortTypeInd = 1
+
+      CASE('coaxial')
+        PortTypeInd = 2
+
+      CASE DEFAULT
+        CALL Fatal(Caller,'Unknown "Lumped Port Type": '//TRIM(PortType))
+      END SELECT
+      
+      CALL Info(Caller,'Defining parameters for lumped port on BC: '//I2S(bc_id),Level=8)
+      CALL ListAddInteger( BC,'Lumped Port Type Index',PortTypeInd)
+
+      IF(.NOT. ALLOCATED(Basis) ) THEN
+        ALLOCATE(Basis(n), ElementNodes % x(n), ElementNodes % y(n), ElementNodes % z(n), LumpVec(7) )
+      END IF
+      
+      LumpVec(1:3) = HUGE(s)
+      LumpVec(4:6) = -HUGE(s)
+      LumpVec(7) = 0.0_dp
+
+      
+      DO t=1, Mesh % NumberOfBoundaryElements
+        Element => Mesh % Elements( t0 + t )               
+        IF( Element % BoundaryInfo % Constraint /= Model % BCs(bc_id) % Tag ) CYCLE
+
+        Indexes => Element % NodeIndexes
+        n = Element % TYPE % NumberOfNodes
+
+        ElementNodes % x = 0.0_dp
+        ElementNodes % y = 0.0_dp
+        ElementNodes % z = 0.0_dp
+
+        ElementNodes % x(1:n) = Mesh % Nodes % x(Indexes)
+        ElementNodes % y(1:n) = Mesh % Nodes % y(Indexes)
+        ElementNodes % z(1:n) = Mesh % Nodes % z(Indexes)
+
+        ! Get min/max range for each coordinate.
+        LumpVec(1) = MIN(LumpVec(1),MINVAL(ElementNodes % x(1:n)))
+        LumpVec(2) = MIN(LumpVec(2),MINVAL(ElementNodes % y(1:n)))
+        LumpVec(3) = MIN(LumpVec(3),MINVAL(ElementNodes % z(1:n)))
+        LumpVec(4) = MAX(LumpVec(4),MAXVAL(ElementNodes % x(1:n)))
+        LumpVec(5) = MAX(LumpVec(5),MAXVAL(ElementNodes % y(1:n)))
+        LumpVec(6) = MAX(LumpVec(6),MAXVAL(ElementNodes % z(1:n)))
+
+        
+        ! Integrate over the area.
+        IP = GaussPoints( Element, PReferenceElement = .FALSE.)
+        DO j=1,IP % n        
+          stat = ElementInfo( Element, ElementNodes, IP % U(j), IP % V(j), IP % W(j), detJ, Basis )
+          S = DetJ * IP % s(j)
+          LumpVec(7) = LumpVec(7) + s
+        END DO
+      END DO
+      
+      ! Do parallel communication, if needed.
+      IF( ParEnv % PEs > 1 ) THEN
+        CALL MPI_ALLREDUCE( MPI_IN_PLACE, LumpVec(1:3), 3, &
+            MPI_DOUBLE_PRECISION, MPI_MIN, ELMER_COMM_WORLD, ierr )
+        CALL MPI_ALLREDUCE( MPI_IN_PLACE, LumpVec(4:6), 3, &
+            MPI_DOUBLE_PRECISION, MPI_MAX, ELMER_COMM_WORLD, ierr )
+        CALL MPI_ALLREDUCE( MPI_IN_PLACE, LumpVec(7:7), 1, &
+            MPI_DOUBLE_PRECISION, MPI_SUM, ELMER_COMM_WORLD, ierr )
+      END IF
+
+      ! Area is used in all port models. 
+      Area = LumpVec(7)
+      
+      SELECT CASE(PortTypeInd)
+      CASE(1)
+        CALL ListAddInteger( BC,'Lumped Port Type Index',PortTypeInd)
+        PortDir = ListGetInteger( BC,'Lumped Port Direction',Found)
+        IF(.NOT. Found) PortDir = 3
+
+        Length = LumpVec(3+PortDir) - LumpVec(PortDir)        
+        Width = Area / Length
+        Scale = Width / Length
+
+        !PRINT *,'area:',area, length, width, scale
+        
+        CALL ListAddConstReal( BC,'Lumped Port Length',Length)
+        CALL ListAddConstReal( BC,'Lumped Port Scale',Scale)
+        IF(InfoActive(8)) THEN
+          PRINT *,'Setting rectangular port parameters:',Length,Scale
+        END IF
+
+      CASE(2)
+        RadOuter = 0.0_dp
+        DO i=1,3
+          RadOuter = MAX(RadOuter,(LumpVec(3+i)-LumpVec(i))/2)
+          CenterArray(i,1) = (LumpVec(3+i)+LumpVec(i))/2
+        END DO
+        RadInner = SQRT(RadOuter**2-Area/PI)        
+        Length = (RadInner+RadOuter)/2
+        Scale = 2*PI/LOG(RadOuter/RadInner)
+
+        ! PRINT *,'area:',area, radinner, radouter
+        
+        CALL ListAddConstReal( BC,'Lumped Port Length',Length) 
+        CALL ListAddConstReal( BC,'Lumped Port Scale',Scale)
+        CALL ListAddConstRealArray( BC,'Lumped Port Center',3,1,CenterArray)
+        IF(InfoActive(8)) THEN
+          PRINT *,'Setting coaxial port parameters:',Length,Scale,' and center ',CenterArray
+        END IF
+      END SELECT
+          
+    END DO
+
+    IF(ALLOCATED(Basis)) THEN
+      DEALLOCATE(Basis, ElementNodes % x, ElementNodes % y, ElementNodes % z, LumpVec )
+    END IF
+
+  END SUBROUTINE DefinePortParameters
+!------------------------------------------------------------------------------
+
+
+  
     
 END MODULE LumpingUtils
 !------------------------------------------------------------------------------
