@@ -1926,7 +1926,7 @@ MODULE LumpingUtils
       TYPE(Element_t), POINTER :: Element
       LOGICAL :: InitHandles
 !------------------------------------------------------------------------------
-      COMPLEX(KIND=dp) :: B, Zs, L(3), muinv, MagLoad(3), TemGrad(3), eps, &
+      COMPLEX(KIND=dp) :: B, L(3), muinv, MagLoad(3), TemGrad(3), &
           e_ip(3), e_ip_norm, e_ip_tan(3), f_ip_tan(3), imu, phi, eps0, mu0inv, epsr, mur, ElSurfCurr(3)
       REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:),WBasis(:,:),RotWBasis(:,:), e_local(:,:)
       REAL(KIND=dp) :: weight, DetJ, Normal(3), cond, u, v, w, x, y, z, rob0
@@ -1937,7 +1937,7 @@ MODULE LumpingUtils
       TYPE(GaussIntegrationPoints_t) :: IP
       INTEGER :: t, i, j, m, np, p, q, ndofs, n, nd
       LOGICAL :: AllocationsDone = .FALSE.
-      TYPE(Element_t), POINTER :: Parent
+      TYPE(Element_t), POINTER :: Parent, Parent2
       TYPE(ValueHandle_t), SAVE :: MagLoad_h, ElRobin_h, MuCoeff_h, Absorb_h, TemRe_h, TemIm_h, ElSurfCurr_h
       TYPE(ValueHandle_t), SAVE :: CondCoeff_h, CurrDens_h, EpsCoeff_h
       INTEGER :: nactive
@@ -1989,13 +1989,19 @@ MODULE LumpingUtils
       ElementNodes % y(1:n) = Mesh % Nodes % y(NodeIndexes(1:n))
       ElementNodes % z(1:n) = Mesh % Nodes % z(NodeIndexes(1:n))
 
+      ! We always need the parent for material properties.
       Parent => Element % BoundaryInfo % Left
-      IF(.NOT. ASSOCIATED(Parent)) Parent => Element % BoundaryInfo % Right
+      IF(.NOT. ASSOCIATED(Parent)) THEN
+        Parent => Element % BoundaryInfo % Right
+      END IF
       IF(.NOT. ASSOCIATED( Parent ) ) THEN
         CALL Fatal(Caller,'Model lumping requires parent element!')
       END IF
-
+      
+      ! If the source of the incident field is not in the plane of the port we have to use the parent!
+#define doparent 0
       IF( EdgeBasis ) THEN
+#if doparent
         np = Parent % TYPE % NumberOfNodes
         ParentIndexes => Parent % NodeIndexes
         ParentNodes % x(1:np) = Mesh % Nodes % x(ParentIndexes(1:np))
@@ -2005,7 +2011,12 @@ MODULE LumpingUtils
         nd = mGetElementDofs( EdgeIndexes, Uelement = Parent, USolver = avar % Solver ) 
         np = COUNT(EdgeIndexes(1:nd) <= Mesh % NumberOfNodes)
         pIndexes => EdgeIndexes
+#else
+        nd = mGetElementDofs( EdgeIndexes, Uelement = Element, USolver = avar % Solver ) 
+        np = COUNT(EdgeIndexes(1:nd) <= Mesh % NumberOfNodes)
+        pIndexes => EdgeIndexes
 
+#endif        
         IP = GaussPoints(Element, EdgeBasis=.TRUE., PReferenceElement=PiolaVersion, &
             EdgeBasisDegree=EdgeBasisDegree)
       ELSE
@@ -2022,9 +2033,12 @@ MODULE LumpingUtils
       DO i=1,avar % dofs 
         e_local(i,1:nd) = avar % values(avar % dofs*(avar % Perm(pIndexes(1:nd))-1)+i)
       END DO
-      
-      Normal = NormalVector(Element, ElementNodes, Check=.TRUE.)
 
+#if doparent 
+      ! Normal is only needed if we integrate over parent element.
+      Normal = NormalVector(Element, ElementNodes, Check=.TRUE.)
+#endif
+      
       ! Numerical integration:
       !-----------------------      
       DO t=1,IP % n  
@@ -2038,21 +2052,17 @@ MODULE LumpingUtils
         mur = ListGetElementComplex( MuCoeff_h, Basis, Parent, Found, GaussPoint = t )      
         IF( .NOT. Found ) mur = 1.0_dp
         muinv = mur * mu0inv
-
-        epsr = ListGetElementComplex( EpsCoeff_h, Basis, Parent, Found, GaussPoint = t )      
-        IF( .NOT. Found ) epsr = 1.0_dp
-        eps = epsr * eps0
         
         Cond = ListGetElementReal( CondCoeff_h, Basis, Parent, Found, GaussPoint = t )
         
         IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
+          epsr = ListGetElementComplex( EpsCoeff_h, Basis, Parent, Found, GaussPoint = t )      
+          IF( .NOT. Found ) epsr = 1.0_dp
           B = imu * rob0 * SQRT( epsr / mur ) 
         ELSE        
           B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
         END IF
                   
-        Zs = 1.0_dp / (SQRT(REAL(muinv*eps)))
-
         MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
         ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
 
@@ -2069,11 +2079,18 @@ MODULE LumpingUtils
         ElSurfCurr = L + (0_dp, 1_dp)*omega*ElSurfCurr
                 
         IF( EdgeBasis ) THEN
+#if doparent
           ! In order to get the normal component of the electric field we must operate on the
-          ! parent element. The surface element only has tangential components. 
+          ! parent element. The surface element only has tangential components.                    
+          ! Note: the finding of parents does not work for piola/quadratic gauss points.
           CALL FindParentUVW( Element, n, Parent, Parent % TYPE % NumberOfNodes, U, V, W, Basis ) 
           stat = ElementInfo( Parent, ParentNodes, u, v, w, detJ, Basis, dBasisdx, &
               EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = avar % Solver )
+#else          
+          stat = ElementInfo( Element, ElementNodes, IP % U(t), IP % V(t), &
+              IP % W(t), detJ, Basis, dBasisdx, &
+              EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = avar % Solver )
+#endif
           e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))
         ELSE
           DO i=1,3
@@ -2081,12 +2098,16 @@ MODULE LumpingUtils
           END DO
         END IF
         
+        ! Integral over electric field: This gives the phase
+#if doparent
+        ! e_ip is actually by construction on the plane if we do not use parent elements
         e_ip_norm = SUM(e_ip*Normal)
         e_ip_tan = e_ip - e_ip_norm * Normal
-
-        ! Integral over electric field: This gives the phase
         int_el = int_el + weight * SUM(e_ip_tan * CONJG(L) )         
-
+#else
+        int_el = int_el + weight * SUM(e_ip * CONJG(L) )         
+#endif
+        
         ! Norm of electric field used for normalization
         int_norm = int_norm + weight * ABS( SUM( L * CONJG(L) ) ) 
 
@@ -2115,7 +2136,7 @@ MODULE LumpingUtils
       TYPE(Element_t), POINTER :: Element
       LOGICAL :: InitHandles
 !------------------------------------------------------------------------------
-      COMPLEX(KIND=dp) :: tc_ip, cd_ip, v_ip, ep_ip, eps0, eps, mu0inv, muinv, mur, epsr, &
+      COMPLEX(KIND=dp) :: tc_ip, cd_ip, v_ip, ep_ip, mu0inv, muinv, mur, &
           cond_ip, imu
       REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:),v_local(:,:)
       REAL(KIND=dp) :: weight, DetJ 
@@ -2126,10 +2147,10 @@ MODULE LumpingUtils
       INTEGER :: t, i, j, m, np, p, q, ndofs, n, nd
       LOGICAL :: AllocationsDone = .FALSE.
       TYPE(Element_t), POINTER :: Parent, MatElement
-      TYPE(ValueHandle_t), SAVE :: MuCoeff_h, EpsCoeff_h, CondCoeff_h, ExtPot_h
+      TYPE(ValueHandle_t), SAVE :: MuCoeff_h, CondCoeff_h, ExtPot_h
       TYPE(ValueHandle_t), SAVE :: TransferCoeff_h, ElCurrent_h, BCMat_h
       
-      SAVE AllocationsDone, Basis, dBasisdx, v_local, mu0inv, eps0
+      SAVE AllocationsDone, Basis, dBasisdx, v_local, mu0inv
       
       ndofs = avar % dofs
       IF(.NOT. AllocationsDone ) THEN
@@ -2144,7 +2165,6 @@ MODULE LumpingUtils
       ! Electric Current Density / Incident Voltage
       IF( InitHandles ) THEN
         CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)      
-        CALL ListInitElementKeyword( EpsCoeff_h,'Material','Relative Permittivity',InitIm=.TRUE.)
         CALL ListInitElementKeyword( CondCoeff_h,'Material','Electric Conductivity')
         
         CALL ListInitElementKeyword( TransferCoeff_h,'Boundary Condition','Electric Transfer Coefficient',InitIm=.TRUE.)
@@ -2159,10 +2179,6 @@ MODULE LumpingUtils
         END IF
         IF(.NOT. Found ) mu0inv = 1.0_dp / ( PI * 4.0d-7 )
         Found = .FALSE.
-        IF( ASSOCIATED( Model % Constants ) ) THEN
-          eps0 = ListGetConstReal ( Model % Constants,'Permittivity of Vacuum', Found )
-        END IF
-        IF(.NOT. Found ) eps0 = 8.854187817d-12           
         InitHandles = .FALSE.
       END IF
 
@@ -2211,10 +2227,6 @@ MODULE LumpingUtils
         mur = ListGetElementComplex( MuCoeff_h, Basis, MatElement, Found, GaussPoint = t )      
         IF( .NOT. Found ) mur = 1.0_dp
         muinv = mur * mu0inv
-
-        epsr = ListGetElementComplex( EpsCoeff_h, Basis, MatElement, Found, GaussPoint = t )      
-        IF( .NOT. Found ) epsr = 1.0_dp
-        eps = epsr * eps0
 
         cond_ip = ListGetElementReal( CondCoeff_h, Basis, MatElement, Found, GaussPoint = t )        
         cd_ip = ListGetElementComplex( ElCurrent_h, Basis, Element, Found, GaussPoint = t )
