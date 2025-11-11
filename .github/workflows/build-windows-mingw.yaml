@@ -31,11 +31,11 @@ jobs:
       matrix:
         # msystem: [MINGW64, CLANG64]
         msystem: [MINGW64]
-        dependencies: [bundled]
-#       include:
-#         - dependencies: external
-#           external-packages: parpack:p
-#           external-cmake-flags: -DEXTERNAL_UMFPACK=ON -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON
+        dependencies: [bundled, external]
+        include:
+          - dependencies: external
+            external-packages: parpack:p
+            external-cmake-flags: -DEXTERNAL_UMFPACK=ON -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON
 
     steps:
       - name: get CPU name
