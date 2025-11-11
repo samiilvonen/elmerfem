@@ -220,6 +220,7 @@ SUBROUTINE APrecSolver( Model,Solver,dt,Transient ) ! {{{
   IF(NoVisited == 1 ) THEN
     n = SIZE(Solver % Matrix % rhs)/dofs
     ALLOCATE(NodeSkip(n))    
+    NodeSkip = .FALSE.
     CALL CreateNodeSkipMask(NodeSkip,Solver % Variable)
     n = COUNT(NodeSkip)
     IF(n==0) DEALLOCATE(NodeSkip)
