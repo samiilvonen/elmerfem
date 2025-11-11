@@ -13556,8 +13556,11 @@ CONTAINS
         ! determine whether there really is a projector. 
         DO i=1,nd
           IF (i > n .AND. .NOT. pElemProj) CYCLE
-          j = InvPerm1(Indexes(i))
-          IF (i > n) j = Indexes(i)
+          IF (i > n) THEN
+             j = Indexes(i)
+          ELSE
+            j = InvPerm1(Indexes(i))
+          END IF
           nrow = NodePerm(j)
           IF( nrow == 0 ) CYCLE
           CALL List_AddMatrixIndex(Projector % ListMatrix, nrow, j ) 
