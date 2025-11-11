@@ -31,7 +31,7 @@ jobs:
       matrix:
         # msystem: [MINGW64, CLANG64]
         msystem: [MINGW64]
-        dependencies: [bundled, external]
+        dependencies: [bundled]
         include:
           - dependencies: external
             external-packages: parpack:p
