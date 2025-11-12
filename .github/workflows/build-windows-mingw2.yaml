@@ -1,4 +1,4 @@
-name: build-windows-mingw
+name: build-windows-mingw2
 on:
   workflow_dispatch:
   push:
