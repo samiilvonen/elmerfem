@@ -10,7 +10,7 @@ on:
       - '**.nix'
       - 'flake.lock'
 
-#concurrency: ci-windows-mingw-${{ github.ref }}
+concurrency: ci-windows-mingw-${{ github.ref }}
 
 jobs:
 
