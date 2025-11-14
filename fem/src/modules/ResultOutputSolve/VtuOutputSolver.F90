@@ -1226,6 +1226,7 @@ CONTAINS
               
               IF( BinaryOutput ) WRITE( VtuUnit ) k
 
+              vals = 0
               DO ii = 1, NumberOfDofNodes
 
                 IF( NoPermutation ) THEN
