@@ -4005,6 +4005,10 @@ CONTAINS
       CALL ListPushNamespace('linsys'//I2S(NameSpaceI)//':')
     END IF
 
+    IF( ListGetLogical( Params,'Linear System Remove Zeros',Found ) ) THEN
+      CALL CRS_RemoveZeros( Solver % Matrix )
+    END IF	
+        
     IF ( ListGetLogical( Params,'Linear System Save',Found )) THEN
       saveslot = GetString( Params,'Linear System Save Slot', Found )
       IF(.NOT. Found .OR. saveslot == 'solve') THEN
@@ -7244,10 +7248,6 @@ CONTAINS
       END IF
     END IF
 
-    IF( ListGetLogical( Params,'Linear System Remove Zeros',Found ) ) THEN
-      CALL CRS_RemoveZeros( PSolver % Matrix )
-    END IF	
-    
     IF( ListGetLogical( PSolver % Values,'Boundary Assembly Timing',Found ) ) THEN 
       CALL ResetTimer('BoundaryAssembly'//GetVarName(PSolver % Variable) ) 
     END IF
