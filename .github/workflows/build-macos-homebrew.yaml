@@ -129,7 +129,7 @@ jobs:
           CTEST_OUTPUT_ON_FAILURE: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          ctest . \
+          export OMP_NUM_THREADS=1; ctest . \
             -LE slow \
             -j$(sysctl -n hw.logicalcpu) \
             --timeout 300
