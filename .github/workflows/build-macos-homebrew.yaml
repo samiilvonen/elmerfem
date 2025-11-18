@@ -131,8 +131,9 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           export OMP_NUM_THREADS=1; ctest . \
             -LE slow \
-            -j$(sysctl -n hw.logicalcpu) \
             --timeout 300
+
+#           -j$(sysctl -n hw.logicalcpu) \
 
       - name: re-run tests
         if: always() && (steps.run-ctest.outcome == 'failure')
