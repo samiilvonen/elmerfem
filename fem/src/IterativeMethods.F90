@@ -1956,9 +1956,9 @@ CONTAINS
     LOGICAL :: adapt
     INTEGER :: bound
 
-    TYPE(Matrix_t), POINTER :: A
+    TYPE(Matrix_t), POINTER :: A, Aser
 
-    REAL(KIND=dp), POINTER :: x(:),b(:), c(:)
+    REAL(KIND=dp), POINTER :: x(:),b(:),c(:),cser(:)
 
     A => GlobalMatrix    
     ndim = HUTI_NDIM
@@ -1979,19 +1979,35 @@ CONTAINS
 
     IF (ASSOCIATED(CurrentModel % Solver % Variable % LowerLimit)) THEN
       bound = 0
-      c => CurrentModel % Solver % Variable % LowerLimit
+      cser => CurrentModel % Solver % Variable % LowerLimit
     ELSE IF (ASSOCIATED(CurrentModel % Solver % Variable % UpperLimit)) THEN
       bound = 1
-      c => CurrentModel % Solver % Variable % UpperLimit
+      cser => CurrentModel % Solver % Variable % UpperLimit
     ELSE
       CALL Fatal('itermethod_mprgp','No limits found')
     END IF
 
     ! Scaling here is a little dirty, but this is still under development...
-    IF( ASSOCIATED(A % DiagScaling ) ) THEN
-      c(1:ndim) = c(1:ndim) / (A % DiagScaling(1:ndim) * A % RhsScaling) 
+    ! The serial matrix and limiter have different size than the parallel ones.
+    Aser => CurrentModel % Solver % Matrix
+    IF( ASSOCIATED(Aser % DiagScaling ) ) THEN
+      cser(1:ndim) = cser(1:ndim) / (Aser % DiagScaling * Aser % RhsScaling) 
     END IF
-          
+    IF( ParEnv % PEs == 1) THEN
+      c => cser
+    ELSE
+      ALLOCATE(c(ndim))
+      j = 0
+      ! We need to map the bigger limiter to the parallel one where only owned dofs are considered.
+      DO i=1,Aser % NumberOfRows
+        IF (Aser % ParallelInfo % NeighbourList(i) % Neighbours(1) == ParEnv % Mype ) THEN
+          j = j + 1
+          c(j) = cser(i)
+        END IF
+      END DO
+    END IF
+      
+    
     Converged = .FALSE.
     Diverged = .FALSE.
     n = ndim
@@ -2006,9 +2022,10 @@ CONTAINS
     IF ( (.NOT. Converged) .AND. (.NOT. Diverged) ) HUTI_INFO = HUTI_MAXITER
 
 
-    IF( ASSOCIATED(A % DiagScaling ) ) THEN
-      c(1:ndim) = c(1:ndim) * (A % DiagScaling(1:ndim) * A % RhsScaling) 
+    IF( ASSOCIATED(Aser % DiagScaling ) ) THEN
+      cser(1:ndim) = cser(1:ndim) * (Aser % DiagScaling * Aser % RhsScaling) 
     END IF
+    IF( ParEnv % PEs > 1) DEALLOCATE(c)
 
     
   CONTAINS
@@ -2035,7 +2052,8 @@ CONTAINS
       INTEGER, INTENT(OUT) :: ncg, ne, np, iters
       LOGICAL, INTENT(OUT) :: converged
       REAL(KIND=dp), INTENT(OUT) :: final_norm_gp
-
+      INTEGER :: ierr, comm, n_beyond
+      
       INTEGER :: itl
       REAL(KIND=dp) :: normv
       
@@ -2056,6 +2074,8 @@ CONTAINS
       REAL(KIND=dp) :: tol
       
       REAL(KIND=dp), ALLOCATABLE :: v(:),w(:)
+
+      comm = ParEnv % ActiveComm
 
       ! ---------------------------
       ! Allocate scratch vectors
@@ -2155,14 +2175,18 @@ CONTAINS
               CALL Info('itermethod_mprgp','MPRGP converged')
               EXIT
             END IF
-            CALL FATAL('itermethod_mprgp','p''*A*p nearly zero, stopping')
-            EXIT
+            CALL Fatal('itermethod_mprgp','p''*A*p nearly zero, stopping')
           END IF
 
           acg = rtp / pAp
           yy = x - acg * p
 
-          IF (ALL(bs * yy(:) >= bs * c(:))) THEN
+          n_beyond = COUNT(bs * yy(:) < bs * c(:))
+          IF(ParEnv % PEs > 1) THEN
+            CALL MPI_ALLREDUCE( MPI_IN_PLACE, n_beyond, 1, MPI_INTEGER, MPI_SUM, comm, ierr )              
+          END IF
+
+          IF (n_beyond == 0) THEN
             ! accept full CG step
             x = yy
             g = g - acg * Ap
@@ -2205,6 +2229,10 @@ CONTAINS
             p_mask = (bs * p > 0.0_dp) .AND. J ! indexes where p is moving towards the bound
             a_f = MINVAL((x-c) / p,p_mask)
             
+            IF(ParEnv % PEs > 1) THEN
+              CALL MPI_ALLREDUCE( MPI_IN_PLACE, a_f, 1, MPI_DOUBLE_PRECISION, MPI_MIN, comm, ierr )              
+            END IF
+              
             IF (a_f < 0.0_dp) a_f = 0.0_dp
             ! halfstep
             IF (bs == 1) THEN
