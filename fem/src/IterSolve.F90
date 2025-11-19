@@ -404,6 +404,35 @@ FUNCTION MaskedNorm( ndim, x, xind ) RESULT(dres)
 END FUNCTION MaskedNorm
 !----------------------------------------------------------------------
 
+!----------------------------------------------------------------------
+  FUNCTION Otmp_ddot( ndim, x, xind, y, yind ) RESULT(dres)
+!----------------------------------------------------------------------
+    IMPLICIT NONE
+
+    ! Parameters
+    INTEGER :: ndim, xind, yind
+    REAL(KIND=dp) :: x(*)
+    REAL(KIND=dp) :: y(*)
+    REAL(KIND=dp) :: dres
+
+    INTEGER :: i
+
+    IF(  xind/=1 .OR. yind /=1 ) THEN
+       dres = ddot(ndim,x,xind,y,yind)
+       RETURN
+    END IF
+
+    dres = 0
+!$OMP PARALLEL do shared(x,y) reduction(+:dres)
+    DO i=1,ndim
+       dres = dres + x(i) * y(i)
+    END DO
+!$OMP END PARALLEL DO
+
+!----------------------------------------------------------------------
+  END FUNCTION Otmp_ddot
+!----------------------------------------------------------------------
+
     
   
 !> \}
@@ -1196,7 +1225,8 @@ END FUNCTION MaskedNorm
             dotProc = AddrFunc( PseudoZDotProd2 )             
           END IF
         ELSE        
-          IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
+          IF ( dotProc  == 0 ) dotProc = AddrFunc(Otmp_ddot)
+!         IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
         END IF
         IF ( normProc == 0 ) normproc = AddrFunc(dnrm2)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )        
