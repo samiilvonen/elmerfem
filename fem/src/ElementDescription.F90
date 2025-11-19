@@ -14042,7 +14042,7 @@ END FUNCTION PointFaceDistance
 !------------------------------------------------------------------------------
     INTEGER, PARAMETER :: MaxIter = 50
     INTEGER :: i,n
-    REAL(KIND=dp) :: r,s,t,delta(3),prevdelta(3),J(3,3),J1(3,2),det,swap,acc,err
+    REAL(KIND=dp) :: r,s,t,delta(3),prevdelta(3),J(3,3),J1(3,2),det,swap,acc,err,scl,eps
     LOGICAL :: Converged
 !------------------------------------------------------------------------------
 
@@ -14052,12 +14052,18 @@ END FUNCTION PointFaceDistance
     IF (Element % TYPE % DIMENSION==0) RETURN
 
     n = Element % TYPE % NumberOfNodes
-
+    scl = MAXVAL(ElementNodes % x(1:n)) - MINVAL(ElementNodes % x(1:n)) + &
+        MAXVAL(ElementNodes % y(1:n)) - MINVAL(ElementNodes % y(1:n)) + &
+        MAXVAL(ElementNodes % z(1:n)) - MINVAL(ElementNodes % z(1:n))
+        
+    
     ! @todo Not supported yet
 !   IF (ASSOCIATED(Element % PDefs)) THEN
 !      CALL Fatal('GlobalToLocal','P elements not supported yet!')
 !   END IF
-    acc = EPSILON(1.0_dp)
+
+    eps = EPSILON(eps)
+    acc = eps * scl**2
     Converged = .FALSE.
 
      delta = 0._dp
@@ -14135,11 +14141,11 @@ END FUNCTION PointFaceDistance
         ! If the same values is suggested over and over again, then exit
         ! This may be a sign that the node is off-plane and cannot be 
         ! described within the element.
-        IF( SUM( ABS( delta - prevdelta ) ) < acc ) EXIT
+        IF( SUM( ABS( delta - prevdelta ) ) < eps ) EXIT
 
         ! Use sloppier criteria when iteration still unsuccessful
         IF( i > 20 ) THEN
-          IF( SUM( ABS( delta - prevdelta ) ) < SQRT( acc ) ) EXIT
+          IF( SUM( ABS( delta - prevdelta ) ) < 1.0e-8 ) EXIT
         END IF
 
         ! If the iteration does not proceed try with some relaxation
@@ -14156,11 +14162,11 @@ END FUNCTION PointFaceDistance
 !------------------------------------------------------------------------------
 
     IF ( .NOT. Converged ) THEN        
-      IF( err > SQRT( acc ) ) THEN
+      IF( err > 1.0e-8 ) THEN
         IF( i > MaxIter ) THEN	
           CALL Warn( 'GlobalToLocal', 'did not converge.')
           PRINT *,'rst',i,r,s,t
-          PRINT *,'err',err,acc,SQRT(acc)
+          PRINT *,'err',err,acc,eps
           PRINT *,'delta',delta,prevdelta
           PRINT *,'uvw',u,v,w
           PRINT *,'code',Element % TYPE % ElementCode
