@@ -879,6 +879,12 @@ CONTAINS
     TYPE(ValueHandle_t), SAVE :: Thickness_h, RelNu_h, CondCoeff_h
     TYPE(ValueHandle_t), SAVE :: GoodConductor_h, ChargeConservation_h, EigenSource_h, EigenInd_h, EigenWave_h
 
+    TYPE(ValueHandle_t), SAVE :: PortTypeIndex_h, PortZ_h, PortLength_h, PortScale_h, PortDirection_h, PortCenter_h
+    INTEGER :: PortTypeIndex, PortDirection
+    COMPLEX(KIND=dp) :: PortZ
+    REAL(KIND=dp) :: PortLength, PortScale, PortCenter(3)
+    LOGICAL :: GotPort
+
     
     SAVE AllocationsDone, WBasis, RotWBasis, Basis, dBasisdx, FORCE, STIFF, MASS, Re_Eigenf, Im_Eigenf
 
@@ -893,7 +899,7 @@ CONTAINS
     END IF
 
     IF( InitHandles ) THEN
-      !CALL DefinePortParameters(Model, Mesh)
+      CALL DefinePortParameters(Model, Mesh)
       
       CALL ListInitElementKeyword( ElRobin_h,'Boundary Condition','Electric Robin Coefficient',InitIm=.TRUE.)
       CALL ListInitElementKeyword( MagLoad_h,'Boundary Condition','Magnetic Boundary Load', InitIm=.TRUE.,InitVec3D=.TRUE.)
@@ -920,6 +926,14 @@ CONTAINS
       CALL ListInitElementKeyword( EigenInd_h,'Boundary Condition','Eigenfunction Index')
       CALL ListInitElementKeyword( EigenWave_h,'Boundary Condition','Incident Wave')      
 
+      ! Lumped ports
+      CALL ListInitElementKeyword( PortTypeIndex_h,'Boundary Condition','Port Type Index')
+      CALL ListInitElementKeyword( PortZ_h,'Boundary Condition','Port Impedance',InitIm=.TRUE.)
+      CALL ListInitElementKeyword( PortLength_h,'Boundary Condition','Port Length')
+      CALL ListInitElementKeyword( PortScale_h,'Boundary Condition','Port Scale')
+      CALL ListInitElementKeyword( PortDirection_h,'Boundary Condition','Port Direction',DefIValue=3)
+      CALL ListInitElementKeyword( PortCenter_h,'Boundary Condition','Port Center',InitVec3D=.TRUE.)
+      
       InitHandles = .FALSE.
     END IF
 
@@ -939,6 +953,7 @@ CONTAINS
     EigenSource = ListGetElementLogical(EigenSource_h, Element, Found)
     GoodConductor = ListGetElementLogical(GoodConductor_h, Element, Found)
     Absorb = ListGetElementLogical(Absorb_h, Element, Found)
+    PortTypeIndex = ListGetElementInteger(PortTypeIndex_h, Element, GotPort)
     
     IF (EigenSource) THEN
       EigenInd = ListGetElementInteger(EigenInd_h, Element, Found)
@@ -961,6 +976,19 @@ CONTAINS
           'The DOFs of the port model are not compatible with the DOFs of this solver')
     END IF
 
+    IF(GotPort) THEN
+      PortTypeIndex = ListGetElementInteger( PortTypeIndex_h, Element ) 
+      PortZ = ListGetElementComplex( PortZ_h, Element = Element )
+      PortScale = ListGetElementReal( PortScale_h, Element = Element )
+      PortLength = ListGetElementReal( PortLength_h, Element = Element )
+      IF( PortTypeIndex == 1 ) THEN
+        PortDirection = ListGetElementInteger( PortDirection_h, Element )
+      ELSE
+        PortCenter = ListGetElementReal( PortCenter_h, Element = Element )
+      END IF
+      !PRINT *,'PortScale:',PortScale, PortZ, PortLength, PortTypeIndex, PortDirection
+    END IF
+      
     
     ! Numerical integration:
     !-----------------------
@@ -972,7 +1000,6 @@ CONTAINS
     END IF
     
     LineElement = GetElementFamily(Element) == 2
-    DegenerateElement = (CoordinateSystemDimension() == 3) .AND. LineElement
     
     UpdateStiff = .FALSE.
     DO t=1,IP % n  
@@ -1030,15 +1057,17 @@ CONTAINS
       muinv = mur * mu0inv
 
       
-      IF( COUNT([EigenSource,GoodConductor,ThinSheet,Absorb]) > 1) THEN
+      IF( COUNT([EigenSource,GoodConductor,ThinSheet,Absorb,GotPort]) > 1) THEN
         CALL Fatal(Caller,'Boundary condition not uniquely defined!')
       END IF
       
+      L = CMPLX(0.0_dp, 0.0_dp, kind=dp)
       IF( Absorb ) THEN
         B = im * rob0 * SQRT( epsr / mur ) 
       ELSE IF (ThinSheet) THEN
         Cond = ListGetElementComplex(CondCoeff_h, Basis, Element, Found, GaussPoint = t)
         B = th * Cond
+        B = im * omega/muinv * B
       ELSE IF(GoodConductor) THEN
         Cond = ListGetElementComplex(CondCoeff_h, Basis, Element, Found, GaussPoint = t)
         muinv = ListGetElementComplex(RelNu_h, Basis, Element, Found, GaussPoint = t)
@@ -1049,24 +1078,29 @@ CONTAINS
         END IF
         SurfImp = CMPLX(1.0_dp, -1.0_dp) * SQRT(omega/(2.0_dp * Cond * muinv))
         B = 1.0_dp/SurfImp
-      ELSE
-        B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
-      END IF
-
-      IF(EigenSource) THEN
+        B = im * omega/muinv * B
+      ELSE IF(EigenSource) THEN
         B = im * SQRT(-Eigensolver % Variable % Eigenvalues(EigenInd))
-        L = CMPLX(0.0_dp, 0.0_dp, kind=dp)
         IF (EigenWave) THEN
           DO p=1,nd
             L(:) = L(:) + CMPLX(Re_Eigenf(n+p) * WBasis(p,:), Im_Eigenf(n+p) * WBasis(p,:), kind=dp) 
           END DO
           L = 2.0_dp * B * L
         END IF
+      ELSE IF(GotPort) THEN
+        IF( PortTypeIndex == 1 ) THEN
+          B = im * ( omega / mu0inv ) / (PortScale * PortZ ) 
+          L(ABS(PortDirection)) = SIGN(1,PortDirection) / PortLength                    
+        END IF
+        L = 2 * B * L
       ELSE
+        B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
+
         MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )           
-        ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
             ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+
+        ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
 
         L = MagLoad + TemGrad - (0_dp, 1_dp)*omega/muinv*ElSurfCurr
       END IF
@@ -1075,8 +1109,6 @@ CONTAINS
         IF (ABS(B) < AEPS .AND. ABS(DOT_PRODUCT(L,L)) < AEPS) CYCLE
       END IF
       UpdateStiff = .TRUE.
-
-      IF (GoodConductor .OR. ThinSheet) B = im * omega/muinv * B
       
       DO i = 1,nd-np
         p = i+np

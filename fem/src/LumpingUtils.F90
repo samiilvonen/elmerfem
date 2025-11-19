@@ -54,6 +54,7 @@ MODULE LumpingUtils
 
    IMPLICIT NONE
 
+   
  CONTAINS
 
 
@@ -1908,8 +1909,11 @@ MODULE LumpingUtils
       OutFlux = int_el
       InFlux = int_norm 
       
-      IF(ABS(int_norm) < EPSILON(area)) CALL Warn(Caller,'Source seems to be zero!')
-
+      IF(ABS(int_norm) < 1.0e-20 ) THEN
+        PRINT *,'int_norm:',int_norm,area,EPSILON(area)
+        CALL Warn(Caller,'Source seems to be close to zero!')
+      END IF
+        
       PRINT *,'LumpedCurr e:',int_el,int_norm,area,trans,Zimp,ABS(int_norm)
 
     END IF
@@ -1942,6 +1946,12 @@ MODULE LumpingUtils
       TYPE(ValueHandle_t), SAVE :: CondCoeff_h, CurrDens_h, EpsCoeff_h
       INTEGER :: nactive
       
+      TYPE(ValueHandle_t), SAVE :: PortTypeIndex_h, PortZ_h, PortLength_h, PortScale_h, PortDirection_h, PortCenter_h
+      INTEGER :: PortTypeIndex, PortDirection
+      COMPLEX(KIND=dp) :: PortZ
+      REAL(KIND=dp) :: PortLength, PortScale, PortCenter(3)
+      LOGICAL :: GotPort
+      
       SAVE AllocationsDone, WBasis, RotWBasis, Basis, dBasisdx, e_local, mu0inv, eps0
       
       ndofs = avar % dofs
@@ -1965,6 +1975,15 @@ MODULE LumpingUtils
         CALL ListInitElementKeyword( MuCoeff_h,'Material','Relative Reluctivity',InitIm=.TRUE.)      
         CALL ListInitElementKeyword( EpsCoeff_h,'Material','Relative Permittivity',InitIm=.TRUE.)
         CALL ListInitElementKeyword( CondCoeff_h,'Material','Electric Conductivity')
+
+        ! Lumped ports
+        CALL ListInitElementKeyword( PortTypeIndex_h,'Boundary Condition','Port Type Index')
+        CALL ListInitElementKeyword( PortZ_h,'Boundary Condition','Port Impedance',InitIm=.TRUE.)
+        CALL ListInitElementKeyword( PortLength_h,'Boundary Condition','Port Length')
+        CALL ListInitElementKeyword( PortScale_h,'Boundary Condition','Port Scale')
+        CALL ListInitElementKeyword( PortDirection_h,'Boundary Condition','Port Direction',DefIValue=3)
+        CALL ListInitElementKeyword( PortCenter_h,'Boundary Condition','Port Center',InitVec3D=.TRUE.)
+        
         Found = .FALSE.
         IF( ASSOCIATED( Model % Constants ) ) THEN
           mu0inv = ListGetConstReal( Model % Constants,'Permeability of Vacuum', Found )
@@ -2034,6 +2053,19 @@ MODULE LumpingUtils
         e_local(i,1:nd) = avar % values(avar % dofs*(avar % Perm(pIndexes(1:nd))-1)+i)
       END DO
 
+      PortTypeIndex = ListGetElementInteger(PortTypeIndex_h, Element, GotPort)
+      IF(GotPort) THEN
+        PortTypeIndex = ListGetElementInteger( PortTypeIndex_h, Element ) 
+        PortZ = ListGetElementComplex( PortZ_h, Element = Element )
+        PortScale = ListGetElementReal( PortScale_h, Element = Element )
+        PortLength = ListGetElementReal( PortLength_h, Element = Element )
+        IF( PortTypeIndex == 1 ) THEN
+          PortDirection = ListGetElementInteger( PortDirection_h, Element )
+        ELSE
+          PortCenter = ListGetElementReal( PortCenter_h, Element = Element )
+        END IF
+      END IF     
+      
 #if doparent 
       ! Normal is only needed if we integrate over parent element.
       Normal = NormalVector(Element, ElementNodes, Check=.TRUE.)
@@ -2055,29 +2087,36 @@ MODULE LumpingUtils
         
         Cond = ListGetElementReal( CondCoeff_h, Basis, Parent, Found, GaussPoint = t )
         
+        L = (0_dp, 0_dp)
+
         IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
           epsr = ListGetElementComplex( EpsCoeff_h, Basis, Parent, Found, GaussPoint = t )      
           IF( .NOT. Found ) epsr = 1.0_dp
           B = imu * rob0 * SQRT( epsr / mur ) 
+
+        ELSE IF(GotPort) THEN
+          IF( PortTypeIndex == 1 ) THEN
+            B = CMPLX(0_dp, 1_dp) * ( omega / mu0inv ) / (PortScale * PortZ ) 
+            L(ABS(PortDirection)) = SIGN(1,PortDirection) / PortLength                    
+          END IF
         ELSE        
           B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )
-        END IF
                   
-        MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
-        ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
+          MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
+          ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
 
-        TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
-            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+          TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
+              ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
 
-        if (ABS(B) > AEPS) then
-          L = ( MagLoad + TemGrad ) / ( 2*B) 
-        else 
-          L = 0_dp
-        end if
+          IF (ABS(B) > AEPS) THEN
+            L = ( MagLoad + TemGrad ) / ( 2*B) 
+          END IF
+          
+          ! We sum the components here, since continutation is a little cleaner then...
+          ElSurfCurr = L + (0_dp, 1_dp)*omega*ElSurfCurr
+        END IF
 
-        ! We sum the components here, since continutation is a little cleaner then...
-        ElSurfCurr = L + (0_dp, 1_dp)*omega*ElSurfCurr
-                
+          
         IF( EdgeBasis ) THEN
 #if doparent
           ! In order to get the normal component of the electric field we must operate on the
@@ -2286,15 +2325,16 @@ MODULE LumpingUtils
     n = Mesh % MaxElementNodes    
     t0 = Mesh % NumberOfBulkElements       
     
-    ! Check the number of ports and add "lumped port type index" keyword.
+    ! Check the number of ports and add "port type index" keyword.
     DO bc_id = 1,Model % NumberOfBCs
       BC => Model % BCs(bc_id) % Values
 
       ! This has already been defined!
-      IF( ListCheckPresent( BC,'Lumped Port Type Index')) CYCLE
-     
-      PortType = ListGetString( BC,'lumped port type',Found)
-      IF(.NOT. Found) CYCLE
+      IF( ListCheckPresent( BC,'Port Type Index')) CYCLE
+
+      IF(.NOT. ListCheckPresent(BC,'port impedance')) CYCLE
+      
+      PortType = ListGetString( BC,'port type',Found)
 
       SELECT CASE(PortType)
       CASE('rectangular')
@@ -2304,11 +2344,12 @@ MODULE LumpingUtils
         PortTypeInd = 2
 
       CASE DEFAULT
-        CALL Fatal(Caller,'Unknown "Lumped Port Type": '//TRIM(PortType))
+        CALL Warn(Caller,'Port Type "Port Type" defaulted to "rectangular"')
+        PortTypeInd = 1
       END SELECT
       
-      CALL Info(Caller,'Defining parameters for lumped port on BC: '//I2S(bc_id),Level=8)
-      CALL ListAddInteger( BC,'Lumped Port Type Index',PortTypeInd)
+      CALL Info(Caller,'Defining parameters for port on BC: '//I2S(bc_id),Level=8)
+      CALL ListAddInteger( BC,'Port Type Index',PortTypeInd)
 
       IF(.NOT. ALLOCATED(Basis) ) THEN
         ALLOCATE(Basis(n), ElementNodes % x(n), ElementNodes % y(n), ElementNodes % z(n), LumpVec(7) )
@@ -2341,7 +2382,6 @@ MODULE LumpingUtils
         LumpVec(4) = MAX(LumpVec(4),MAXVAL(ElementNodes % x(1:n)))
         LumpVec(5) = MAX(LumpVec(5),MAXVAL(ElementNodes % y(1:n)))
         LumpVec(6) = MAX(LumpVec(6),MAXVAL(ElementNodes % z(1:n)))
-
         
         ! Integrate over the area.
         IP = GaussPoints( Element, PReferenceElement = .FALSE.)
@@ -2367,8 +2407,7 @@ MODULE LumpingUtils
       
       SELECT CASE(PortTypeInd)
       CASE(1)
-        CALL ListAddInteger( BC,'Lumped Port Type Index',PortTypeInd)
-        PortDir = ListGetInteger( BC,'Lumped Port Direction',Found)
+        PortDir = ListGetInteger( BC,'Port Direction',Found)
         IF(.NOT. Found) PortDir = 3
 
         Length = LumpVec(3+PortDir) - LumpVec(PortDir)        
@@ -2377,8 +2416,8 @@ MODULE LumpingUtils
 
         !PRINT *,'area:',area, length, width, scale
         
-        CALL ListAddConstReal( BC,'Lumped Port Length',Length)
-        CALL ListAddConstReal( BC,'Lumped Port Scale',Scale)
+        CALL ListAddConstReal( BC,'Port Length',Length)
+        CALL ListAddConstReal( BC,'Port Scale',Scale)
         IF(InfoActive(8)) THEN
           PRINT *,'Setting rectangular port parameters:',Length,Scale
         END IF
@@ -2395,9 +2434,9 @@ MODULE LumpingUtils
 
         ! PRINT *,'area:',area, radinner, radouter
         
-        CALL ListAddConstReal( BC,'Lumped Port Length',Length) 
-        CALL ListAddConstReal( BC,'Lumped Port Scale',Scale)
-        CALL ListAddConstRealArray( BC,'Lumped Port Center',3,1,CenterArray)
+        CALL ListAddConstReal( BC,'Port Length',Length) 
+        CALL ListAddConstReal( BC,'Port Scale',Scale)
+        CALL ListAddConstRealArray( BC,'Port Center',3,1,CenterArray)
         IF(InfoActive(8)) THEN
           PRINT *,'Setting coaxial port parameters:',Length,Scale,' and center ',CenterArray
         END IF
