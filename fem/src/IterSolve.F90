@@ -404,6 +404,7 @@ FUNCTION MaskedNorm( ndim, x, xind ) RESULT(dres)
 END FUNCTION MaskedNorm
 !----------------------------------------------------------------------
 
+
 !----------------------------------------------------------------------
   FUNCTION Otmp_ddot( ndim, x, xind, y, yind ) RESULT(dres)
 !----------------------------------------------------------------------
@@ -433,11 +434,37 @@ END FUNCTION MaskedNorm
   END FUNCTION Otmp_ddot
 !----------------------------------------------------------------------
 
-    
-  
-!> \}
-!> \}  
 
+!----------------------------------------------------------------------
+  FUNCTION Otmp_zdotc( ndim, x, xind, y, yind ) RESULT(zres)
+!----------------------------------------------------------------------
+    IMPLICIT NONE
+
+    ! Parameters
+    INTEGER :: ndim, xind, yind
+    COMPLEX(KIND=dp) :: x(*)
+    COMPLEX(KIND=dp) :: y(*)
+    COMPLEX(KIND=dp) :: zres
+
+    INTEGER :: i
+
+    IF(  xind/=1 .OR. yind /=1 ) THEN
+       zres = zdotc(ndim,x,xind,y,yind)
+       RETURN
+    END IF
+
+    zres = 0
+!$OMP PARALLEL do shared(x,y) reduction(+:zres)
+    DO i=1,ndim
+       zres = zres + DCONJG(x(i)) * y(i)
+    END DO
+!$OMP END PARALLEL DO
+
+!----------------------------------------------------------------------
+  END FUNCTION Otmp_zdotc
+!----------------------------------------------------------------------
+
+    
 !------------------------------------------------------------------------------
 !> The routine that decides which linear system solver to call, and calls it.
 !> There are two main sources of iterations within Elmer.
@@ -1264,7 +1291,8 @@ END FUNCTION MaskedNorm
       END SELECT
       
       IF( Internal ) THEN
-        IF ( dotProc  == 0 ) dotProc = AddrFunc(zdotc)
+        IF ( dotProc  == 0 ) dotProc = AddrFunc(Otmp_zdotc)
+!       IF ( dotProc  == 0 ) dotProc = AddrFunc(zdotc)
         IF ( normProc == 0 ) normproc = AddrFunc(dznrm2)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )
       END IF
