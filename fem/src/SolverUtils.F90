@@ -13089,7 +13089,12 @@ END FUNCTION SearchNodeL
     ALLOCATE(Basis(n), ElementNodes % x(n), ElementNodes % y(n), &
         ElementNodes % z(n), LocalIndexes(n) )
     Weights = 0.0_dp
-
+    Basis = 0.0_dp
+    ElementNodes % x = 0.0_dp
+    ElementNodes % y = 0.0_dp
+    ElementNodes % z = 0.0_dp
+    LocalIndexes = 0
+    
     DO e=ElemStart,ElemFin
 
       Element => Mesh % Elements( e )
