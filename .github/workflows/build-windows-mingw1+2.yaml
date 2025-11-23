@@ -107,7 +107,7 @@ jobs:
             -DWITH_MPI=OFF \
             -DMPI_TEST_MAXPROC=1 \
             -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
-            -DWITH_Zoltan=ON \
+            -DWITH_Zoltan=OFF \
             -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
             -DParMetis_LIBRARIES="$(pkg-config --libs parmetis)" \
             -DParMetis_INCLUDE_DIR="$(pkg-config --cflags parmetis)" \
