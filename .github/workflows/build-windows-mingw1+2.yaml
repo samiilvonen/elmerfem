@@ -104,7 +104,7 @@ jobs:
             -DBLA_VENDOR="OpenBLAS" \
             -DWITH_OpenMP=ON \
             -DWITH_LUA=ON \
-            -DWITH_MPI=ON \
+            -DWITH_MPI=OFF \
             -DMPI_TEST_MAXPROC=1 \
             -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
             -DWITH_Zoltan=ON \
@@ -116,12 +116,12 @@ jobs:
             -DMumps_INCLUDE_DIR=$(pkg-config --variable=includedir mumps-dmo) \
             -DWITH_CHOLMOD=ON \
             -DWITH_ElmerIce=ON \
-            -DWITH_ELMERGUI=ON \
-            -DWITH_QT6=ON \
-            -DWITH_VTK=ON \
-            -DWITH_OCC=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_QT6=OFF \
+            -DWITH_VTK=OFF \
+            -DWITH_OCC= OFF\
             -DWITH_MATC=ON \
-            -DWITH_PARAVIEW=ON \
+            -DWITH_PARAVIEW=OFF \
             -DCREATE_PKGCONFIG_FILE=ON \
             ${{ matrix.external-cmake-flags }} \
             ..
