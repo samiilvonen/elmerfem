@@ -275,7 +275,7 @@ SUBROUTINE VectorHelmholtzSolver( Model,Solver,dt,Transient )
 
   PrecDampCoeff = GetCReal(SolverParams, 'Linear System Preconditioning Damp Coefficient', HasPrecDampCoeff )
   PrecDampCoeff = CMPLX(REAL(PrecDampCoeff), &
-      GetCReal(SolverParams, 'Linear System Preconditioning Damp Coefficient im', Found ) )
+      GetCReal(SolverParams, 'Linear System Preconditioning Damp Coefficient im', Found ), kind=dp)
   HasPrecDampCoeff = HasPrecDampCoeff .OR. Found 
   IF (HasPrecDampCoeff) THEN
     MassProportional = GetLogical(SolverParams, 'Mass-proportional Damping', Found)
@@ -1000,6 +1000,7 @@ CONTAINS
     END IF
     
     LineElement = GetElementFamily(Element) == 2
+    DegenerateElement = (CoordinateSystemDimension() == 3) .AND. LineElement
     
     UpdateStiff = .FALSE.
     DO t=1,IP % n  
