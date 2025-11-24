@@ -1705,8 +1705,6 @@ CONTAINS
                  InitName, n, NodeIndexes, GotInit)
              ElemActive(1:n) = ListGetReal( Entity, &
                  ActiveName, n, NodeIndexes, GotActive)
-             IF(.NOT. ( GotInit .OR. GotActive ) ) CYCLE
-
 
              DO i=1,n
                j = FieldPerm( NodeIndexes(i) )
