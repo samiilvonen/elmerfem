@@ -1700,9 +1700,12 @@ CONTAINS
              ElemLimit(1:n) = ListGetReal( Entity, &
                  LimitName, n, NodeIndexes, Found)             
              IF(.NOT. Found) CYCLE
-             
+
+             ! For the 1st time we can use different limit, if given.
              ElemInit(1:n) = ListGetReal( Entity, &
                  InitName, n, NodeIndexes, GotInit)
+             IF(GotInit) ElemLimit(1:n) = ElemInit(1:n)
+
              ElemActive(1:n) = ListGetReal( Entity, &
                  ActiveName, n, NodeIndexes, GotActive)
 
@@ -1725,20 +1728,26 @@ CONTAINS
                    removed = removed + 1
                    LimitActive(ind) = .FALSE.
                  END IF                 
-               ELSE IF( (GotInit .AND. ElemInit(i) > 0.0_dp ) ) THEN
-                 IF(.NOT. LimitActive(ind)) THEN
-                   added = added + 1
-                   LimitActive(ind) = .TRUE.
-                 END IF
                ELSE IF( GotActive .AND. ElemActive(i) > 0.0_dp ) THEN
                  IF(.NOT. LimitActive(ind)) THEN
                    added = added + 1
                    LimitActive(ind) = .TRUE.
                  END IF
-               ELSE
-                 LimitActive(ind) = .FALSE.
+               ELSE 
+                 val = Var % Values(ind) 
+                 IF( Upper == 0 ) THEN
+                   DoAdd = ( val < ElemLimit(i) - ValEps )
+                 ELSE
+                   DoAdd = ( val > ElemLimit(i) + ValEps )
+                 END IF
+                 IF(DoAdd) THEN
+                   added = added + 1
+                   LimitActive(ind) = .TRUE.
+                 ELSE
+                   LimitActive(ind) = .FALSE.
+                 END IF
                END IF
-
+                 
                ! Enforce the values to limits because nonlinear material models
                ! may otherwise lead to divergence of the iteration
                !--------------------------------------------------------------
