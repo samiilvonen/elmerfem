@@ -1912,6 +1912,36 @@ CONTAINS
        Eq = ' '
      END IF
 
+#if 0
+     ! This is tentative code for p edge multigrid 
+     IF( ListGetLogical( Solver % Values,'quadratic edge ordering',Found ) ) THEN
+       n = Mesh % NumberOfNodes
+       m = Mesh % NumberOfEdges
+       p = Mesh % NumberOfFaces
+
+       k = 0
+       ! Order the linear edges
+       DO i=1,m
+         k = k+1
+         Perm(n+2*i-1) = k
+       END DO
+       ! quadratic edges
+       DO i=1,m
+         k = k+1
+         Perm(n+2*i) = k
+       END DO
+       ! and finally two dofs for each face
+       DO i=1,p
+         k = k+1
+         Perm(n+2*m+2*i-1) = k
+         k = k+1
+         Perm(n+2*m+2*i) = k
+       END DO
+
+       UseGiven = .TRUE.
+       OptimizeBW = .FALSE.
+     END IF     
+#endif
      
      IF( UseGiven ) THEN
        k = MAXVAL( Perm ) 
@@ -1948,6 +1978,7 @@ CONTAINS
        END DO
      END IF
 
+     
      IF( ParEnv % PEs > 1 .AND. &
          ListGetLogical( Solver % Values,'Skip Pure Halo Nodes',Found ) ) THEN
        CALL Info(Caller,'Skipping pure halo nodes',Level=14)
