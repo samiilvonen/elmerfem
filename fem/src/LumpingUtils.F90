@@ -2407,9 +2407,9 @@ MODULE LumpingUtils
       
       SELECT CASE(PortTypeInd)
       CASE(1)
-        PortDir = ListGetInteger( BC,'Port Direction',Found)
+        PortDir = ABS( ListGetInteger( BC,'Port Direction',Found) )
         IF(.NOT. Found) PortDir = 3
-
+                
         Length = LumpVec(3+PortDir) - LumpVec(PortDir)        
         Width = Area / Length
         Scale = Width / Length
