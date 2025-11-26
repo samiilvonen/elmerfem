@@ -1270,7 +1270,7 @@ MODULE LumpingUtils
               gradv(k) = ( avar % Values(3*(j1-1)+k) + avar % Values(3*(j2-1)+k) ) / 2
             ELSE
               gradv(k) = CMPLX(avar % Values(6*(j1-1)+k) + avar % Values(6*(j2-1)+k),&
-                  avar % Values(6*(j1-1)+3+k) + avar % Values(6*(j2-1)+3+k) ) / 2
+                  avar % Values(6*(j1-1)+3+k) + avar % Values(6*(j2-1)+3+k), KIND=dp ) / 2
             END IF
           END DO
           ReCirc = ReCirc + REAL(SUM(gradv*EdgeVector))
@@ -1573,13 +1573,13 @@ MODULE LumpingUtils
             gradv = MATMUL(SOL(1,np+1:nd), WBasis(1:nd-np,:))
           CASE( 2 ) 
             gradv = CMPLX( MATMUL(SOL(1,np+1:nd), WBasis(1:nd-np,:)), &
-                MATMUL(SOL(2,np+1:nd), WBasis(1:nd-np,:)))
+                MATMUL(SOL(2,np+1:nd), WBasis(1:nd-np,:)), KIND=dp)
           CASE( 3 )
             gradv = MATMUL(SOL(1:3,1:n),Basis(1:n))
           CASE( 6 )
             DO i=1,3
               gradv(i) = CMPLX( SUM(SOL(2*i-1,1:n)*Basis(1:n)), &
-                  SUM(SOL(2*i,1:n)*Basis(1:n)) )
+                  SUM(SOL(2*i,1:n)*Basis(1:n)), KIND=dp )
             END DO
           END SELECT
           
@@ -1766,12 +1766,12 @@ MODULE LumpingUtils
           Aip = MATMUL(Aelem(1,np+1:nd), WBasis(1:nd-np,:))
         CASE( 2 ) 
           Aip = CMPLX( MATMUL(Aelem(1,np+1:nd), WBasis(1:nd-np,:)), &
-              MATMUL(Aelem(2,np+1:nd), WBasis(1:nd-np,:)))
+              MATMUL(Aelem(2,np+1:nd), WBasis(1:nd-np,:)), KIND=dp)
         CASE( 3 )
           Aip = MATMUL(Aelem(1:3,1:n),Basis(1:n))
         CASE( 6 ) 
           Aip = CMPLX( MATMUL(Aelem(1:5:2,1:n),Basis(1:n)), &
-              MATMUL(Aelem(2:6:2,1:n),Basis(1:n)) )
+              MATMUL(Aelem(2:6:2,1:n),Basis(1:n)), KIND=dp )
         END SELECT
 
         ! Current density at IP
@@ -1998,7 +1998,7 @@ MODULE LumpingUtils
         InitHandles = .FALSE.
       END IF
 
-      imu = CMPLX(0.0_dp, 1.0_dp)
+      imu = CMPLX(0.0_dp, 1.0_dp, KIND=dp)
       rob0 = Omega * SQRT( eps0 / mu0inv )
       
       n = Element % TYPE % NumberOfNodes
@@ -2096,7 +2096,7 @@ MODULE LumpingUtils
 
         ELSE IF(GotPort) THEN
           IF( PortTypeIndex == 1 ) THEN
-            B = CMPLX(0_dp, 1_dp) * ( omega / mu0inv ) / (PortScale * PortZ ) 
+            B = CMPLX(0_dp, 1_dp, KIND=dp) * ( omega / mu0inv ) / (PortScale * PortZ ) 
             L(ABS(PortDirection)) = SIGN(1,PortDirection) / PortLength                    
           END IF
         ELSE        
@@ -2106,7 +2106,7 @@ MODULE LumpingUtils
           ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
 
           TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
-              ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+              ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found), KIND=dp )
 
           IF (ABS(B) > AEPS) THEN
             L = ( MagLoad + TemGrad ) / ( 2*B) 
@@ -2130,10 +2130,10 @@ MODULE LumpingUtils
               IP % W(t), detJ, Basis, dBasisdx, &
               EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = avar % Solver )
 #endif
-          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))
+          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)), KIND=dp)
         ELSE
           DO i=1,3
-            e_ip(i) = CMPLX( SUM( Basis(1:n) * e_local(i,1:n) ), SUM( Basis(1:n) * e_local(i+3,1:n) ) )
+            e_ip(i) = CMPLX( SUM( Basis(1:n) * e_local(i,1:n) ), SUM( Basis(1:n) * e_local(i+3,1:n) ), KIND=dp )
           END DO
         END IF
         
@@ -2221,7 +2221,7 @@ MODULE LumpingUtils
         InitHandles = .FALSE.
       END IF
 
-      imu = CMPLX(0.0_dp, 1.0_dp)
+      imu = CMPLX(0.0_dp, 1.0_dp, KIND=dp)
       
       n = Element % TYPE % NumberOfNodes
       NodeIndexes => Element % NodeIndexes 
@@ -2275,7 +2275,7 @@ MODULE LumpingUtils
           ep_ip = ListGetElementComplex( ExtPot_h, Basis, Element, Found, GaussPoint = t )
           IF(Found) cd_ip = cd_ip + 2 * tc_ip * ep_ip
         END IF
-        v_ip = CMPLX( SUM( Basis(1:n) * v_local(1,1:n) ), SUM( Basis(1:n) * v_local(2,1:n) ) )
+        v_ip = CMPLX( SUM( Basis(1:n) * v_local(1,1:n) ), SUM( Basis(1:n) * v_local(2,1:n) ), KIND=dp )
                 
         area = area + weight
 

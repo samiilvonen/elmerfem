@@ -1637,7 +1637,7 @@ CONTAINS
           CALL ListGetRealvector( List, TRIM(Name)//' im', &
               xr, n, Element % NodeIndexes, lFound )
           IF(PRESENT(Found)) Found=Found.OR.lFound
-          x = CMPLX(REAL(x), xr)
+          x = CMPLX(REAL(x), xr, KIND=dp)
        END IF
      END IF
   END SUBROUTINE GetComplexVector

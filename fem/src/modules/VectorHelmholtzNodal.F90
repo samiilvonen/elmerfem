@@ -704,7 +704,7 @@ CONTAINS
       IF( .NOT. PrecUse ) THEN
         L = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
-            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found),KIND=dp )
         L = L + TemGrad
         DO i=1,dim
           FORCE(1:nd,i) = FORCE(1:nd,i) - muinvAtIp * L(i) * Basis(1:nd) * Weight
@@ -716,7 +716,7 @@ CONTAINS
         Found = .TRUE.
       ELSE
         IF( ListGetElementLogical( Absorb_h, Element, Found ) ) THEN
-          B = CMPLX(0.0_dp, rob0 ) 
+          B = CMPLX(0.0_dp, rob0, KIND=dp ) 
         ELSE IF (GoodConductor) THEN
           Cond = ListGetElementComplex(CondCoeff_h, Basis, Element, Found, GaussPoint = t)
           muinv = ListGetElementComplex(RelNu_h, Basis, Element, Found, GaussPoint = t)
@@ -725,7 +725,7 @@ CONTAINS
           ELSE
             muinv = mu0inv
           END IF
-          SurfImp = CMPLX(1.0_dp, -1.0_dp) * SQRT(omega/(2.0_dp * Cond * muinv))
+          SurfImp = CMPLX(1.0_dp, -1.0_dp, KIND=dp) * SQRT(omega/(2.0_dp * Cond * muinv))
           B = 1.0_dp/SurfImp    
         ELSE
           B = ListGetElementComplex( ElRobin_h, Basis, Element, Found, GaussPoint = t )

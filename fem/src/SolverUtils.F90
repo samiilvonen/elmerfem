@@ -17857,7 +17857,7 @@ SUBROUTINE ConstraintModesDriver( A, x, b, Solver, PreSolve, ThisMode, LinSysMod
       IF( EmWaveMode ) THEN
         w = ListGetAngularFrequency( Found = Found )
         IF(.NOT. Found) CALL Fatal(Caller,'Energy mode requires "Angular Frequency"!')
-        cmult = 1.0/(2*w*CMPLX(0.0_dp,1.0_dp)) 
+        cmult = 1.0/(2*w*CMPLX(0.0_dp,1.0_dp,KIND=dp)) 
       END IF
       
       DO j=1,n
@@ -17873,12 +17873,12 @@ SUBROUTINE ConstraintModesDriver( A, x, b, Solver, PreSolve, ThisMode, LinSysMod
             Mmode = (k+1)/2
             IF( MOD(k,2) == 1 ) THEN                
               IF( EmWaveMode ) THEN
-                cx = CMPLX(x(j),x(j+1))
-                cflux = cmult * cx * CONJG(CMPLX(Fluxes(j),Fluxes(j+1)))                
-                crhs = cmult * cx * CONJG(CMPLX(b(j),b(j+1)))
+                cx = CMPLX(x(j),x(j+1),KIND=dp)
+                cflux = cmult * cx * CONJG(CMPLX(Fluxes(j),Fluxes(j+1),KIND=dp))
+                crhs = cmult * cx * CONJG(CMPLX(b(j),b(j+1), KIND=dp))
               ELSE
-                cflux = CMPLX(Fluxes(j),Fluxes(j+1))                            
-                crhs = CMPLX(b(j),b(j+1))
+                cflux = CMPLX(Fluxes(j),Fluxes(j+1),KIND=dp)
+                crhs = CMPLX(b(j),b(j+1),KIND=dp)
               END IF
               IF( Nmode /= Mmode ) THEN
                 FluxesRow(Mmode) = FluxesRow(Mmode) - REAL(cflux)

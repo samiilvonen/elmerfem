@@ -1077,7 +1077,7 @@ CONTAINS
         ELSE
           muinv = mu0inv
         END IF
-        SurfImp = CMPLX(1.0_dp, -1.0_dp) * SQRT(omega/(2.0_dp * Cond * muinv))
+        SurfImp = CMPLX(1.0_dp, -1.0_dp, KIND=dp) * SQRT(omega/(2.0_dp * Cond * muinv))
         B = 1.0_dp/SurfImp
         B = im * omega/muinv * B
       ELSE IF(EigenSource) THEN
@@ -1099,7 +1099,7 @@ CONTAINS
 
         MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )           
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
-            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
+            ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found), KIND=dp )
 
         ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
 
@@ -1796,7 +1796,7 @@ CONTAINS
           EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = pSolver ) 
 
       B = CMPLX(MATMUL( SOL(2,np+1:nd), RotWBasis(1:nd-np,:) ) / (Omega), &
-          MATMUL( SOL(1,np+1:nd), RotWBasis(1:nd-np,:) ) / (-Omega))
+          MATMUL( SOL(1,np+1:nd), RotWBasis(1:nd-np,:)) / (-Omega), KIND=dp)
 
       ! The conductivity as a tensor not implemented yet
       !C_ip = ListGetElementReal( CondCoeff_h, Basis, Element, Found, GaussPoint = j )
@@ -1818,11 +1818,11 @@ CONTAINS
         PR_ip = Eps0 
       END IF
 
-      EF_ip=CMPLX(MATMUL(SOL(1,np+1:nd),WBasis(1:nd-np,:)), MATMUL(SOL(2,np+1:nd),WBasis(1:nd-np,:)))
+      EF_ip=CMPLX(MATMUL(SOL(1,np+1:nd),WBasis(1:nd-np,:)), MATMUL(SOL(2,np+1:nd),WBasis(1:nd-np,:)),KIND=dp)
       IF (LorenzCondition .OR. UseGaussLaw) THEN
         DO k=1,3
           EF_ip(k) = EF_ip(k) - &
-              CMPLX(SUM(SOL(1,1:np:ndofs)*dBasisdx(1:n,k)), SUM(SOL(2,1:np:ndofs)*dBasisdx(1:n,k)))
+              CMPLX(SUM(SOL(1,1:np:ndofs)*dBasisdx(1:n,k)), SUM(SOL(2,1:np:ndofs)*dBasisdx(1:n,k)),KIND=dp)
         END DO
       END IF
       ExHc = ComplexCrossProduct(EF_ip, CONJG(H))
@@ -1904,11 +1904,11 @@ CONTAINS
       stat = ElementInfo(Element,Nodes,u,v,w,detJ,Basis,dBasisdx, &
           EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = pSolver ) 
 
-      EF_ip = CMPLX(MATMUL(SOL(1,np+1:nd),WBasis(1:nd-np,:)), MATMUL(SOL(2,np+1:nd),WBasis(1:nd-np,:)))
+      EF_ip = CMPLX(MATMUL(SOL(1,np+1:nd),WBasis(1:nd-np,:)), MATMUL(SOL(2,np+1:nd),WBasis(1:nd-np,:)),KIND=dp)
       IF (LorenzCondition .OR. UseGaussLaw) THEN
         DO k=1,3
           EF_ip(k) = EF_ip(k) - &
-              CMPLX(SUM(SOL(1,1:np:ndofs)*dBasisdx(1:n,k)), SUM(SOL(2,1:np:ndofs)*dBasisdx(1:n,k)))
+              CMPLX(SUM(SOL(1,1:np:ndofs)*dBasisdx(1:n,k)), SUM(SOL(2,1:np:ndofs)*dBasisdx(1:n,k)),KIND=dp)
         END DO
       END IF
 

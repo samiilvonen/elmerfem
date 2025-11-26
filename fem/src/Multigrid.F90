@@ -888,6 +888,7 @@ CONTAINS
        LOGICAL, OPTIONAL :: NewSystem
        TYPE(Solver_t), TARGET :: Solver       
        REAL(KIND=dp), TARGET CONTIG :: ForceVector(:), Solution(:)
+
 !------------------------------------------------------------------------------
        TYPE(Variable_t), POINTER :: Variable1, TimeVar, SaveVariable
        TYPE(Mesh_t), POINTER   :: Mesh1, Mesh2, SaveMesh
@@ -1065,7 +1066,6 @@ CONTAINS
            ALLOCATE(Degree(n), Indexes(n2), Deg(n2))
 
 #define hcurlfix 1
-
 #if hcurlfix
            ! This seems to work, the original code not!
            IF( EdgeBasis ) THEN
@@ -1127,7 +1127,7 @@ CONTAINS
 
            IF( EdgeBasis ) THEN
              ! for debugging edge p-strategy
-#if 0
+#if 1
              PRINT *,'edges:',Solver % Mesh % NumberOfEdges
              PRINT *,'elems:',Solver % Mesh % NumberOfBulkElements
              PRINT *,'max perm:',MAXVAL(Permutation)
@@ -1329,8 +1329,8 @@ CONTAINS
        DO iter = 1,MaxIter
           ResidualNorm = PMGSweep()
 
-          WRITE(Message,'(A,I0,A,I0,A,2E20.12E3)') 'MG Residual at level: ', &
-                 Level, ' iter: ', iter,' is:', ResidualNorm/RHSNorm, ResidualNorm
+          WRITE(Message,'(A,I0,A,I0,A,3E20.12E3)') 'MG Residual at level: ', &
+                 Level, ' iter: ', iter,' is:', ResidualNorm/RHSNorm, ResidualNorm, RHSNorm
           CALL Info( 'PMGSolve', Message, Level=5 )
 
 
@@ -1371,6 +1371,8 @@ CONTAINS
 !------------------------------------------------------------------------------
     RECURSIVE FUNCTION PMGSweep() RESULT(RNorm)
 !------------------------------------------------------------------------------
+       IMPLICIT NONE
+
        INTEGER :: i,j,Rounds
        LOGICAL :: Found
        REAL(KIND=dp) :: RNorm

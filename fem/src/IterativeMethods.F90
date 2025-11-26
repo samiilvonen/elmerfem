@@ -2506,7 +2506,7 @@ CONTAINS
            CALL Fatal('GCR_Z','Failed to allocate memory of size: '&
                //I2S(n)//' x '//I2S(m-1))
          END IF
-         czero = CMPLX( 0.0_dp, 0.0_dp )
+         czero = CMPLX( 0.0_dp, 0.0_dp, KIND=dp )
          V(1:n,1:m-1) = czero
          S(1:n,1:m-1) = czero
       END IF	

@@ -2578,7 +2578,7 @@ CONTAINS
       END IF
 
       IF( GotSurfCurr ) THEN
-        SurfC = CMPLX( SUM(Basis(1:n)*SurfCurr(1:n)), SUM(Basis(1:n)*SurfCurrIm(1:n)))
+        SurfC = CMPLX( SUM(Basis(1:n)*SurfCurr(1:n)), SUM(Basis(1:n)*SurfCurrIm(1:n)),KIND=dp)
         FORCE(1:nd) = FORCE(1:nd) + IP % s(t) * DetJ * SurfC * Basis(1:nd) 
       END IF        
     END DO
@@ -2610,7 +2610,7 @@ CONTAINS
     FORCE = 0._dp
 
     muVacuum = 4 * PI * 1d-7
-    imu = CMPLX(0.0_dp, 1.0_dp)
+    imu = CMPLX(0.0_dp, 1.0_dp,KIND=dp)
     
     SkinCond(1:n) = GetReal( BC,'Layer Electric Conductivity', Found)
     Mu(1:n) = GetReal( BC,'Layer Relative Permeability', Found)
@@ -3481,7 +3481,7 @@ CONTAINS
 
         IF (ComplexPowerCompute) THEN
           cmplx_power = 0._dp
-          imag_value = CMPLX(BAtIp(7), BAtIp(8))
+          imag_value = CMPLX(BAtIp(7), BAtIp(8),KIND=dp)
 
           MuAtIp = SUM( Basis(1:n) * mu(1:n) )
 
@@ -3900,7 +3900,7 @@ CONTAINS
       imag_value = CMPLX(ComplexPower(1), &
                          ComplexPower(2), &
                          KIND=dp)
-      I = CMPLX(Current(1), Current(2))
+      I = CMPLX(Current(1), Current(2),KIND=dp)
       imag_value = imag_value*Volume/ABS(I)**2._dp
       imag_value2 = 1._dp/imag_value
       SkinCond(1) = REAL(imag_value2) 
