@@ -1,4 +1,4 @@
-name: build-windows-mingw
+name: build-windows-mingw1+2
 on:
   workflow_dispatch:
   push:
@@ -31,11 +31,11 @@ jobs:
       matrix:
         # msystem: [MINGW64, CLANG64]
         msystem: [MINGW64]
-        dependencies: [bundled]
-#       include:
-#         - dependencies: external
-#           external-packages: parpack:p
-#           external-cmake-flags: -DEXTERNAL_UMFPACK=ON -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON
+        dependencies: [bundled, external]
+        include:
+          - dependencies: external
+            external-packages: parpack:p
+            external-cmake-flags: -DEXTERNAL_UMFPACK=ON -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON
 
     steps:
       - name: get CPU name
@@ -119,9 +119,9 @@ jobs:
             -DWITH_ELMERGUI=ON \
             -DWITH_QT6=ON \
             -DWITH_VTK=ON \
-            -DWITH_OCC=ON \
+            -DWITH_OCC= ON \
             -DWITH_MATC=ON \
-            -DWITH_PARAVIEW=ON \
+            -DWITH_PARAVIEW=ON\
             -DCREATE_PKGCONFIG_FILE=ON \
             ${{ matrix.external-cmake-flags }} \
             ..
@@ -143,7 +143,7 @@ jobs:
           CTEST_OUTPUT_ON_FAILURE: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          ctest . \
+          export OMP_NUM_THREADS=1; ctest . \
             -LE slow \
             --timeout 300
 
