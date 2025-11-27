@@ -1,4 +1,4 @@
-name: build-windows-mingw1+2
+name: build-windows-mingw
 on:
   workflow_dispatch:
   push:
@@ -105,7 +105,7 @@ jobs:
             -DWITH_OpenMP=ON \
             -DWITH_LUA=ON \
             -DWITH_MPI=ON \
-            -DMPI_TEST_MAXPROC=2 \
+            -DMPI_TEST_MAXPROC=$(nproc) \
             -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
             -DWITH_Zoltan=ON \
             -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
@@ -119,9 +119,9 @@ jobs:
             -DWITH_ELMERGUI=ON \
             -DWITH_QT6=ON \
             -DWITH_VTK=ON \
-            -DWITH_OCC= ON \
+            -DWITH_OCC=ON \
             -DWITH_MATC=ON \
-            -DWITH_PARAVIEW=ON\
+            -DWITH_PARAVIEW=ON \
             -DCREATE_PKGCONFIG_FILE=ON \
             ${{ matrix.external-cmake-flags }} \
             ..
@@ -141,9 +141,10 @@ jobs:
         timeout-minutes: 150
         env:
           CTEST_OUTPUT_ON_FAILURE: 1
+          OMP_NUM_THREADS: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          export OMP_NUM_THREADS=1; ctest . \
+          ctest . \
             -LE slow \
             --timeout 300
 
