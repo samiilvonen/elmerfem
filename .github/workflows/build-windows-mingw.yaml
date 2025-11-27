@@ -105,7 +105,7 @@ jobs:
             -DWITH_OpenMP=ON \
             -DWITH_LUA=ON \
             -DWITH_MPI=ON \
-            -DMPI_TEST_MAXPROC=2 \
+            -DMPI_TEST_MAXPROC=$(nproc) \
             -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
             -DWITH_Zoltan=ON \
             -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
